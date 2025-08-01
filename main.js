@@ -1,4 +1,4 @@
-import { fmSynthPresets, createToneFmSynthOrb, DEFAULT_TONE_FM_SYNTH_PARAMS } from './orbs/fm-synth-orb.js';
+import { fmSynthPresets } from './orbs/fm-synth-orb.js';
 import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { createAnalogSynthOrb as createToneSynthOrb, DEFAULT_ANALOG_SYNTH_PARAMS } from './orbs/tone-synth-orb.js';
 import { showToneSynthMenu, hideToneSynthMenu, hideTonePanel } from './orbs/tone-synth-ui.js';
@@ -2317,9 +2317,7 @@ export function createAudioNodesForNode(node) {
 
           return audioNodes;
         } else if (node.type === "sound") {
-            if (node.audioParams && node.audioParams.engine === 'tonefm') {
-                return createToneFmSynthOrb(node);
-            } else if (node.audioParams && node.audioParams.engine === 'tone') {
+            if (node.audioParams && node.audioParams.engine === 'tone') {
                 return createToneSynthOrb(node);
             }
             const audioNodes = {
@@ -3742,7 +3740,7 @@ export function updateNodeAudioParams(node) {
 
     if (node.type === "sound") {
       if (lowPassFilter) {
-        if (node.audioParams && (node.audioParams.engine === 'tone' || node.audioParams.engine === 'tonefm')) {
+        if (node.audioParams && node.audioParams.engine === 'tone') {
           const cutoff = params.filterCutoff ?? MAX_FILTER_FREQ;
           lowPassFilter.frequency.setTargetAtTime(
             cutoff,
@@ -4387,7 +4385,7 @@ export function triggerNodeEffect(
     const orbitoneIndividualGains = audioNodes.orbitoneIndividualGains;
     const osc1Gain = audioNodes.osc1Gain;
 
-    if (node.audioParams && (node.audioParams.engine === 'tone' || node.audioParams.engine === 'tonefm')) {
+    if (node.audioParams && node.audioParams.engine === 'tone') {
       node.isTriggered = true;
       node.animationState = 1;
 
@@ -16544,10 +16542,10 @@ function handleMouseUp(event) {
           hideAlienOrbMenu();
           hideResonauterOrbMenu();
           hideArvoDroneOrbMenu();
-      } else if (selectedNode && selectedNode.type === "sound" && (selectedNode.audioParams.engine === 'tone' || selectedNode.audioParams.engine === 'tonefm')) {
-        showToneSynthMenu(selectedNode);
-        hideAlienOrbMenu();
-        hideResonauterOrbMenu();
+      } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tone') {
+          showToneSynthMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
           hideRadioOrbMenu();
           hideArvoDroneOrbMenu();
           hideSamplerOrbMenu();
@@ -19828,6 +19826,7 @@ function openReplaceInstrumentMenu() {
   groupDiv.classList.add("type-group");
 
   const instruments = [
+    { icon: "🎹", label: "Analog Synth", handler: () => populateReplacePresetMenu('analogWaveforms', 'Analog Synths') },
     { icon: "🔔", label: "FM Synth", handler: () => populateReplacePresetMenu('fmSynths', 'FM Synths') },
     { icon: "🛰️", label: "Sampler", handler: () => populateReplacePresetMenu('samplers', 'Samplers') },
     { icon: "🥁", label: "Drum", handler: () => populateReplacePresetMenu('drumElements', 'Drum Elements') },
@@ -19933,10 +19932,18 @@ function populateInstrumentMenu() {
 
   const instruments = [
     {
+      icon: "🎹",
+      label: "Analog Synth",
+      handler: () => {
+        soundEngineToAdd = null;
+        setupAddTool(null, "sound", true, "analogWaveforms", "Analog Synths");
+      },
+    },
+    {
       icon: "🔔",
       label: "FM Synth",
       handler: () => {
-        soundEngineToAdd = "tonefm";
+        soundEngineToAdd = null;
         setupAddTool(null, "sound", true, "fmSynths", "FM Synths");
       },
     },
@@ -20007,13 +20014,13 @@ function populateInstrumentMenu() {
         helpWizard &&
         !helpWizard.classList.contains("hidden") &&
         currentHelpStep === 3 &&
-        inst.label === "Tone Synth"
+        inst.label === "Analog Synth"
       ) {
         nextHelpStep();
       }
     });
-    if (inst.label === "Tone Synth") {
-      toneSynthBtn = btn;
+    if (inst.label === "Analog Synth") {
+      analogSynthBtn = btn;
       helpSteps[3].target = btn;
     }
     groupDiv.appendChild(btn);
@@ -21196,7 +21203,7 @@ function toggleHelpPopup() {
   }
 }
 
-let toneSynthBtn = null;
+let analogSynthBtn = null;
 let squareWaveBtn = null;
 const helpSteps = [
   {
@@ -21212,7 +21219,7 @@ const helpSteps = [
     target: instrumentsMenuBtn,
   },
   {
-    text: "Choose Tone Synth",
+    text: "Choose Analog Synth",
     target: null,
   },
   {
@@ -22526,13 +22533,6 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         if (nodeSubtypeForAudioParams) {
           newNode.audioParams.osc1Waveform = nodeSubtypeForAudioParams;
         }
-      } else if (soundEngineToAdd === 'tonefm') {
-        const existing = { ...newNode.audioParams };
-        Object.assign(newNode.audioParams, DEFAULT_TONE_FM_SYNTH_PARAMS);
-        Object.assign(newNode.audioParams, existing);
-        if (nodeSubtypeForAudioParams) {
-          newNode.audioParams.carrierWaveform = nodeSubtypeForAudioParams;
-        }
       }
     }
   }
@@ -23331,20 +23331,20 @@ if (motionMenuBtn) {
 
 if (addAnalogSynthBtn) {
   addAnalogSynthBtn.addEventListener("click", (e) => {
-    soundEngineToAdd = "tone";
+    soundEngineToAdd = null;
     setupAddTool(
       e.currentTarget,
       "sound",
       true,
       "analogWaveforms",
-      "Tone Synths",
+      "Analog Synths",
     );
   });
 }
 
 if (addFmSynthBtn) {
   addFmSynthBtn.addEventListener("click", (e) => {
-    soundEngineToAdd = "tonefm";
+    soundEngineToAdd = null;
     setupAddTool(e.currentTarget, "sound", true, "fmSynths", "FM Synths");
   });
 }
