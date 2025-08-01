@@ -1,4 +1,3 @@
-// Extracted FM synth orb logic from app.js
 
 import { sanitizeWaveformType } from "../utils/oscillatorUtils.js";
 export const fmSynthPresets = [

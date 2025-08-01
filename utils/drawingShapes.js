@@ -93,13 +93,9 @@ export function drawGear(ctx, x, y, outerR, teeth, innerR = outerR * 0.4) {
     const end = start + toothWidth;
     const next = (i + 1) * step;
 
-    // Tooth flank going outward
     ctx.lineTo(x + Math.cos(start) * outerR, y + Math.sin(start) * outerR);
-    // Flat top of the tooth
     ctx.lineTo(x + Math.cos(end) * outerR, y + Math.sin(end) * outerR);
-    // Tooth flank going inward
     ctx.lineTo(x + Math.cos(end) * innerR, y + Math.sin(end) * innerR);
-    // Base arc along the inner radius
     ctx.lineTo(x + Math.cos(next) * innerR, y + Math.sin(next) * innerR);
   }
 

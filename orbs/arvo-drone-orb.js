@@ -56,7 +56,6 @@ export function createArvoDroneAudioNodes(node) {
   mainGain.connect(resIn);
   resOut.connect(filter);
 
-  // Short comb filter for additional string-like resonance
   const combDelay = ctx.createDelay();
   combDelay.delayTime.value = 0.02;
   const combFeedback = ctx.createGain();
@@ -257,7 +256,6 @@ export function stopArvoDroneAudioNodes(audioNodes) {
   audioNodes.mainGain?.disconnect();
 }
 
-// --- UI Helpers ---
 
 export function positionArvoPanel(node) {
   if (!arvoPanel) return;

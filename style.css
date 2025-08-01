@@ -360,14 +360,6 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
   cursor: crosshair;
 }
 
-/*
-Enable selecting mist patches when the eraser tool is active by
-allowing pointer events on patches. This lets the eraser detect
-patches accurately even while they are animated with CSS transforms.
-The class "eraser-active" is toggled on the mist layer when the
-eraser tool is selected. Only in that mode are pointer events enabled
-so normal mist drawing remains unaffected.
-*/
 
 #mistLayer.eraser-active .mist-patch {
   pointer-events: auto;
@@ -618,22 +610,6 @@ so normal mist drawing remains unaffected.
 #mixerPanel .panel-section:last-child { border-bottom: none; padding-bottom: 0; }
 #mixerPanel hr.mixer-divider { border: none; border-top: 1px solid var(--button-hover); opacity: 0.4; margin: 15px auto; width: 90%; }
 
-/* Mixer Tab Layout */
-.mixer-tabs { display: flex; gap: 5px; margin-bottom: 10px; }
-.mixer-tab-button { flex: 1; background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 6px; cursor: pointer; font-size: 0.85em; border-radius: 3px; }
-.mixer-tab-button.active { background-color: var(--button-active); color: #fff; }
-.mixer-tab-content.hidden { display: none; }
-.mixer-row { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
-.mixer-row .group-name { flex: 1; font-size: 0.9em; }
-.mixer-row input[type="range"] { flex: 2; }
-.mixer-row .value-display { width: 40px; text-align: right; font-size: 0.8em; }
-.mixer-row .solo-btn, .mixer-row .mute-btn { width: 24px; height: 24px; font-size: 0.75em; border: 1px solid var(--button-hover); background: var(--button-bg); color: var(--text-color); border-radius: 3px; cursor: pointer; }
-.mixer-row .solo-btn.active, .mixer-row .mute-btn.active { background: var(--button-active); color: #fff; }
-.mixer-row .meter-container { width: 12px; height: 40px; background: var(--button-disabled-bg); border: 1px solid var(--button-hover); border-radius: 3px; position: relative; overflow: hidden; }
-.mixer-row .meter-fill { position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; border-radius: 2px; transition: height 0.05s linear; }
-.send-header .send-label { flex: 1; font-size: 0.8em; font-weight: bold; text-align: center; }
-
-/* Mixer Tab Layout */
 .mixer-tabs { display: flex; gap: 5px; margin-bottom: 10px; }
 .mixer-tab-button { flex: 1; background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 6px; cursor: pointer; font-size: 0.85em; border-radius: 3px; }
 .mixer-tab-button.active { background-color: var(--button-active); color: #fff; }
@@ -1308,12 +1284,6 @@ margin-top: 6px;
   display: block;
 }
 
-/* dial styles no longer used, but keep selector empty for backward compat */
-.prorb-section-content .dial-container {
-  display: none;
-}
-
-/* Slider styling for PrOrb menu */
 .prorb-slider label {
   display: block;
   font-size: 0.75em;
@@ -1348,159 +1318,9 @@ margin-top: 6px;
   border: 1px solid var(--button-active);
 }
 
-/* OP-1 style PrOrb menu */
-.op1-panel {
-  background: rgba(0, 0, 0, 0.7);
-  border: 1px solid var(--prorb-border-color);
-  border-radius: 6px;
-  padding: 4px;
-  pointer-events: all;
-  width: 260px;
-  height: 300px;
-  margin: 0 auto;
-}
-
-.op1-top-slider {
-  width: 100%;
-  margin-bottom: 4px;
-}
-
-.op1-display {
-  width: 260px;
-  height: 100px;
-  margin: 0 auto;
-  background: #000;
-  border: 1px solid var(--prorb-border-color);
-  position: relative;
-}
-.prorb-display-screen {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.op1-slider-row {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-}
-
-.op1-display-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.op1-orb-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.op1-orb-stack canvas {
-  cursor: pointer;
-}
-.op1-orb-stack canvas.active {
-  box-shadow: 0 0 4px 2px var(--button-active);
-}
-
-.op1-vert-slider {
-  width: 24px;
-  display: flex;
-  justify-content: center;
-}
-.op1-vert-slider input[type="range"] {
-  writing-mode: bt-lr;
-  transform: rotate(270deg);
-  width: 100px;
-}
-
-.op1-btn-row {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 2px;
-}
-.op1-btn-row button {
-  flex: 1 1 0;
-  margin: 0 2px;
-  font-size: 0.7em;
-}
-
-.op1-tab-row {
-  display: flex;
-  justify-content: space-around;
-  margin-bottom: 4px;
-}
-
-.op1-tab-row button {
-  flex: 1 1 0;
-  margin: 0 1px;
-  font-size: 0.7em;
-}
-
-.op1-tab-row button.active {
-  background: var(--button-active);
-}
-
-/* PrOrb bar controls */
 .prorb-bar-row {
   display: flex;
   justify-content: space-between;
-  /* Removing align-items flex-end prevents bars from collapsing */
-  height: 80px;
-  margin-top: 4px;
-}
-.prorb-bar-wrapper {
-  flex: 1 1 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: flex-end;
-  width: 20px;
-  padding: 2px;
-  gap: 2px;
-}
-.prorb-bar {
-  width: 80%;
-  min-height: 2%;
-  background-color: var(--button-active);
-  border-radius: 2px 2px 0 0;
-  transition: background-color 0.05s ease-out, transform 0.05s ease-out,
-    box-shadow 0.05s ease-out, opacity 0.1s ease-out;
-}
-.prorb-bar-label {
-  width: 100%;
-  text-align: center;
-  font-size: 0.6em;
-  color: #ccc;
-}
-
-.geez-display {
-  width: 100%;
-  text-align: center;
-  font-size: 0.6em;
-  color: #0f0;
-  font-family: 'Noto Sans Ethiopic', serif;
-  pointer-events: none;
-}
-
-
-.lfo-toggle {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(100,100,120,0.4);
-  border: 1px solid var(--button-hover);
-  cursor: pointer;
-}
-.lfo-toggle.active {
-  background: var(--button-active);
-  box-shadow: 0 0 4px 1px var(--button-active);
-}
-
-/* horizontal bar controls */
 .prorb-hbar-row {
   display: flex;
   justify-content: space-between;
@@ -1528,12 +1348,6 @@ margin-top: 6px;
   border-radius: 2px;
   transition: background-color 0.05s ease-out, width 0.05s ease-out;
 }
-/* Ensure geez text doesn't shrink the slider bar */
-.prorb-hbar-wrapper .geez-display {
-  width: auto;
-  flex: 0 0 auto;
-}
-/* Alien Orb panel */
 #alien-panel {
   width: 220px;
   height: auto;
@@ -1614,46 +1428,6 @@ margin-top: 6px;
   background: rgba(0,0,0,0.4);
 }
 
-/* Preset Tester panel placement and dragging cursor */
-#presetTesterPanel {
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 450px;
-  max-width: 95vw;
-  height: auto;
-  max-height: 90vh;
-}
-#presetTesterPanel:not(.hidden) {
-  transform: translate(-50%, -50%);
-}
-#presetTesterHeader {
-  cursor: move;
-}
-
-.preset-section {
-  margin-top: 8px;
-}
-.preset-section label {
-  margin-right: 6px;
-}
-
-#presetParamControls,
-#prorbParamControls,
-#fmParamControls {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-}
-
-#presetParamControls label,
-#prorbParamControls label,
-#fmParamControls label {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.9em;
-}
-/* Orbitone visual display */
 .orbitone-notes-area {
   display: flex;
   align-items: flex-end;
@@ -2026,67 +1800,3 @@ margin-top: 6px;
 
 
 
-/* Help Wizard Overlay */
-#help-wizard.wizard-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 2000;
-}
-
-#help-wizard .wizard-text {
-  position: absolute;
-  max-width: 240px;
-  background: rgba(20, 20, 40, 0.9);
-  color: #fff;
-  padding: 10px;
-  border-radius: 4px;
-  pointer-events: auto;
-}
-
-#help-wizard .wizard-end-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 1em;
-  cursor: pointer;
-  opacity: 0.8;
-}
-
-#help-wizard .wizard-end-btn:hover {
-  opacity: 1;
-}
-#help-wizard .wizard-arrow {
-  position: absolute;
-  font-size: 2em;
-  pointer-events: none;
-}
-
-#help-wizard .wizard-highlight {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 4px;
-  box-shadow: 0 0 0 3px rgba(255, 255, 150, 0.7),
-    0 0 8px 4px rgba(255, 255, 150, 0.6);
-  display: none;
-}
-
-#help-wizard .wizard-controls {
-  margin-top: 8px;
-  text-align: center;
-  pointer-events: auto;
-}
-
-#help-wizard .wizard-message {
-  margin-bottom: 6px;
-}
-
-#help-wizard button {
-  margin: 0 4px;
-}

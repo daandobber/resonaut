@@ -1,4 +1,3 @@
-// Extracted drum orb logic from app.js
 import { DRUM_ELEMENT_DEFAULTS, DEFAULT_REVERB_SEND, DEFAULT_DELAY_SEND } from "../utils/appConstants.js";
 
 
@@ -12,7 +11,6 @@ export function isDrumType(type) {
   return drumElementTypes.some(dt => dt.type === type);
 }
 
-// Create audio nodes for a drum element
 export function createDrumOrbAudioNodes(node) {
   const p = node.audioParams;
   const audioNodes = { mainGain: globalThis.audioContext.createGain() };
@@ -45,7 +43,6 @@ export function createDrumOrbAudioNodes(node) {
   return audioNodes;
 }
 
-// Trigger a drum sound
 export function triggerDrumOrb(node, intensity = 1.0) {
   if (!node.audioNodes?.mainGain) return;
   const params = node.audioParams;
@@ -53,11 +50,8 @@ export function triggerDrumOrb(node, intensity = 1.0) {
   const finalVol = (params.volume || 1.0) * intensity;
   const targetFreq = params.baseFreq;
   const now = globalThis.audioContext.currentTime;
-  // Drum generation as implemented in app.js
-  // (kick, snare, hihat, clap, toms, cowbell, fm drums)
 }
 
-// Draw the drum orb shape and animation
 export function drawDrumOrb(ctx, node, r, viewScale, baseLineWidth, fillColor, borderColor) {
   ctx.lineWidth = Math.max(0.5 / viewScale, baseLineWidth / viewScale);
   ctx.strokeStyle = borderColor;
@@ -74,11 +68,9 @@ export function drawDrumOrb(ctx, node, r, viewScale, baseLineWidth, fillColor, b
       ctx.arc(node.x, node.y, innerR, 0, Math.PI * 2);
       ctx.fill();
       break;
-    // Other drum shapes omitted for brevity
   }
 }
 
-// UI controls for drum parameters
 export function addDrumEditUI(node, selectedArray, currentSection) {
   const params = node.audioParams;
   const defaults = DRUM_ELEMENT_DEFAULTS[node.type];

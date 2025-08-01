@@ -32,14 +32,11 @@ export function addCanvas() {
   const container = document.getElementById('canvasContainer');
   if (!container) return null;
   const canvas = document.createElement('canvas');
-  // ensure the canvas has the same styling as existing ones
   canvas.className = 'song-canvas hidden';
-  // Ensure the new canvas matches the container dimensions
   canvas.width = container.clientWidth || window.innerWidth;
   canvas.height = container.clientHeight || window.innerHeight;
   container.appendChild(canvas);
   registerCanvas(canvas);
-  // Automatically switch to the newly created canvas so it becomes the active page
   switchTo(canvases.length - 1);
   return canvas;
 }

@@ -1,4 +1,3 @@
-// Minimal timeline functionality for arranging and recording clips
 const PIXELS_PER_SECOND = 100;
 
 let timelineTracksData = [];
@@ -22,7 +21,6 @@ let loopBarEl;
 let scrollContainer;
 let playheadOffsetPx = 0;
 
-// live recording helpers
 const MAX_RECORD_SECONDS = 60;
 
 function updateTrackVolumes() {
@@ -344,7 +342,6 @@ function startTrackRecording(track) {
   const recBtn = track.el.querySelector('.track-rec-btn');
   const stopBtn = track.el.querySelector('.track-stop-btn');
 
-  // prepare recording segment and analyser
   const bodyEl = track.el.querySelector('.track-body');
   if (track.recordingSegment) {
     bodyEl.removeChild(track.recordingSegment.el);

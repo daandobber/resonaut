@@ -1,4 +1,3 @@
-// Extracted resonauter synth orb logic from app.js
 
 export const RESONAUTER_TYPE = 'resonauter';
 
@@ -310,7 +309,6 @@ export function playResonauterSound(node, pitch, intensity = 1) {
         limiter.disconnect();
         pan.disconnect();
       } catch (e) {
-        // ignore disconnect errors
       }
     }, (totalDur + 0.3) * 1000);
   }

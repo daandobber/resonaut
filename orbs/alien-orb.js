@@ -1,4 +1,3 @@
-// Extracted Alien Technology orb logic from app.js
 import { alienPanel, alienPanelContent } from '../utils/domElements.js';
 import {
   getScreenCoords,
@@ -446,8 +445,6 @@ export function updateAlienParams(baseFreq = 220, mod = 0) {
     alienAudioNodes.g.gain.setTargetAtTime(1.0, now, 0.05);
     alienAudioNodes.baseGain = 0.3 + prax * 0.7 + zuul * 0.4;
   }
-  // Do not automatically change mix gain when tweaking parameters
-  // to avoid unwanted sound if the panel is merely open.
 }
 
 export function updateAlienNodesParams(
@@ -515,8 +512,6 @@ export function updateAlienNodesParams(
     setParam(nodes.g.gain, 1.0);
     nodes.baseGain = 0.3 + prax * 0.7 + zuul * 0.4;
   }
-  // Keep output level adjustment to the caller so drones remain silent
-  // until explicitly triggered or started.
 }
 
 export function startAlienSynth() {

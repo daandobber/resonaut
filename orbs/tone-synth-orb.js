@@ -1,4 +1,3 @@
-// Tone.js version of analog-synth-orb
 import * as Tone from 'tone'
 import { sanitizeWaveformType } from "../utils/oscillatorUtils.js";
 
@@ -39,8 +38,6 @@ export function createAnalogSynthOrb(node) {
     noiseGain: new Tone.Gain(p.noiseLevel ?? 0),
     filter: new Tone.Filter(p.filterCutoff, p.filterType),
     ampEnvControl: new Tone.Gain(0),
-    // Start with the main gain closed so no audio slips through
-    // before the node's envelope opens it.
     mainGain: new Tone.Gain(0),
     reverbSendGain: new Tone.Gain(p.reverbSend),
     delaySendGain: new Tone.Gain(p.delaySend),
@@ -61,15 +58,10 @@ export function createAnalogSynthOrb(node) {
   audioNodes.filter.Q.value = p.filterResonance;
   audioNodes.filter.connect(audioNodes.ampEnvControl);
 
-  // For sound nodes using this engine the envelope is handled
-  // on the main gain node, so keep the intermediate gain open
-  // to let audio through by default.
   audioNodes.ampEnvControl.gain.value = 1.0;
   audioNodes.ampEnvControl.connect(audioNodes.mainGain);
 
 
-  // Start with the main gain closed so the oscillator is silent
-  // until a pulse triggers the envelope on this node.
   audioNodes.mainGain.gain.value = 0.0;
   audioNodes.reverbSendGain.gain.value = p.reverbSend;
   audioNodes.delaySendGain.gain.value = p.delaySend;
@@ -93,7 +85,6 @@ export function createAnalogSynthOrb(node) {
     audioNodes.crushSendGain.connect(globalThis.crushEffectInput);
   }
 
-  // Prepare orbitone oscillators if enabled on this node
   audioNodes.orbitoneOscillators = [];
   audioNodes.orbitoneOsc1Gains = [];
   audioNodes.orbitoneOsc2s = [];
