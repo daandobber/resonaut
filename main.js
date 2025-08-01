@@ -581,26 +581,48 @@ function startWithMode(mode) {
   }
 }
 
+function setDisabled(el, state) {
+  if (el) el.disabled = state;
+}
+
+function setDisplay(el, value) {
+  if (el) el.style.display = value;
+}
+
+const NON_AUDIO_NODE_TYPES = [
+  TIMELINE_GRID_TYPE,
+  GRID_SEQUENCER_TYPE,
+  SPACERADAR_TYPE,
+  CRANK_RADAR_TYPE,
+  MOTOR_ORB_TYPE,
+  CLOCKWORK_ORB_TYPE,
+  "global_key_setter",
+];
+
+function createMissingAudioNodes(nodesList) {
+  nodesList.forEach((n) => {
+    if (!n.audioNodes && !NON_AUDIO_NODE_TYPES.includes(n.type)) {
+      n.audioNodes = createAudioNodesForNode(n);
+      if (n.audioNodes) updateNodeAudioParams(n);
+    }
+  });
+}
+
 async function startApplication() {
   if (loadingIndicator) {
     samplesLoadedCount = 0;
     totalSamples = typeof SAMPLER_DEFINITIONS !== "undefined" ? SAMPLER_DEFINITIONS.length : 0;
     updateLoadingIndicator();
-    loadingIndicator.style.display = "block";
+    setDisplay(loadingIndicator, "block");
   }
-  if (startEngineBtn) startEngineBtn.disabled = true;
-  if (appMenuPlayPauseBtn) appMenuPlayPauseBtn.disabled = true;
+  setDisabled(startEngineBtn, true);
+  setDisabled(appMenuPlayPauseBtn, true);
   try {
     const context = await setupAudio();
     if (context) {
       isAudioReady = true;
       if (typeof window !== 'undefined') window.isAudioReady = true;
-      nodes.forEach((n) => {
-        if (!n.audioNodes && n.type !== TIMELINE_GRID_TYPE && n.type !== GRID_SEQUENCER_TYPE && n.type !== SPACERADAR_TYPE && n.type !== CRANK_RADAR_TYPE && n.type !== MOTOR_ORB_TYPE && n.type !== CLOCKWORK_ORB_TYPE && n.type !== "global_key_setter") {
-          n.audioNodes = createAudioNodesForNode(n);
-          if (n.audioNodes) updateNodeAudioParams(n);
-        }
-      });
+      createMissingAudioNodes(nodes);
       updateMixerGUI();
       updateScaleAndTransposeUI();
       identifyAndRouteAllGroups();
@@ -616,24 +638,24 @@ async function startApplication() {
       if (isAudioReady && !isPlaying) {
         togglePlayPause();
       }
-      if (appMenuPlayPauseBtn) appMenuPlayPauseBtn.disabled = false;
+      setDisabled(appMenuPlayPauseBtn, false);
     } else {
       if (startMessage) {
         startMessage.textContent = "Error loading audio.";
-        startMessage.style.display = "block";
+        setDisplay(startMessage, "block");
       }
     }
   } catch (err) {
     console.error('[Audio] setupAudio error:', err);
     if (startMessage) {
       startMessage.textContent = "Error loading audio.";
-      startMessage.style.display = "block";
+      setDisplay(startMessage, "block");
     }
-    if (appMenuPlayPauseBtn) appMenuPlayPauseBtn.disabled = false;
+    setDisabled(appMenuPlayPauseBtn, false);
   } finally {
     if (loadingIndicator) hideLoadingIndicator();
-    if (startEngineBtn) startEngineBtn.disabled = false;
-    if (appMenuPlayPauseBtn) appMenuPlayPauseBtn.disabled = !isAudioReady;
+    setDisabled(startEngineBtn, false);
+    setDisabled(appMenuPlayPauseBtn, !isAudioReady);
   }
 }
 
