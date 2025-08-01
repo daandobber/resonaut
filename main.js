@@ -571,7 +571,6 @@ let tapeDisplayStartTime = 0;
 let tapeDisplayEndTime = configuredTapeLoopDurationSeconds;
 
 function startWithMode(mode) {
-  console.log('[App] startWithMode', mode);
   userHasInteracted = true;
   if (startMessage) startMessage.style.display = "none";
   if (mode === "pro") {
@@ -583,7 +582,6 @@ function startWithMode(mode) {
 }
 
 async function startApplication() {
-  console.log('[App] startApplication invoked');
   if (loadingIndicator) {
     samplesLoadedCount = 0;
     totalSamples = typeof SAMPLER_DEFINITIONS !== "undefined" ? SAMPLER_DEFINITIONS.length : 0;
@@ -595,7 +593,6 @@ async function startApplication() {
   try {
     const context = await setupAudio();
     if (context) {
-      console.log('[Audio] context state after setup:', context.state);
       isAudioReady = true;
       if (typeof window !== 'undefined') window.isAudioReady = true;
       nodes.forEach((n) => {
@@ -637,7 +634,6 @@ async function startApplication() {
     if (loadingIndicator) hideLoadingIndicator();
     if (startEngineBtn) startEngineBtn.disabled = false;
     if (appMenuPlayPauseBtn) appMenuPlayPauseBtn.disabled = !isAudioReady;
-    console.log('[App] startApplication completed');
   }
 }
 
@@ -827,57 +823,55 @@ let lastBrushNode = null;
 let userDefinedGroups = [];
 let userGroupIdCounter = 0;
 function makeUserDefinedGroup() {
-    if (!isAudioReady || !audioContext) {
-        alert("Audio context not ready.");
-        return;
-    }
+  if (!isAudioReady || !audioContext) {
+      alert("Audio context not ready.");
+      return;
+  }
 
-    const selectedNodeIds = Array.from(selectedElements)
-        .filter(el => el.type === 'node')
-        .map(el => el.id);
+  const selectedNodeIds = Array.from(selectedElements)
+      .filter(el => el.type === 'node')
+      .map(el => el.id);
 
-    if (selectedNodeIds.length === 0) {
-        alert("Select some nodes to group first.");
-        return;
-    }
+  if (selectedNodeIds.length === 0) {
+      alert("Select some nodes to group first.");
+      return;
+  }
 
-    userDefinedGroups.forEach(group => {
-        selectedNodeIds.forEach(nodeId => {
-            group.nodeIds.delete(nodeId);
-        });
-    });
-    userDefinedGroups = userDefinedGroups.filter(group => group.nodeIds.size > 0);
+  userDefinedGroups.forEach(group => {
+      selectedNodeIds.forEach(nodeId => {
+          group.nodeIds.delete(nodeId);
+      });
+  });
+  userDefinedGroups = userDefinedGroups.filter(group => group.nodeIds.size > 0);
 
-    const newGroupId = `userGroup_${userGroupIdCounter++}`;
-    const newMainGroupGainNode = audioContext.createGain();
-    newMainGroupGainNode.gain.value = 1.0; 
+  const newGroupId = `userGroup_${userGroupIdCounter++}`;
+  const newMainGroupGainNode = audioContext.createGain();
+  newMainGroupGainNode.gain.value = 1.0;
 
-    
-    const groupDelaySendGain = audioContext.createGain();
-    groupDelaySendGain.gain.value = DEFAULT_DELAY_SEND; 
 
-    const groupReverbSendGain = audioContext.createGain();
-    groupReverbSendGain.gain.value = DEFAULT_REVERB_SEND; 
-    
-    const newNodeIdSet = new Set(selectedNodeIds);
-    userDefinedGroups.push({
-        id: newGroupId,
-        nodeIds: newNodeIdSet,
-        gainNode: newMainGroupGainNode, 
-        delaySendGainNode: groupDelaySendGain,
-        reverbSendGainNode: groupReverbSendGain,
-        
-        volume: 1.0, 
-        delaySendLevel: DEFAULT_DELAY_SEND,
-        reverbSendLevel: DEFAULT_REVERB_SEND,
-        userDefined: true
-    });
+  const groupDelaySendGain = audioContext.createGain();
+  groupDelaySendGain.gain.value = DEFAULT_DELAY_SEND;
 
-    console.log(`Created user-defined group ${newGroupId} with nodes:`, selectedNodeIds);
+  const groupReverbSendGain = audioContext.createGain();
+  groupReverbSendGain.gain.value = DEFAULT_REVERB_SEND;
 
-    identifyAndRouteAllGroups();
-    updateMixerGUI();
-    saveState();
+  const newNodeIdSet = new Set(selectedNodeIds);
+  userDefinedGroups.push({
+      id: newGroupId,
+      nodeIds: newNodeIdSet,
+      gainNode: newMainGroupGainNode, 
+      delaySendGainNode: groupDelaySendGain,
+      reverbSendGainNode: groupReverbSendGain,
+      
+      volume: 1.0, 
+      delaySendLevel: DEFAULT_DELAY_SEND,
+      reverbSendLevel: DEFAULT_REVERB_SEND,
+      userDefined: true
+  });
+
+  identifyAndRouteAllGroups();
+  updateMixerGUI();
+  saveState();
 }
 
 let currentScaleKey = "major";
@@ -1381,7 +1375,6 @@ function updateLoadingIndicator() {
     totalSamples > 0
       ? Math.round((samplesLoadedCount / totalSamples) * 100)
       : 100;
-  console.log(`[Loading] ${samplesLoadedCount}/${totalSamples} samples (${percent}%)`);
   loadingIndicator.textContent = `Loading Samples... ${percent}%`;
   loadingIndicator.style.display = "block";
   loadingIndicator.style.opacity = "1";
@@ -1398,14 +1391,8 @@ function hideLoadingIndicator() {
 async function loadSample(url, sampleName) {
   updateLoadingIndicator();
   try {
-    console.log(`[Sampler Load] Start loading ${sampleName} from ${url}`);
     const fetchStart = performance.now();
     const response = await fetch(url);
-    console.log(
-      `[Sampler Load] Fetching ${url} - Status: ${response.status} in ${(
-        performance.now() - fetchStart
-      ).toFixed(1)}ms`
-    );
     if (!response.ok)
       throw new Error(`HTTP error! status: ${response.status} for ${url}`);
     const arrayBuffer = await response.arrayBuffer();
@@ -1416,11 +1403,6 @@ async function loadSample(url, sampleName) {
     ) {
       const decodeStart = performance.now();
       decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      console.log(
-        `[Sampler Load] decodeAudioData() for ${sampleName} took ${(
-          performance.now() - decodeStart
-        ).toFixed(1)}ms`
-      );
     } else {
       const decodeStart = performance.now();
       decodedBuffer = await new Promise((resolve, reject) => {
@@ -1438,17 +1420,9 @@ async function loadSample(url, sampleName) {
           },
         );
       });
-      console.log(
-        `[Sampler Load] decodeAudioData(callback) for ${sampleName} took ${(
-          performance.now() - decodeStart
-        ).toFixed(1)}ms`
-      );
     }
     samplesLoadedCount++;
     updateLoadingIndicator();
-    console.log(
-      `[Sampler Load] Successfully decoded ${sampleName}, buffer length: ${decodedBuffer?.length}`,
-    );
     return {
       name: sampleName,
       buffer: decodedBuffer,
@@ -1496,70 +1470,38 @@ export async function setupAudio() {
   if (audioContext) return audioContext;
   try {
     audioContext = window.audioContext || (window.audioContext = new (window.AudioContext || window.webkitAudioContext)());
-    audioContext.onstatechange = () => {
-      console.log('[Audio] statechange event:', audioContext.state);
-    };
+    audioContext.onstatechange = () => {};
     const originalResume = audioContext.resume.bind(audioContext);
     audioContext.resume = (...args) => {
-      console.log('[Audio] resume() called', new Error().stack);
       const start = performance.now();
       return originalResume(...args).then((res) => {
-        console.log(
-          `[Audio] resume() resolved in ${(
-            performance.now() - start
-          ).toFixed(1)}ms state:`,
-          audioContext.state,
-        );
         return res;
       });
     };
     const originalSuspend = audioContext.suspend.bind(audioContext);
     audioContext.suspend = (...args) => {
-      console.log('[Audio] suspend() called', new Error().stack);
       const start = performance.now();
       return originalSuspend(...args).then((res) => {
-        console.log(
-          `[Audio] suspend() resolved in ${(
-            performance.now() - start
-          ).toFixed(1)}ms state:`,
-          audioContext.state,
-        );
         return res;
       });
     };
     try {
-      console.log('[Audio] Attempting initial AudioContext resume');
       await audioContext.resume();
       await Tone.start();
-      // Ensure Tone.js uses a Tone.Context wrapping our AudioContext
-      // Otherwise Tone nodes may fail because they expect helper methods
-      // like getConstant which are not present on a native AudioContext
       Tone.setContext(new Tone.Context({ context: audioContext }));
-      console.log('[Audio] AudioContext state after initial resume:', audioContext.state);
     } catch (resumeErr) {
       console.error('AudioContext initial resume failed', resumeErr);
     }
     const resumeEvents = ['click', 'pointerdown', 'touchstart'];
     const resumeAudioContext = (event) => {
-      console.log(
-        '[Audio] resumeAudioContext event:',
-        event.type,
-        'state:',
-        audioContext.state,
-        'target:',
-        event.target && (event.target.id || event.target.tagName),
-        'pointerType:' + (event.pointerType || 'n/a'),
-        'trusted:' + event.isTrusted
-      );
       const removeListeners = () => {
         resumeEvents.forEach((evt) => window.removeEventListener(evt, resumeAudioContext));
       };
       if (audioContext.state === 'suspended') {
         audioContext.resume()
           .then(() => {
-            console.log('[Audio] AudioContext resumed via', event.type, 'state now:', audioContext.state);
-            if (audioContext.state === 'running') removeListeners();
-          })
+          if (audioContext.state === 'running') removeListeners();
+        })
           .catch((err) => {
             console.error('AudioContext resume failed', err);
           });
@@ -1570,342 +1512,339 @@ export async function setupAudio() {
     resumeEvents.forEach((evt) => {
       window.addEventListener(evt, resumeAudioContext);
     });
-      originalMasterGainDestination = audioContext.destination;
+    originalMasterGainDestination = audioContext.destination;
 
-      masterGain = audioContext.createGain();
-      window.masterGain = masterGain;
-      masterGain.gain.value = 0.8;
-      masterGain._originalGainBeforeMute = masterGain.gain.value;
+    masterGain = audioContext.createGain();
+    window.masterGain = masterGain;
+    masterGain.gain.value = 0.8;
+    masterGain._originalGainBeforeMute = masterGain.gain.value;
 
-      masterPannerNode = audioContext.createStereoPanner(); 
-      masterPannerNode.pan.value = 0; 
-       
-      masterAnalyser = audioContext.createAnalyser();
-      masterAnalyser.fftSize = 256;
-      masterAnalyser.smoothingTimeConstant = 0.7;
+    masterPannerNode = audioContext.createStereoPanner();
+    masterPannerNode.pan.value = 0;
+
+    masterAnalyser = audioContext.createAnalyser();
+    masterAnalyser.fftSize = 256;
+    masterAnalyser.smoothingTimeConstant = 0.7;
 
 
-      masterGain.connect(masterPannerNode);
-      mrfaInput = audioContext.createGain();
-      mrfaOutput = audioContext.createGain();
-      mrfaWetGain = audioContext.createGain();
-      mrfaDryGain = audioContext.createGain();
-      mrfaDirectGain = audioContext.createGain();
-      mrfaWetGain.gain.value = 0;
-      mrfaDryGain.gain.value = 1;
-      mrfaDirectGain.gain.value = 1.0;
-      masterPannerNode.connect(mrfaInput);
-      mrfaInput.connect(mrfaDryGain);
-      mrfaWetGain.connect(mrfaOutput);
-      mrfaDryGain.connect(mrfaOutput);
-      mrfaOutput.connect(mrfaDirectGain);
-      mrfaDirectGain.connect(masterAnalyser);
-      masterAnalyser.connect(originalMasterGainDestination);
+    masterGain.connect(masterPannerNode);
+    mrfaInput = audioContext.createGain();
+    mrfaOutput = audioContext.createGain();
+    mrfaWetGain = audioContext.createGain();
+    mrfaDryGain = audioContext.createGain();
+    mrfaDirectGain = audioContext.createGain();
+    mrfaWetGain.gain.value = 0;
+    mrfaDryGain.gain.value = 1;
+    mrfaDirectGain.gain.value = 1.0;
+    masterPannerNode.connect(mrfaInput);
+    mrfaInput.connect(mrfaDryGain);
+    mrfaWetGain.connect(mrfaOutput);
+    mrfaDryGain.connect(mrfaOutput);
+    mrfaOutput.connect(mrfaDirectGain);
+    mrfaDirectGain.connect(masterAnalyser);
+    masterAnalyser.connect(originalMasterGainDestination);
 
-      for (let i = 0; i < NUM_TAPE_TRACKS; i++) {
-        const gain = audioContext.createGain();
-        gain.gain.value = 1.0;
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.7;
-        gain.connect(analyser);
-        analyser.connect(masterGain);
-        tapeTrackGainNodes[i] = gain;
-        tapeTrackAnalyserNodes[i] = analyser;
+    for (let i = 0; i < NUM_TAPE_TRACKS; i++) {
+      const gain = audioContext.createGain();
+      gain.gain.value = 1.0;
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.7;
+      gain.connect(analyser);
+      analyser.connect(masterGain);
+      tapeTrackGainNodes[i] = gain;
+      tapeTrackAnalyserNodes[i] = analyser;
+    }
+
+    if (window.radioGainNode && window.radioAnalyserNode) {
+      try { window.radioGainNode.disconnect(); } catch (e) {}
+      try { window.radioAnalyserNode.disconnect(); } catch (e) {}
+
+      radioPannerNode = audioContext.createStereoPanner();
+      radioPannerNode.pan.value = 0;
+
+      radioDelaySendGainNode = audioContext.createGain();
+      radioDelaySendGainNode.gain.value = DEFAULT_DELAY_SEND;
+
+      radioReverbSendGainNode = audioContext.createGain();
+      radioReverbSendGainNode.gain.value = DEFAULT_REVERB_SEND;
+
+      window.radioGainNode.connect(radioPannerNode);
+      radioPannerNode.connect(window.radioAnalyserNode);
+      window.radioAnalyserNode.connect(masterGain);
+
+      radioGainNode = window.radioGainNode;
+      radioAnalyserNode = window.radioAnalyserNode;
+    }
+
+    portalGroupGain = audioContext.createGain();
+    portalGroupGain.gain.value = 0.7;
+    portalGroupGain.connect(masterGain);
+
+    originalNebulaGroupGain = audioContext.createGain();
+    originalNebulaGroupGain.gain.value = 0.8;
+    originalNebulaGroupGain.connect(masterGain);
+
+    reverbPreDelayNode = audioContext.createDelay(1.0);
+    reverbPreDelayNode.delayTime.value = 0.02;
+    reverbNode = audioContext.createConvolver();
+    reverbLowPass = audioContext.createBiquadFilter();
+    reverbLowPass.type = "lowpass";
+    reverbLowPass.frequency.value = DEFAULT_REVERB_DAMP_FREQ;
+    reverbHighPass = audioContext.createBiquadFilter();
+    reverbHighPass.type = "highpass";
+    reverbHighPass.frequency.value = 100;
+    reverbWetGain = audioContext.createGain();
+
+    reverbWetGain.gain.value = 0.9;
+    reverbWetGain._originalGainBeforeMute = reverbWetGain.gain.value;
+    reverbWetGain.isMuted = false;
+    reverbWetGain.isSoloed = false;
+
+    reverbReturnAnalyser = audioContext.createAnalyser();
+    reverbReturnAnalyser.fftSize = 256;
+    reverbReturnAnalyser.smoothingTimeConstant = 0.7;
+
+    reverbPreDelayNode.connect(reverbNode);
+    reverbNode.connect(reverbHighPass);
+    reverbHighPass.connect(reverbLowPass);
+    reverbLowPass.connect(reverbWetGain);
+    reverbWetGain.connect(reverbReturnAnalyser);
+    reverbReturnAnalyser.connect(originalMasterGainDestination);
+
+    delayNode = audioContext.createDelay(1.0);
+    delayFeedbackGain = audioContext.createGain();
+    masterDelaySendGain = audioContext.createGain();
+    masterDelaySendGain.gain.value = 0.3;
+    delayNode.delayTime.value = 0.25;
+    delayFeedbackGain.gain.value = 0.4;
+
+    delayReturnGain = audioContext.createGain();
+    delayReturnGain.gain.value = 0.5;
+    delayReturnGain._originalGainBeforeMute = delayReturnGain.gain.value;
+    delayReturnGain.isMuted = false;
+    delayReturnGain.isSoloed = false;
+
+    delayReturnAnalyser = audioContext.createAnalyser();
+    delayReturnAnalyser.fftSize = 256;
+    delayReturnAnalyser.smoothingTimeConstant = 0.7;
+
+    masterDelaySendGain.connect(delayNode);
+    delayNode.connect(delayFeedbackGain);
+    delayFeedbackGain.connect(delayNode);
+    delayNode.connect(delayReturnGain);
+    delayReturnGain.connect(delayReturnAnalyser);
+    delayReturnAnalyser.connect(originalMasterGainDestination);
+
+    isDelayReady = true;
+
+    if (window.radioGainNode) {
+      try { window.radioGainNode.disconnect(radioDelaySendGainNode); } catch(e) {}
+      try { window.radioGainNode.disconnect(radioReverbSendGainNode); } catch(e) {}
+      if (radioDelaySendGainNode && masterDelaySendGain) {
+        window.radioGainNode.connect(radioDelaySendGainNode);
+        radioDelaySendGainNode.connect(masterDelaySendGain);
       }
-
-      if (window.radioGainNode && window.radioAnalyserNode) {
-        try { window.radioGainNode.disconnect(); } catch (e) {}
-        try { window.radioAnalyserNode.disconnect(); } catch (e) {}
-
-        radioPannerNode = audioContext.createStereoPanner();
-        radioPannerNode.pan.value = 0;
-
-        radioDelaySendGainNode = audioContext.createGain();
-        radioDelaySendGainNode.gain.value = DEFAULT_DELAY_SEND;
-
-        radioReverbSendGainNode = audioContext.createGain();
-        radioReverbSendGainNode.gain.value = DEFAULT_REVERB_SEND;
-
-        window.radioGainNode.connect(radioPannerNode);
-        radioPannerNode.connect(window.radioAnalyserNode);
-        window.radioAnalyserNode.connect(masterGain);
-
-        radioGainNode = window.radioGainNode;
-        radioAnalyserNode = window.radioAnalyserNode;
+      if (radioReverbSendGainNode && reverbPreDelayNode) {
+        window.radioGainNode.connect(radioReverbSendGainNode);
+        radioReverbSendGainNode.connect(reverbPreDelayNode);
       }
+    }
 
-      portalGroupGain = audioContext.createGain();
-      portalGroupGain.gain.value = 0.7;
-      portalGroupGain.connect(masterGain); 
+    mistEffectInput = audioContext.createGain();
+    mistDelay = audioContext.createDelay();
+    mistDelay.delayTime.value = MIST_DELAY_TIME;
+    mistFeedback = audioContext.createGain();
+    mistFeedback.gain.value = MIST_FEEDBACK_GAIN;
+    mistFilter = audioContext.createBiquadFilter();
+    mistFilter.type = "bandpass";
+    mistFilter.frequency.value = MIST_RESON_FREQ;
+    mistFilter.Q.value = 4;
+    mistLowpass = audioContext.createBiquadFilter();
+    mistLowpass.type = "lowpass";
+    mistLowpass.frequency.value = MIST_LOW_PASS_FREQ;
+    mistWetGain = audioContext.createGain();
+    mistWetGain.gain.value = MIST_WET_LEVEL;
+    mistPanner = audioContext.createStereoPanner();
 
-      originalNebulaGroupGain = audioContext.createGain();
-      originalNebulaGroupGain.gain.value = 0.8;
-      originalNebulaGroupGain.connect(masterGain); 
+    mistEffectInput.connect(mistDelay);
+    mistDelay.connect(mistFeedback);
+    mistFeedback.connect(mistDelay);
+    mistDelay.connect(mistFilter);
+    mistFilter.connect(mistLowpass);
+    mistLowpass.connect(mistPanner);
+    mistPanner.connect(mistWetGain);
+    mistWetGain.connect(masterGain);
 
-      reverbPreDelayNode = audioContext.createDelay(1.0);
-      reverbPreDelayNode.delayTime.value = 0.02;
-      reverbNode = audioContext.createConvolver();
-      reverbLowPass = audioContext.createBiquadFilter();
-      reverbLowPass.type = "lowpass";
-      reverbLowPass.frequency.value = DEFAULT_REVERB_DAMP_FREQ;
-      reverbHighPass = audioContext.createBiquadFilter();
-      reverbHighPass.type = "highpass";
-      reverbHighPass.frequency.value = 100;
-      reverbWetGain = audioContext.createGain();
-      
-      reverbWetGain.gain.value = 0.9;
-      reverbWetGain._originalGainBeforeMute = reverbWetGain.gain.value; 
-      reverbWetGain.isMuted = false; 
-      reverbWetGain.isSoloed = false; 
-      
-      reverbReturnAnalyser = audioContext.createAnalyser(); 
-      reverbReturnAnalyser.fftSize = 256;
-      reverbReturnAnalyser.smoothingTimeConstant = 0.7;
+    mistPanLFO = audioContext.createOscillator();
+    mistPanLFO.frequency.value = MIST_PAN_LFO_RATE;
+    mistPanLFOGain = audioContext.createGain();
+    mistPanLFOGain.gain.value = MIST_PAN_LFO_DEPTH;
+    mistPanLFO.connect(mistPanLFOGain);
+    mistPanLFOGain.connect(mistPanner.pan);
+    mistPanLFO.start();
 
-      reverbPreDelayNode.connect(reverbNode);
-      reverbNode.connect(reverbHighPass);
-      reverbHighPass.connect(reverbLowPass);
-      reverbLowPass.connect(reverbWetGain);
-      reverbWetGain.connect(reverbReturnAnalyser); 
-      reverbReturnAnalyser.connect(originalMasterGainDestination); 
-    
-      delayNode = audioContext.createDelay(1.0); 
-      delayFeedbackGain = audioContext.createGain();
-      masterDelaySendGain = audioContext.createGain(); 
-      masterDelaySendGain.gain.value = 0.3;
-      delayNode.delayTime.value = 0.25;
-      delayFeedbackGain.gain.value = 0.4;
+    mistDelayLFO = audioContext.createOscillator();
+    mistDelayLFO.frequency.value = MIST_DELAY_LFO_RATE;
+    mistDelayLFOGain = audioContext.createGain();
+    mistDelayLFOGain.gain.value = MIST_DELAY_LFO_DEPTH;
+    mistDelayLFO.connect(mistDelayLFOGain);
+    mistDelayLFOGain.connect(mistDelay.delayTime);
+    mistDelayLFO.start();
 
-      delayReturnGain = audioContext.createGain();
-      delayReturnGain.gain.value = 0.5; 
-      delayReturnGain._originalGainBeforeMute = delayReturnGain.gain.value; 
-      delayReturnGain.isMuted = false; 
-      delayReturnGain.isSoloed = false; 
-      
-      delayReturnAnalyser = audioContext.createAnalyser(); 
-      delayReturnAnalyser.fftSize = 256;
-      delayReturnAnalyser.smoothingTimeConstant = 0.7;
+    crushEffectInput = audioContext.createGain();
+    crushBitCrusher = createBitCrusherNode(CRUSH_BIT_DEPTH, CRUSH_REDUCTION);
+    crushCombDelay = audioContext.createDelay();
+    crushCombDelay.delayTime.value = CRUSH_COMB_DELAY;
+    crushCombFeedback = audioContext.createGain();
+    crushCombFeedback.gain.value = CRUSH_COMB_FEEDBACK;
+    crushWetGain = audioContext.createGain();
+    crushWetGain.gain.value = CRUSH_WET_LEVEL;
 
-      masterDelaySendGain.connect(delayNode); 
-      delayNode.connect(delayFeedbackGain);
-      delayFeedbackGain.connect(delayNode);   
-      delayNode.connect(delayReturnGain); 
-      delayReturnGain.connect(delayReturnAnalyser);
-      delayReturnAnalyser.connect(originalMasterGainDestination);
+    crushEffectInput.connect(crushBitCrusher);
+    crushBitCrusher.connect(crushCombDelay);
+    crushCombDelay.connect(crushCombFeedback);
+    crushCombFeedback.connect(crushCombDelay);
+    crushCombDelay.connect(crushWetGain);
+    crushWetGain.connect(masterGain);
 
-      isDelayReady = true;
+    mrfaFilters = [];
+    mrfaGains = [];
+    MRFA_BAND_FREQS.forEach((freq) => {
+      const bp = audioContext.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = freq;
+      bp.Q.value = MRFA_Q;
+      const g = audioContext.createGain();
+      g.gain.value = MRFA_DEFAULT_GAIN;
+      mrfaInput.connect(bp);
+      bp.connect(g);
+      g.connect(mrfaWetGain);
+      mrfaFilters.push(bp);
+      mrfaGains.push(g);
+    });
+    perfResoInput = audioContext.createGain();
+    perfResoInput.gain.value = perfResoEnabled ? 1.0 : 0.0;
+    perfResoDelay = audioContext.createDelay();
+    perfResoDelay.delayTime.value = PERF_RESO_DELAY_TIME;
+    perfResoDelayLFO = audioContext.createOscillator();
+    perfResoDelayLFO.frequency.value = 0.15;
+    perfResoDelayLFOGain = audioContext.createGain();
+    perfResoDelayLFOGain.gain.value = 0.003;
+    perfResoDelayLFO.connect(perfResoDelayLFOGain);
+    perfResoDelayLFOGain.connect(perfResoDelay.delayTime);
+    perfResoDelayLFO.start();
+    perfResoFeedback = audioContext.createGain();
+    perfResoFeedback.gain.value = PERF_RESO_FEEDBACK;
+    perfResoFilter = audioContext.createBiquadFilter();
+    perfResoFilter.type = "bandpass";
+    perfResoFilter.frequency.value = PERF_RESO_FREQ;
+    perfResoFilter.Q.value = PERF_RESO_Q;
+    perfResoGain = audioContext.createGain();
+    perfResoGain.gain.value = perfResoEnabled ? PERF_RESO_WET : 0.0;
+    mrfaOutput.connect(perfResoInput);
+    perfResoInput.connect(perfResoDelay);
+    perfResoDelay.connect(perfResoFeedback);
+    perfResoFeedback.connect(perfResoDelay);
+    perfResoDelay.connect(perfResoFilter);
+    perfResoFilter.connect(perfResoGain);
+    perfResoGain.connect(masterAnalyser);
 
-      if (window.radioGainNode) {
-        try { window.radioGainNode.disconnect(radioDelaySendGainNode); } catch(e) {}
-        try { window.radioGainNode.disconnect(radioReverbSendGainNode); } catch(e) {}
-        if (radioDelaySendGainNode && masterDelaySendGain) {
-          window.radioGainNode.connect(radioDelaySendGainNode);
-          radioDelaySendGainNode.connect(masterDelaySendGain);
+    perfReverbInput = audioContext.createGain();
+    perfReverbInput.gain.value = perfReverbEnabled ? 1.0 : 0.0;
+    perfReverbWetGain = audioContext.createGain();
+    perfReverbWetGain.gain.value = perfReverbEnabled ? PERF_REVERB_WET : 0.0;
+    perfReverbLowPass = audioContext.createBiquadFilter();
+    perfReverbLowPass.type = "lowpass";
+    perfReverbLowPass.frequency.value = DEFAULT_REVERB_DAMP_FREQ;
+
+    const perfReverbMix = audioContext.createGain();
+    PERF_REVERB_BASE_TIMES.forEach((dt) => {
+      const d = audioContext.createDelay();
+      d.delayTime.value = dt;
+      const fb = audioContext.createGain();
+      fb.gain.value = PERF_REVERB_DECAY;
+      const lfo = audioContext.createOscillator();
+      lfo.frequency.value = 0.1 + Math.random() * 0.2;
+      const lfoGain = audioContext.createGain();
+      lfoGain.gain.value = 0.002;
+      lfo.connect(lfoGain);
+      lfoGain.connect(d.delayTime);
+      lfo.start();
+      perfReverbInput.connect(d);
+      d.connect(fb);
+      fb.connect(d);
+      d.connect(perfReverbMix);
+      perfReverbDelayNodes.push(d);
+      perfReverbFeedbackGains.push(fb);
+      perfReverbLFOs.push(lfo);
+      perfReverbLFOGains.push(lfoGain);
+    });
+    perfReverbMix.connect(perfReverbLowPass);
+    perfReverbLowPass.connect(perfReverbWetGain);
+    perfReverbWetGain.connect(reverbReturnAnalyser);
+    perfResoGain.connect(perfReverbInput);
+    mrfaOutput.connect(perfReverbInput);
+
+    try {
+        const irToLoad = currentIRUrl || (typeof impulseResponses !== 'undefined' && impulseResponses.length > 0 ? impulseResponses[0].url : REVERB_IR_URL);
+        const r = await fetch(irToLoad);
+        if (!r.ok) throw new Error(`HTTP error! status: ${r.status} for ${irToLoad}`);
+        const ab = await r.arrayBuffer();
+        if (audioContext.decodeAudioData.length === 1) { 
+            await new Promise((res, rej) => {
+                audioContext.decodeAudioData(ab, (b) => { reverbNode.buffer = b; isReverbReady = true; res(); }, 
+                                            (e) => { isReverbReady = false; console.error(`Failed to decode reverb IR (callback): ${irToLoad}`, e); rej(e); });
+            });
+        } else { 
+            const b = await audioContext.decodeAudioData(ab);
+            reverbNode.buffer = b; isReverbReady = true;
         }
-        if (radioReverbSendGainNode && reverbPreDelayNode) {
-          window.radioGainNode.connect(radioReverbSendGainNode);
-          radioReverbSendGainNode.connect(reverbPreDelayNode);
-        }
-      }
+    } catch (e) {
+        console.error(`Failed to load or process reverb IR: ${currentIRUrl || (typeof impulseResponses !== 'undefined' && impulseResponses.length > 0 ? impulseResponses[0].url : REVERB_IR_URL)}`, e);
+        isReverbReady = false;
+    }
 
-      mistEffectInput = audioContext.createGain();
-      mistDelay = audioContext.createDelay();
-      mistDelay.delayTime.value = MIST_DELAY_TIME;
-      mistFeedback = audioContext.createGain();
-      mistFeedback.gain.value = MIST_FEEDBACK_GAIN;
-      mistFilter = audioContext.createBiquadFilter();
-      mistFilter.type = "bandpass";
-      mistFilter.frequency.value = MIST_RESON_FREQ;
-      mistFilter.Q.value = 4;
-      mistLowpass = audioContext.createBiquadFilter();
-      mistLowpass.type = "lowpass";
-      mistLowpass.frequency.value = MIST_LOW_PASS_FREQ;
-      mistWetGain = audioContext.createGain();
-      mistWetGain.gain.value = MIST_WET_LEVEL;
-      mistPanner = audioContext.createStereoPanner();
+    samplesLoadedCount = 0;
+    totalSamples = typeof SAMPLER_DEFINITIONS !== "undefined" ? SAMPLER_DEFINITIONS.length : 0;
+    updateLoadingIndicator();
+    const sampleLoadPromises = typeof SAMPLER_DEFINITIONS !== "undefined" ? SAMPLER_DEFINITIONS.map(sampler => loadSample(sampler.url, sampler.id)) : [];
+    const loadResults = await Promise.all(sampleLoadPromises);
+    if (typeof SAMPLER_DEFINITIONS !== "undefined") {
+        loadResults.forEach(result => {
+            const definition = SAMPLER_DEFINITIONS.find(s => s.id === result.name);
+            if (definition) {
+                if (result.success) {
+                    definition.buffer = result.buffer;
+                    definition.reversedBuffer = null;
+                    definition.isLoaded = true;
+                    definition.loadFailed = false;
+                } else {
+                    definition.buffer = null;
+                    definition.reversedBuffer = null;
+                    definition.isLoaded = false;
+                    definition.loadFailed = true;
+                }
+            }
+        });
+    }
+    const successes = loadResults.filter(r => r.success).length;
+    updateLoadingIndicator();
+    isAudioReady = true;
+    if (typeof window !== 'undefined') window.isAudioReady = true;
+    resetSideToolbars();
+    if (scaleSelectTransport) changeScale(scaleSelectTransport.value, true);
+    updateSyncUI();
+    updateGroupControlsUI();
+    updateInfoToggleUI();
+    setupMIDI();
 
-      mistEffectInput.connect(mistDelay);
-      mistDelay.connect(mistFeedback);
-      mistFeedback.connect(mistDelay);
-      mistDelay.connect(mistFilter);
-      mistFilter.connect(mistLowpass);
-      mistLowpass.connect(mistPanner);
-      mistPanner.connect(mistWetGain);
-      mistWetGain.connect(masterGain);
+    if (historyStack.length === 0) saveState();
+    identifyAndRouteAllGroups();
+    drawPianoRoll();
+    initializeGlobalEffectSliders();
 
-      mistPanLFO = audioContext.createOscillator();
-      mistPanLFO.frequency.value = MIST_PAN_LFO_RATE;
-      mistPanLFOGain = audioContext.createGain();
-      mistPanLFOGain.gain.value = MIST_PAN_LFO_DEPTH;
-      mistPanLFO.connect(mistPanLFOGain);
-      mistPanLFOGain.connect(mistPanner.pan);
-      mistPanLFO.start();
-
-      mistDelayLFO = audioContext.createOscillator();
-      mistDelayLFO.frequency.value = MIST_DELAY_LFO_RATE;
-      mistDelayLFOGain = audioContext.createGain();
-      mistDelayLFOGain.gain.value = MIST_DELAY_LFO_DEPTH;
-      mistDelayLFO.connect(mistDelayLFOGain);
-      mistDelayLFOGain.connect(mistDelay.delayTime);
-      mistDelayLFO.start();
-
-      crushEffectInput = audioContext.createGain();
-      crushBitCrusher = createBitCrusherNode(CRUSH_BIT_DEPTH, CRUSH_REDUCTION);
-      crushCombDelay = audioContext.createDelay();
-      crushCombDelay.delayTime.value = CRUSH_COMB_DELAY;
-      crushCombFeedback = audioContext.createGain();
-      crushCombFeedback.gain.value = CRUSH_COMB_FEEDBACK;
-      crushWetGain = audioContext.createGain();
-      crushWetGain.gain.value = CRUSH_WET_LEVEL;
-
-      crushEffectInput.connect(crushBitCrusher);
-      crushBitCrusher.connect(crushCombDelay);
-      crushCombDelay.connect(crushCombFeedback);
-      crushCombFeedback.connect(crushCombDelay);
-      crushCombDelay.connect(crushWetGain);
-      crushWetGain.connect(masterGain);
-
-      mrfaFilters = [];
-      mrfaGains = [];
-      MRFA_BAND_FREQS.forEach((freq) => {
-        const bp = audioContext.createBiquadFilter();
-        bp.type = "bandpass";
-        bp.frequency.value = freq;
-        bp.Q.value = MRFA_Q;
-        const g = audioContext.createGain();
-        g.gain.value = MRFA_DEFAULT_GAIN;
-        mrfaInput.connect(bp);
-        bp.connect(g);
-        g.connect(mrfaWetGain);
-        mrfaFilters.push(bp);
-        mrfaGains.push(g);
-      });
-      perfResoInput = audioContext.createGain();
-      perfResoInput.gain.value = perfResoEnabled ? 1.0 : 0.0;
-      perfResoDelay = audioContext.createDelay();
-      perfResoDelay.delayTime.value = PERF_RESO_DELAY_TIME;
-      perfResoDelayLFO = audioContext.createOscillator();
-      perfResoDelayLFO.frequency.value = 0.15;
-      perfResoDelayLFOGain = audioContext.createGain();
-      perfResoDelayLFOGain.gain.value = 0.003;
-      perfResoDelayLFO.connect(perfResoDelayLFOGain);
-      perfResoDelayLFOGain.connect(perfResoDelay.delayTime);
-      perfResoDelayLFO.start();
-      perfResoFeedback = audioContext.createGain();
-      perfResoFeedback.gain.value = PERF_RESO_FEEDBACK;
-      perfResoFilter = audioContext.createBiquadFilter();
-      perfResoFilter.type = "bandpass";
-      perfResoFilter.frequency.value = PERF_RESO_FREQ;
-      perfResoFilter.Q.value = PERF_RESO_Q;
-      perfResoGain = audioContext.createGain();
-      perfResoGain.gain.value = perfResoEnabled ? PERF_RESO_WET : 0.0;
-      mrfaOutput.connect(perfResoInput);
-      perfResoInput.connect(perfResoDelay);
-      perfResoDelay.connect(perfResoFeedback);
-      perfResoFeedback.connect(perfResoDelay);
-      perfResoDelay.connect(perfResoFilter);
-      perfResoFilter.connect(perfResoGain);
-      perfResoGain.connect(masterAnalyser);
-
-      perfReverbInput = audioContext.createGain();
-      perfReverbInput.gain.value = perfReverbEnabled ? 1.0 : 0.0;
-      perfReverbWetGain = audioContext.createGain();
-      perfReverbWetGain.gain.value = perfReverbEnabled ? PERF_REVERB_WET : 0.0;
-      perfReverbLowPass = audioContext.createBiquadFilter();
-      perfReverbLowPass.type = "lowpass";
-      perfReverbLowPass.frequency.value = DEFAULT_REVERB_DAMP_FREQ;
-
-      const perfReverbMix = audioContext.createGain();
-      PERF_REVERB_BASE_TIMES.forEach((dt) => {
-        const d = audioContext.createDelay();
-        d.delayTime.value = dt;
-        const fb = audioContext.createGain();
-        fb.gain.value = PERF_REVERB_DECAY;
-        const lfo = audioContext.createOscillator();
-        lfo.frequency.value = 0.1 + Math.random() * 0.2;
-        const lfoGain = audioContext.createGain();
-        lfoGain.gain.value = 0.002;
-        lfo.connect(lfoGain);
-        lfoGain.connect(d.delayTime);
-        lfo.start();
-        perfReverbInput.connect(d);
-        d.connect(fb);
-        fb.connect(d);
-        d.connect(perfReverbMix);
-        perfReverbDelayNodes.push(d);
-        perfReverbFeedbackGains.push(fb);
-        perfReverbLFOs.push(lfo);
-        perfReverbLFOGains.push(lfoGain);
-      });
-      perfReverbMix.connect(perfReverbLowPass);
-      perfReverbLowPass.connect(perfReverbWetGain);
-      perfReverbWetGain.connect(reverbReturnAnalyser);
-      perfResoGain.connect(perfReverbInput);
-      mrfaOutput.connect(perfReverbInput);
-
-      try {
-          const irToLoad = currentIRUrl || (typeof impulseResponses !== 'undefined' && impulseResponses.length > 0 ? impulseResponses[0].url : REVERB_IR_URL);
-          const r = await fetch(irToLoad);
-          if (!r.ok) throw new Error(`HTTP error! status: ${r.status} for ${irToLoad}`);
-          const ab = await r.arrayBuffer();
-          if (audioContext.decodeAudioData.length === 1) { 
-              await new Promise((res, rej) => {
-                  audioContext.decodeAudioData(ab, (b) => { reverbNode.buffer = b; isReverbReady = true; res(); }, 
-                                              (e) => { isReverbReady = false; console.error(`Failed to decode reverb IR (callback): ${irToLoad}`, e); rej(e); });
-              });
-          } else { 
-              const b = await audioContext.decodeAudioData(ab);
-              reverbNode.buffer = b; isReverbReady = true;
-          }
-      } catch (e) {
-          console.error(`Failed to load or process reverb IR: ${currentIRUrl || (typeof impulseResponses !== 'undefined' && impulseResponses.length > 0 ? impulseResponses[0].url : REVERB_IR_URL)}`, e);
-          isReverbReady = false;
-      }
-
-      samplesLoadedCount = 0;
-      totalSamples = typeof SAMPLER_DEFINITIONS !== "undefined" ? SAMPLER_DEFINITIONS.length : 0;
-      console.log(`[SetupAudio] Starting to load ${totalSamples} samples`);
-      updateLoadingIndicator();
-      const sampleLoadPromises = typeof SAMPLER_DEFINITIONS !== "undefined" ? SAMPLER_DEFINITIONS.map(sampler => loadSample(sampler.url, sampler.id)) : [];
-      const loadResults = await Promise.all(sampleLoadPromises);
-      console.log(`[SetupAudio] Finished loading samples`);
-      if (typeof SAMPLER_DEFINITIONS !== "undefined") {
-          loadResults.forEach(result => {
-              const definition = SAMPLER_DEFINITIONS.find(s => s.id === result.name);
-              if (definition) {
-                  if (result.success) {
-                      definition.buffer = result.buffer;
-                      definition.reversedBuffer = null;
-                      definition.isLoaded = true;
-                      definition.loadFailed = false;
-                  } else {
-                      definition.buffer = null;
-                      definition.reversedBuffer = null;
-                      definition.isLoaded = false;
-                      definition.loadFailed = true;
-                  }
-              }
-          });
-      }
-      const successes = loadResults.filter(r => r.success).length;
-      console.log(`[SetupAudio] Samples loaded successfully: ${successes}/${totalSamples}`);
-      updateLoadingIndicator();
-      isAudioReady = true;
-      if (typeof window !== 'undefined') window.isAudioReady = true;
-      resetSideToolbars();
-      if (scaleSelectTransport) changeScale(scaleSelectTransport.value, true); 
-      updateSyncUI();
-      updateGroupControlsUI(); 
-      updateInfoToggleUI();
-      setupMIDI();
-
-      if (historyStack.length === 0) saveState();
-      identifyAndRouteAllGroups(); 
-      drawPianoRoll();
-      initializeGlobalEffectSliders(); 
-
-      return audioContext;
+    return audioContext;
   } catch (e) {
       console.error("Error during setupAudio:", e);
       if(startMessage) {
@@ -1938,21 +1877,20 @@ async function updateReverbIR(newIRUrl) {
     currentIRUrl = newIRUrl;
     isReverbReady = false; 
     try {
-        const r = await fetch(currentIRUrl);
-        if (!r.ok) throw new Error(`HTTP error! status: ${r.status} for ${currentIRUrl}`);
-        const ab = await r.arrayBuffer();
-        let decodedBuffer;
-        if (audioContext.decodeAudioData.length === 1) { 
-            decodedBuffer = await new Promise((res, rej) => {
-                audioContext.decodeAudioData(ab, buffer => res(buffer), error => rej(error));
-            });
-        } else {
-            decodedBuffer = await audioContext.decodeAudioData(ab);
-        }
-        reverbNode.buffer = decodedBuffer;
-        isReverbReady = true;
-        console.log(`Reverb IR updated to: ${currentIRUrl}`);
-        saveState(); 
+      const r = await fetch(currentIRUrl);
+      if (!r.ok) throw new Error(`HTTP error! status: ${r.status} for ${currentIRUrl}`);
+      const ab = await r.arrayBuffer();
+      let decodedBuffer;
+      if (audioContext.decodeAudioData.length === 1) { 
+          decodedBuffer = await new Promise((res, rej) => {
+              audioContext.decodeAudioData(ab, buffer => res(buffer), error => rej(error));
+          });
+      } else {
+          decodedBuffer = await audioContext.decodeAudioData(ab);
+      }
+      reverbNode.buffer = decodedBuffer;
+      isReverbReady = true;
+      saveState();
     } catch (e) {
         console.error(`Failed to load or process new reverb IR: ${currentIRUrl}`, e);
         
@@ -2254,110 +2192,108 @@ export function createAudioNodesForNode(node) {
         if (node.type === RESONAUTER_TYPE) {
             return createResonauterOrbAudioNodes(node);
         } else if (node.type === PRORB_TYPE) {
-            console.log(`[PrOrb] Creating audio nodes for PrOrb #${node.id}`);
-            const p = node.audioParams;
-            const audioNodes = {
-                osc1: audioContext.createOscillator(),
-                osc1Gain: audioContext.createGain(),
-                osc2: audioContext.createOscillator(),
-                osc2Gain: audioContext.createGain(),
-                filter: audioContext.createBiquadFilter(),
-                ampEnvControl: audioContext.createGain(),
-                filterEnvControl: audioContext.createGain(),
-                lfo: audioContext.createOscillator(),
-                lfoGain: audioContext.createGain(),
-                lfo2: audioContext.createOscillator(),
-                lfo2Gain: audioContext.createGain(),
-                mainGain: audioContext.createGain(),
-                reverbSendGain: audioContext.createGain(),
-                delaySendGain: audioContext.createGain(),
-            };
+          const p = node.audioParams;
+          const audioNodes = {
+              osc1: audioContext.createOscillator(),
+              osc1Gain: audioContext.createGain(),
+              osc2: audioContext.createOscillator(),
+              osc2Gain: audioContext.createGain(),
+              filter: audioContext.createBiquadFilter(),
+              ampEnvControl: audioContext.createGain(),
+              filterEnvControl: audioContext.createGain(),
+              lfo: audioContext.createOscillator(),
+              lfoGain: audioContext.createGain(),
+              lfo2: audioContext.createOscillator(),
+              lfo2Gain: audioContext.createGain(),
+              mainGain: audioContext.createGain(),
+              reverbSendGain: audioContext.createGain(),
+              delaySendGain: audioContext.createGain(),
+          };
 
-            audioNodes.osc1.type = p.osc1Waveform;
-            audioNodes.osc1.connect(audioNodes.osc1Gain);
-            audioNodes.osc1Gain.gain.value = p.osc1Level ?? 1.0;
-            audioNodes.osc1Gain.connect(audioNodes.filter);
+          audioNodes.osc1.type = p.osc1Waveform;
+          audioNodes.osc1.connect(audioNodes.osc1Gain);
+          audioNodes.osc1Gain.gain.value = p.osc1Level ?? 1.0;
+          audioNodes.osc1Gain.connect(audioNodes.filter);
 
-            audioNodes.osc2.type = p.osc2Waveform;
-            audioNodes.osc2.detune.value = p.osc2Detune;
-            audioNodes.osc2.connect(audioNodes.osc2Gain);
-            audioNodes.osc2Gain.gain.value = p.osc2Enabled ? (p.osc2Level ?? 1.0) : 0;
-            audioNodes.osc2Gain.connect(audioNodes.filter);
+          audioNodes.osc2.type = p.osc2Waveform;
+          audioNodes.osc2.detune.value = p.osc2Detune;
+          audioNodes.osc2.connect(audioNodes.osc2Gain);
+          audioNodes.osc2Gain.gain.value = p.osc2Enabled ? (p.osc2Level ?? 1.0) : 0;
+          audioNodes.osc2Gain.connect(audioNodes.filter);
 
-            audioNodes.filter.type = p.filterType;
-            audioNodes.filter.frequency.value = p.filterCutoff;
-            audioNodes.filter.Q.value = p.filterResonance;
-            audioNodes.filter.connect(audioNodes.ampEnvControl);
+          audioNodes.filter.type = p.filterType;
+          audioNodes.filter.frequency.value = p.filterCutoff;
+          audioNodes.filter.Q.value = p.filterResonance;
+          audioNodes.filter.connect(audioNodes.ampEnvControl);
 
-            audioNodes.ampEnvControl.gain.value = 0;
-            audioNodes.ampEnvControl.connect(audioNodes.mainGain);
+          audioNodes.ampEnvControl.gain.value = 0;
+          audioNodes.ampEnvControl.connect(audioNodes.mainGain);
 
-            audioNodes.filterEnvControl.gain.value = p.filterEnvAmount;
-            audioNodes.filterEnvControl.connect(audioNodes.filter.frequency);
-            audioNodes.lfo.type = p.lfoWaveform;
-            audioNodes.lfo.frequency.value = p.lfoRate;
-            audioNodes.lfoGain.gain.value = p.lfoEnabled ? p.lfoAmount : 0;
-            audioNodes.lfo.connect(audioNodes.lfoGain);
-            try { audioNodes.lfoGain.disconnect(); } catch(e) {}
-            const lfoTarget = p.lfoTarget || 'filter';
-            if (lfoTarget === 'amp') {
-                audioNodes.lfoGain.connect(audioNodes.mainGain.gain);
-            } else if (lfoTarget === 'osc1Freq' && audioNodes.osc1.frequency) {
-                audioNodes.lfoGain.connect(audioNodes.osc1.frequency);
-            } else if (lfoTarget === 'osc2Freq' && audioNodes.osc2.frequency) {
-                audioNodes.lfoGain.connect(audioNodes.osc2.frequency);
-            } else {
-                audioNodes.lfoGain.connect(audioNodes.filter.frequency);
-            }
+          audioNodes.filterEnvControl.gain.value = p.filterEnvAmount;
+          audioNodes.filterEnvControl.connect(audioNodes.filter.frequency);
+          audioNodes.lfo.type = p.lfoWaveform;
+          audioNodes.lfo.frequency.value = p.lfoRate;
+          audioNodes.lfoGain.gain.value = p.lfoEnabled ? p.lfoAmount : 0;
+          audioNodes.lfo.connect(audioNodes.lfoGain);
+          try { audioNodes.lfoGain.disconnect(); } catch(e) {}
+          const lfoTarget = p.lfoTarget || 'filter';
+          if (lfoTarget === 'amp') {
+              audioNodes.lfoGain.connect(audioNodes.mainGain.gain);
+          } else if (lfoTarget === 'osc1Freq' && audioNodes.osc1.frequency) {
+              audioNodes.lfoGain.connect(audioNodes.osc1.frequency);
+          } else if (lfoTarget === 'osc2Freq' && audioNodes.osc2.frequency) {
+              audioNodes.lfoGain.connect(audioNodes.osc2.frequency);
+          } else {
+              audioNodes.lfoGain.connect(audioNodes.filter.frequency);
+          }
 
-            audioNodes.lfo2.type = p.lfo2Waveform;
-            audioNodes.lfo2.frequency.value = p.lfo2Rate;
-            audioNodes.lfo2Gain.gain.value = p.lfo2Enabled ? p.lfo2Amount : 0;
-            audioNodes.lfo2.connect(audioNodes.lfo2Gain);
-            try { audioNodes.lfo2Gain.disconnect(); } catch(e) {}
-            const lfo2Target = p.lfo2Target || 'filter';
-            if (lfo2Target === 'amp') {
-                audioNodes.lfo2Gain.connect(audioNodes.mainGain.gain);
-            } else if (lfo2Target === 'osc1Freq' && audioNodes.osc1.frequency) {
-                audioNodes.lfo2Gain.connect(audioNodes.osc1.frequency);
-            } else if (lfo2Target === 'osc2Freq' && audioNodes.osc2.frequency) {
-                audioNodes.lfo2Gain.connect(audioNodes.osc2.frequency);
-            } else {
-                audioNodes.lfo2Gain.connect(audioNodes.filter.frequency);
-            }
-            audioNodes.mainGain.gain.value = 1.0;
-            audioNodes.reverbSendGain.gain.value = p.reverbSend;
-            audioNodes.delaySendGain.gain.value = p.delaySend;
-            audioNodes.mainGain.connect(audioNodes.reverbSendGain);
-            audioNodes.mainGain.connect(audioNodes.delaySendGain);
-            
-            if (isReverbReady && reverbPreDelayNode) {
-                audioNodes.reverbSendGain.connect(reverbPreDelayNode);
-            }
-            if (isDelayReady && masterDelaySendGain) {
-                audioNodes.delaySendGain.connect(masterDelaySendGain);
-            }
+          audioNodes.lfo2.type = p.lfo2Waveform;
+          audioNodes.lfo2.frequency.value = p.lfo2Rate;
+          audioNodes.lfo2Gain.gain.value = p.lfo2Enabled ? p.lfo2Amount : 0;
+          audioNodes.lfo2.connect(audioNodes.lfo2Gain);
+          try { audioNodes.lfo2Gain.disconnect(); } catch(e) {}
+          const lfo2Target = p.lfo2Target || 'filter';
+          if (lfo2Target === 'amp') {
+              audioNodes.lfo2Gain.connect(audioNodes.mainGain.gain);
+          } else if (lfo2Target === 'osc1Freq' && audioNodes.osc1.frequency) {
+              audioNodes.lfo2Gain.connect(audioNodes.osc1.frequency);
+          } else if (lfo2Target === 'osc2Freq' && audioNodes.osc2.frequency) {
+              audioNodes.lfo2Gain.connect(audioNodes.osc2.frequency);
+          } else {
+              audioNodes.lfo2Gain.connect(audioNodes.filter.frequency);
+          }
+          audioNodes.mainGain.gain.value = 1.0;
+          audioNodes.reverbSendGain.gain.value = p.reverbSend;
+          audioNodes.delaySendGain.gain.value = p.delaySend;
+          audioNodes.mainGain.connect(audioNodes.reverbSendGain);
+          audioNodes.mainGain.connect(audioNodes.delaySendGain);
 
-            if (mistEffectInput) {
-                audioNodes.mistSendGain = audioContext.createGain();
-                audioNodes.mistSendGain.gain.value = 0;
-                audioNodes.mainGain.connect(audioNodes.mistSendGain);
-                audioNodes.mistSendGain.connect(mistEffectInput);
-            }
-            if (crushEffectInput) {
-                audioNodes.crushSendGain = audioContext.createGain();
-                audioNodes.crushSendGain.gain.value = 0;
-                audioNodes.mainGain.connect(audioNodes.crushSendGain);
-                audioNodes.crushSendGain.connect(crushEffectInput);
-            }
+          if (isReverbReady && reverbPreDelayNode) {
+              audioNodes.reverbSendGain.connect(reverbPreDelayNode);
+          }
+          if (isDelayReady && masterDelaySendGain) {
+              audioNodes.delaySendGain.connect(masterDelaySendGain);
+          }
 
-            try { audioNodes.osc1.start(now); } catch(e){}
-            try { audioNodes.osc2.start(now); } catch(e){}
-            try { audioNodes.lfo.start(now); } catch(e){}
-            try { audioNodes.lfo2.start(now); } catch(e){}
+          if (mistEffectInput) {
+              audioNodes.mistSendGain = audioContext.createGain();
+              audioNodes.mistSendGain.gain.value = 0;
+              audioNodes.mainGain.connect(audioNodes.mistSendGain);
+              audioNodes.mistSendGain.connect(mistEffectInput);
+          }
+          if (crushEffectInput) {
+              audioNodes.crushSendGain = audioContext.createGain();
+              audioNodes.crushSendGain.gain.value = 0;
+              audioNodes.mainGain.connect(audioNodes.crushSendGain);
+              audioNodes.crushSendGain.connect(crushEffectInput);
+          }
 
-            console.log(`[PrOrb] Successfully created audio graph for PrOrb #${node.id}`);
-            return audioNodes;
+          try { audioNodes.osc1.start(now); } catch(e){}
+          try { audioNodes.osc2.start(now); } catch(e){}
+          try { audioNodes.lfo.start(now); } catch(e){}
+          try { audioNodes.lfo2.start(now); } catch(e){}
+
+          return audioNodes;
         } else if (node.type === "sound") {
             if (node.audioParams && node.audioParams.engine === 'tone') {
                 return createToneSynthOrb(node);
@@ -4160,7 +4096,6 @@ export function updateNodeAudioParams(node) {
       if (filterLfoGain)
         filterLfoGain.gain.setTargetAtTime(params.filterModDepth ?? 2000, now, generalUpdateTimeConstant);
     } else if (node.type === RADIO_ORB_TYPE) {
-      // no dynamic params yet
     } else if (isDrumType(node.type)) {
       const {
         mainGain,
@@ -6076,53 +6011,43 @@ function propagateTrigger(
 }
 
 function activateGlobalKeySetter(nodeInstance) {
-    if (!nodeInstance || nodeInstance.type !== "global_key_setter" || !nodeInstance.audioParams) {
-        return false;
-    }
+  if (!nodeInstance || nodeInstance.type !== "global_key_setter" || !nodeInstance.audioParams) {
+      return false;
+  }
 
-    const keyParams = nodeInstance.audioParams;
-    const mode = keyParams.keySetterMode || "key";
-    let changed = false;
+  const keyParams = nodeInstance.audioParams;
+  const mode = keyParams.keySetterMode || "key";
+  let changed = false;
 
-    console.log(`activateGlobalKeySetter called for Node ${nodeInstance.id}. Mode: ${mode}`);
+  if (mode === "key") {
+    const targetKeyNoteValue = keyParams.targetKeyNote === undefined ? 0 : keyParams.targetKeyNote;
+    if (currentRootNote !== targetKeyNoteValue) {
+      setRootNote(targetKeyNoteValue, true);
+      changed = true;
+    } else {}
+  } else {
+    const targetOffsetValue = keyParams.targetTransposeOffset === undefined ? 0 : keyParams.targetTransposeOffset;
+    if (typeof targetOffsetValue === 'number' && globalTransposeOffset !== targetOffsetValue) {
+      globalTransposeOffset = targetOffsetValue;
+      updateAllPitchesAndUI();
+      changed = true;
+    } else {}
+  }
 
-    if (mode === "key") {
-        const targetKeyNoteValue = keyParams.targetKeyNote === undefined ? 0 : keyParams.targetKeyNote;
-        console.log(`Key Setter Node ${nodeInstance.id} [KEY MODE] attempting. Target Key: ${targetKeyNoteValue} (${NOTE_NAMES[targetKeyNoteValue]}). Current Root: ${currentRootNote} (${NOTE_NAMES[currentRootNote]})`);
-        if (currentRootNote !== targetKeyNoteValue) {
-            console.log(`Key Setter Node ${nodeInstance.id}: Changing root from ${currentRootNote} to ${targetKeyNoteValue}. No history save from node trigger.`);
-            setRootNote(targetKeyNoteValue, true); 
-            changed = true;
-        } else {
-            console.log(`Key Setter Node ${nodeInstance.id}: Target key ${targetKeyNoteValue} is already current root. No change.`);
-        }
-    } else { 
-        const targetOffsetValue = keyParams.targetTransposeOffset === undefined ? 0 : keyParams.targetTransposeOffset;
-        console.log(`Key Setter Node ${nodeInstance.id} [OFFSET MODE] attempting. Target Offset: ${targetOffsetValue}. Current Global Offset: ${globalTransposeOffset}`);
-        if (typeof targetOffsetValue === 'number' && globalTransposeOffset !== targetOffsetValue) {
-            console.log(`Key Setter Node ${nodeInstance.id}: Changing global offset from ${globalTransposeOffset} to ${targetOffsetValue}. No history save from node trigger.`);
-            globalTransposeOffset = targetOffsetValue;
-            updateAllPitchesAndUI(); 
-            changed = true;
-        } else {
-            console.log(`Key Setter Node ${nodeInstance.id}: Target offset ${targetOffsetValue} is already current global offset. No change.`);
-        }
-    }
-
-    if (changed) {
-        nodeInstance.animationState = 1;
-        setTimeout(() => {
-            const stillNode = findNodeById(nodeInstance.id);
-            if (stillNode) stillNode.animationState = 0;
-        }, 250);
-    } else {
-        nodeInstance.animationState = 0.5;
-        setTimeout(() => {
-            const stillNode = findNodeById(nodeInstance.id);
-            if (stillNode) stillNode.animationState = 0;
-        }, 150);
-    }
-    return changed; 
+  if (changed) {
+      nodeInstance.animationState = 1;
+      setTimeout(() => {
+          const stillNode = findNodeById(nodeInstance.id);
+          if (stillNode) stillNode.animationState = 0;
+      }, 250);
+  } else {
+      nodeInstance.animationState = 0.5;
+      setTimeout(() => {
+          const stillNode = findNodeById(nodeInstance.id);
+          if (stillNode) stillNode.animationState = 0;
+      }, 150);
+  }
+  return changed;
 }
 
 function playSingleRetrigger(
@@ -6285,9 +6210,6 @@ function playSingleRetrigger(
       const samplerId = tempAudioParamsForRetrigger.waveform.replace("sampler_", "");
       const definition = SAMPLER_DEFINITIONS.find((s) => s.id === samplerId);
 
-      console.log(`[Retrigger Sampler V3] Node: ${node.id}, Step: ${retriggerIndex}, SamplerID: ${samplerId}, Def found: ${!!definition}, Loaded: ${definition?.isLoaded}, Buffer: ${!!definition?.buffer}`);
-      console.log(`[Retrigger Sampler V3] currentVolume: ${currentVolume}, currentPitch: ${currentPitch}, baseFreq: ${definition?.baseFreq}`);
-
       if (definition && definition.isLoaded && definition.buffer && audioNodes.lowPassFilter && audioNodes.gainNode) {
         const isReverse = params.sampleReverse ?? false;
         const source = audioContext.createBufferSource();
@@ -6307,14 +6229,13 @@ function playSingleRetrigger(
           console.error(`[Retrigger Sampler V3] FATAL: targetRate is ${targetRate}. Aborting retrigger step for ${samplerId}.`);
           return;
         }
-        console.log(`[Retrigger Sampler V3] Calculated TargetRate: ${targetRate} for sampler ${samplerId}`);
 
         source.playbackRate.setValueAtTime(targetRate, scheduledPlayTime);
-        source.connect(audioNodes.lowPassFilter); 
+        source.connect(audioNodes.lowPassFilter);
 
-        const mainNodeGain = audioNodes.gainNode; 
+        const mainNodeGain = audioNodes.gainNode;
         mainNodeGain.gain.cancelScheduledValues(scheduledPlayTime);
-        mainNodeGain.gain.setValueAtTime(0, scheduledPlayTime); 
+        mainNodeGain.gain.setValueAtTime(0, scheduledPlayTime);
         mainNodeGain.gain.linearRampToValueAtTime(
           currentVolume, 
           scheduledPlayTime + 0.005 
@@ -6326,10 +6247,10 @@ function playSingleRetrigger(
         );
 
         source.start(scheduledPlayTime);
-        
+
         const sampleDurationOriginal = definition.buffer.duration;
         const effectiveSampleDuration = targetRate > 0 ? sampleDurationOriginal / targetRate : sampleDurationOriginal;
-        const envelopeDuration = 0.005 + 3 * (0.03 + (params.retriggerIntervalMs / 1000) * 0.15); 
+        const envelopeDuration = 0.005 + 3 * (0.03 + (params.retriggerIntervalMs / 1000) * 0.15);
         const stopTimeOffset = Math.min(effectiveSampleDuration, envelopeDuration + 0.05);
 
 
@@ -7136,7 +7057,6 @@ function createVisualPulse(
   activePulses.push(visualPulse);
 
   if (broadcast) {
-    // multiplayer functionality removed
   }
 
   if (connection.type === "string_violin") {
@@ -7186,14 +7106,6 @@ function startTravelingGlideSound(
   const waveform = sourceNode.audioParams.waveform;
 
   if (waveform && waveform.startsWith("sampler_")) {
-    console.log(
-      "Sampler glide triggered:",
-      waveform,
-      sourceNode.audioParams.pitch,
-      "→",
-      targetFrequency,
-    );
-
     if (typeof startSamplerGlide_Granular === "function") {
       startSamplerGlide_Granular(
         sourceNode,
@@ -7656,162 +7568,160 @@ function createHanningWindow(length) {
 
 
 export function saveState() {
-    if (isPerformingUndoRedo) return;
-    unsavedChanges = true;
-
-    
-    const bufferMap = new Map();
-    const pathMap = new Map();
-
-    nodes.forEach((node) => {
-        if (node.audioParams?.buffer) {
-            bufferMap.set(`node_${node.id}`, node.audioParams.buffer);
-        }
-        
-    });
-    connections.forEach((conn) => {
-        if (conn.audioParams?.buffer) {
-            bufferMap.set(`conn_${conn.id}`, conn.audioParams.buffer);
-        }
-        if (conn.audioParams?.waveformPath) {
-            pathMap.set(`conn_${conn.id}`, conn.audioParams.waveformPath);
-        }
-    });
+  if (isPerformingUndoRedo) return;
+  unsavedChanges = true;
 
 
-    
-    const stateToSerialize = {
-        nodes: nodes,
-        connections: connections,
-        selectedElements: Array.from(selectedElements),
-        fluctuatingGroupNodeIDs: Array.from(fluctuatingGroupNodeIDs),
-        nodeIdCounter: nodeIdCounter,
-        connectionIdCounter: connectionIdCounter,
-        isGlobalSyncEnabled: isGlobalSyncEnabled,
-        globalBPM: globalBPM,
-        viewOffsetX: viewOffsetX,
-        viewOffsetY: viewOffsetY,
-        viewScale: viewScale,
-        currentScaleKey: currentScaleKey,
-        currentRootNote: currentRootNote,
-        globalTransposeOffset: globalTransposeOffset,
-        pianoRollMode: pianoRollMode,
-        pianoRollOctave: pianoRollOctave,
-        masterVolume: masterGain?.gain.value ?? 0.8,
-        delaySend: masterDelaySendGain?.gain.value ?? 0.3,
-        delayTime: delayNode?.delayTime.value ?? 0.25,
-        delayFeedback: delayFeedbackGain?.gain.value ?? 0.4,
-        portalVolume: portalGroupGain?.gain.value ?? 0.7,
-        originalNebulaVolume: originalNebulaGroupGain?.gain.value ?? 0.8,
-        currentIRUrl: currentIRUrl || (impulseResponses.length > 0 ? impulseResponses[0].url : "reverb.wav"),
-        reverbWetLevel: reverbWetGain?.gain.value ?? 0.5,
-        reverbPreDelayTime: reverbPreDelayNode?.delayTime.value ?? 0.02,
-        reverbDampingFreq: reverbLowPass?.frequency.value ?? DEFAULT_REVERB_DAMP_FREQ,
-        reverbLowCutFreq: reverbHighPass?.frequency.value ?? 100,
-        performanceResoLevel: perfResoGain?.gain.value ?? PERF_RESO_WET,
-        performanceResoDelay: perfResoDelay?.delayTime.value ?? PERF_RESO_DELAY_TIME,
-        performanceResoFeedback: perfResoFeedback?.gain.value ?? PERF_RESO_FEEDBACK,
-        performanceResoFreq: perfResoFilter?.frequency.value ?? PERF_RESO_FREQ,
-        performanceResoQ: perfResoFilter?.Q.value ?? PERF_RESO_Q,
-        performanceResoEnabled: perfResoEnabled,
-        performanceReverbLevel: perfReverbWetGain?.gain.value ?? PERF_REVERB_WET,
-        performanceReverbDecay: perfReverbFeedbackGains[0]?.gain.value ?? PERF_REVERB_DECAY,
-        performanceReverbSize: perfReverbSize,
-        performanceReverbDamp: perfReverbLowPass?.frequency.value ?? DEFAULT_REVERB_DAMP_FREQ,
-        performanceReverbEnabled: perfReverbEnabled,
-        mrfaEnabled: mrfaEnabled,
-        mrfaBandValues: mrfaGains.map(g => g.gain.value),
-        userDefinedGroups: userDefinedGroups.map(group => ({...group, nodeIds: Array.from(group.nodeIds) })),
-        mistGroups: patchState.mistGroups.map(g => ({
-            patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
-        }))
-    };
+  const bufferMap = new Map();
+  const pathMap = new Map();
 
-    
-    const replacer = (key, value) => {
-        if (key === "audioNodes" || key === "buffer" || key === "waveformPath" || key === "activeRetriggers" || key === "triggeredInThisSweep") {
-            return undefined;
-        }
-        if (value instanceof Set) {
-            return Array.from(value);
-        }
-        return value;
-    };
-    const stateString = JSON.stringify(stateToSerialize, replacer);
-
-    const loadedState = JSON.parse(stateString);
-
-    
-    loadedState.nodes.forEach(node => {
-        if (bufferMap.has(`node_${node.id}`)) {
-            if (!node.audioParams) node.audioParams = {};
-            node.audioParams.buffer = bufferMap.get(`node_${node.id}`);
-        }
-    });
-    loadedState.connections.forEach(conn => {
-        if (bufferMap.has(`conn_${conn.id}`) || pathMap.has(`conn_${conn.id}`)) {
-           if (!conn.audioParams) conn.audioParams = {};
-            if (bufferMap.has(`conn_${conn.id}`)) {
-                conn.audioParams.buffer = bufferMap.get(`conn_${conn.id}`);
-            }
-            if (pathMap.has(`conn_${conn.id}`)) {
-                conn.audioParams.waveformPath = pathMap.get(`conn_${conn.id}`);
-            }
-        }
-    });
-    loadedState.userDefinedGroups.forEach(group => {
-        group.nodeIds = new Set(group.nodeIds);
-    });
-    if (loadedState.mistGroups) {
-        patchState.mistGroups = [];
-        if (mistLayer) mistLayer.innerHTML = "";
-        loadedState.mistGroups.forEach(g => {
-            const container = document.createElement('div');
-            container.className = 'mist-group';
-            if (mistLayer) mistLayer.appendChild(container);
-            const newGroup = { container, patches: [] };
-            g.patches.forEach(p => {
-                const patchEl = document.createElement('div');
-                patchEl.className = 'mist-patch';
-                const size = p.size || 200;
-                patchEl.style.width = size + 'px';
-                patchEl.style.height = size + 'px';
-                const coords = getScreenCoords(p.x, p.y);
-                patchEl.style.left = coords.x - size / 2 + 'px';
-                patchEl.style.top = coords.y - size / 2 + 'px';
-                const gradientString = 'radial-gradient(circle at 50% 50%, rgba(150,100,255,0.35) 0%, transparent 70%)';
-                patchEl.style.backgroundImage = gradientString;
-                patchEl.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
-                patchEl.style.setProperty('--dy', `${Math.random() * 20 - 10}px`);
-                patchEl.style.setProperty('--duration', `${12 + Math.random() * 6}s`);
-                patchEl.style.setProperty('--hueDuration', `${20 + Math.random() * 10}s`);
-                patchEl.dataset.x = p.x;
-                patchEl.dataset.y = p.y;
-                container.appendChild(patchEl);
-                newGroup.patches.push({ element: patchEl, x: p.x, y: p.y, size });
-            });
-            patchState.mistGroups.push(newGroup);
-        });
-        updateMistWetness();
-    }
+  nodes.forEach((node) => {
+      if (node.audioParams?.buffer) {
+          bufferMap.set(`node_${node.id}`, node.audioParams.buffer);
+      }
+      
+  });
+  connections.forEach((conn) => {
+      if (conn.audioParams?.buffer) {
+          bufferMap.set(`conn_${conn.id}`, conn.audioParams.buffer);
+      }
+      if (conn.audioParams?.waveformPath) {
+          pathMap.set(`conn_${conn.id}`, conn.audioParams.waveformPath);
+      }
+  });
 
 
-    
-    if (historyIndex < historyStack.length - 1) {
-        historyStack = historyStack.slice(0, historyIndex + 1);
-    }
-    historyStack.push(loadedState);
-    if (historyStack.length > MAX_HISTORY_SIZE) {
-        historyStack.shift();
-    }
-    historyIndex = historyStack.length - 1;
-    try {
-        localStorage.setItem('resonaut_state', stateString);
-    } catch (e) {
-        console.warn('Failed to save state to localStorage:', e);
-    }
-    console.log("State saved correctly. History index:", historyIndex, "Stack size:", historyStack.length);
-    // multiplayer state synchronization removed
+
+  const stateToSerialize = {
+      nodes: nodes,
+      connections: connections,
+      selectedElements: Array.from(selectedElements),
+      fluctuatingGroupNodeIDs: Array.from(fluctuatingGroupNodeIDs),
+      nodeIdCounter: nodeIdCounter,
+      connectionIdCounter: connectionIdCounter,
+      isGlobalSyncEnabled: isGlobalSyncEnabled,
+      globalBPM: globalBPM,
+      viewOffsetX: viewOffsetX,
+      viewOffsetY: viewOffsetY,
+      viewScale: viewScale,
+      currentScaleKey: currentScaleKey,
+      currentRootNote: currentRootNote,
+      globalTransposeOffset: globalTransposeOffset,
+      pianoRollMode: pianoRollMode,
+      pianoRollOctave: pianoRollOctave,
+      masterVolume: masterGain?.gain.value ?? 0.8,
+      delaySend: masterDelaySendGain?.gain.value ?? 0.3,
+      delayTime: delayNode?.delayTime.value ?? 0.25,
+      delayFeedback: delayFeedbackGain?.gain.value ?? 0.4,
+      portalVolume: portalGroupGain?.gain.value ?? 0.7,
+      originalNebulaVolume: originalNebulaGroupGain?.gain.value ?? 0.8,
+      currentIRUrl: currentIRUrl || (impulseResponses.length > 0 ? impulseResponses[0].url : "reverb.wav"),
+      reverbWetLevel: reverbWetGain?.gain.value ?? 0.5,
+      reverbPreDelayTime: reverbPreDelayNode?.delayTime.value ?? 0.02,
+      reverbDampingFreq: reverbLowPass?.frequency.value ?? DEFAULT_REVERB_DAMP_FREQ,
+      reverbLowCutFreq: reverbHighPass?.frequency.value ?? 100,
+      performanceResoLevel: perfResoGain?.gain.value ?? PERF_RESO_WET,
+      performanceResoDelay: perfResoDelay?.delayTime.value ?? PERF_RESO_DELAY_TIME,
+      performanceResoFeedback: perfResoFeedback?.gain.value ?? PERF_RESO_FEEDBACK,
+      performanceResoFreq: perfResoFilter?.frequency.value ?? PERF_RESO_FREQ,
+      performanceResoQ: perfResoFilter?.Q.value ?? PERF_RESO_Q,
+      performanceResoEnabled: perfResoEnabled,
+      performanceReverbLevel: perfReverbWetGain?.gain.value ?? PERF_REVERB_WET,
+      performanceReverbDecay: perfReverbFeedbackGains[0]?.gain.value ?? PERF_REVERB_DECAY,
+      performanceReverbSize: perfReverbSize,
+      performanceReverbDamp: perfReverbLowPass?.frequency.value ?? DEFAULT_REVERB_DAMP_FREQ,
+      performanceReverbEnabled: perfReverbEnabled,
+      mrfaEnabled: mrfaEnabled,
+      mrfaBandValues: mrfaGains.map(g => g.gain.value),
+      userDefinedGroups: userDefinedGroups.map(group => ({...group, nodeIds: Array.from(group.nodeIds) })),
+      mistGroups: patchState.mistGroups.map(g => ({
+          patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
+      }))
+  };
+
+
+  const replacer = (key, value) => {
+      if (key === "audioNodes" || key === "buffer" || key === "waveformPath" || key === "activeRetriggers" || key === "triggeredInThisSweep") {
+          return undefined;
+      }
+      if (value instanceof Set) {
+          return Array.from(value);
+      }
+      return value;
+  };
+  const stateString = JSON.stringify(stateToSerialize, replacer);
+
+  const loadedState = JSON.parse(stateString);
+
+
+  loadedState.nodes.forEach(node => {
+      if (bufferMap.has(`node_${node.id}`)) {
+          if (!node.audioParams) node.audioParams = {};
+          node.audioParams.buffer = bufferMap.get(`node_${node.id}`);
+      }
+  });
+  loadedState.connections.forEach(conn => {
+      if (bufferMap.has(`conn_${conn.id}`) || pathMap.has(`conn_${conn.id}`)) {
+         if (!conn.audioParams) conn.audioParams = {};
+          if (bufferMap.has(`conn_${conn.id}`)) {
+              conn.audioParams.buffer = bufferMap.get(`conn_${conn.id}`);
+          }
+          if (pathMap.has(`conn_${conn.id}`)) {
+              conn.audioParams.waveformPath = pathMap.get(`conn_${conn.id}`);
+          }
+      }
+  });
+  loadedState.userDefinedGroups.forEach(group => {
+      group.nodeIds = new Set(group.nodeIds);
+  });
+  if (loadedState.mistGroups) {
+      patchState.mistGroups = [];
+      if (mistLayer) mistLayer.innerHTML = "";
+      loadedState.mistGroups.forEach(g => {
+          const container = document.createElement('div');
+          container.className = 'mist-group';
+          if (mistLayer) mistLayer.appendChild(container);
+          const newGroup = { container, patches: [] };
+          g.patches.forEach(p => {
+              const patchEl = document.createElement('div');
+              patchEl.className = 'mist-patch';
+              const size = p.size || 200;
+              patchEl.style.width = size + 'px';
+              patchEl.style.height = size + 'px';
+              const coords = getScreenCoords(p.x, p.y);
+              patchEl.style.left = coords.x - size / 2 + 'px';
+              patchEl.style.top = coords.y - size / 2 + 'px';
+              const gradientString = 'radial-gradient(circle at 50% 50%, rgba(150,100,255,0.35) 0%, transparent 70%)';
+              patchEl.style.backgroundImage = gradientString;
+              patchEl.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
+              patchEl.style.setProperty('--dy', `${Math.random() * 20 - 10}px`);
+              patchEl.style.setProperty('--duration', `${12 + Math.random() * 6}s`);
+              patchEl.style.setProperty('--hueDuration', `${20 + Math.random() * 10}s`);
+              patchEl.dataset.x = p.x;
+              patchEl.dataset.y = p.y;
+              container.appendChild(patchEl);
+              newGroup.patches.push({ element: patchEl, x: p.x, y: p.y, size });
+          });
+          patchState.mistGroups.push(newGroup);
+      });
+      updateMistWetness();
+  }
+
+
+
+  if (historyIndex < historyStack.length - 1) {
+      historyStack = historyStack.slice(0, historyIndex + 1);
+  }
+  historyStack.push(loadedState);
+  if (historyStack.length > MAX_HISTORY_SIZE) {
+      historyStack.shift();
+  }
+  historyIndex = historyStack.length - 1;
+  try {
+      localStorage.setItem('resonaut_state', stateString);
+  } catch (e) {
+      console.warn('Failed to save state to localStorage:', e);
+  }
 }
 
 async function loadState(stateToLoad) {
@@ -7955,7 +7865,6 @@ function loadStateFromLocalStorage() {
       if (loadedState && loadedState.nodes && loadedState.connections) {
         loadState(loadedState);
         unsavedChanges = false;
-        console.log('Loaded state from localStorage.');
       }
     }
   } catch (err) {
@@ -9219,9 +9128,7 @@ function updateAllPitchesAndUI() {
             aSelectIsFocused = true;
         }
 
-        if (aSelectIsFocused) {
-            console.log("Edit panel update skipped during key change because a dropdown is active.");
-        } else {
+        if (aSelectIsFocused) {} else {
             populateEditPanel();
         }
     }
@@ -9564,7 +9471,6 @@ function stopTapeLoopPlayback() {
     }
   }
 
-  console.log("Tape loop playback/recording gestopt.");
   updateTapeLooperUI();
   updateMixerGUI();
   applySoloMuteToAllGroupsAudio();
@@ -13706,10 +13612,6 @@ function drawPlasmaBridge(ctx, nodeA, nodeB, alpha) {
 
 
 function launchRocket(pulsarNode, pulseData) {
-  console.log(
-    `%c[launchRocket] CALLED for pulsar: ${pulsarNode.id}, Type: ${pulsarNode.type}`,
-    "color: #00FF00; font-weight: bold;",
-  );
   if (!audioContext) {
     console.warn("[launchRocket] AudioContext not ready, aborting.");
     return;
@@ -13719,11 +13621,6 @@ function launchRocket(pulsarNode, pulseData) {
   const speed = params.rocketSpeed || ROCKET_DEFAULT_SPEED;
 
   const effectiveLaunchAngleRad = directionAngleFromUI_rad - Math.PI / 2;
-
-  console.log(
-    `%c[launchRocket] UI Angle (0=up): ${directionAngleFromUI_rad.toFixed(2)} rad (${((directionAngleFromUI_rad * 180) / Math.PI).toFixed(1)}°). Effective Math Angle (0=right): ${effectiveLaunchAngleRad.toFixed(2)} rad (${((effectiveLaunchAngleRad * 180) / Math.PI).toFixed(1)}°)`,
-    "color: #00AAFF;",
-  );
 
   const rocket = {
     id: rocketIdCounter++,
@@ -13754,19 +13651,10 @@ function launchRocket(pulsarNode, pulseData) {
     isTorpedo: pulseData.isTorpedo || false,
   };
   activeRockets.push(rocket);
-  console.log(
-    `%c[launchRocket] Rocket ${rocket.id} ADDED. vx: ${rocket.vx.toFixed(2)}, vy: ${rocket.vy.toFixed(2)}. Total active: ${activeRockets.length}`,
-    "color: #00FF00;",
-  );
 }
 
 function updateAndDrawRockets(deltaTime, now) {
-  if (activeRockets.length > 0) {
-    console.log(
-      `%c[updateAndDrawRockets] CALLED. Active rockets: ${activeRockets.length}`,
-      "color: #FFA500;",
-    );
-  }
+  if (activeRockets.length > 0) {}
 
   activeRockets = activeRockets.filter((rocket) => {
     rocket.previousX = rocket.currentX;
@@ -13783,10 +13671,6 @@ function updateAndDrawRockets(deltaTime, now) {
       rocket.distanceTraveled >= rocket.range ||
       now - rocket.creationTime > rocket.maxLifeTime * 1.1
     ) {
-      console.log(
-        `%c[updateAndDrawRockets] Rocket ${rocket.id} EXPIRED (range/lifetime). Creating explosion.`,
-        "color: #FF6347;",
-      );
       createExplosionAnimation(
         rocket.currentX,
         rocket.currentY,
@@ -13797,10 +13681,6 @@ function updateAndDrawRockets(deltaTime, now) {
 
     const hitNode = checkRocketNodeCollision(rocket);
     if (hitNode) {
-      console.log(
-        `%c[updateAndDrawRockets] Rocket ${rocket.id} HIT NODE ${hitNode.id}. Creating explosion.`,
-        "color: #FF6347;",
-      );
       createExplosionAnimation(
         rocket.currentX,
         rocket.currentY,
@@ -13828,10 +13708,6 @@ function updateAndDrawRockets(deltaTime, now) {
 
     const hitConnection = checkRocketConnectionCollision(rocket);
     if (hitConnection) {
-      console.log(
-        `%c[updateAndDrawRockets] Rocket ${rocket.id} HIT CONNECTION ${hitConnection.id}. Creating explosion.`,
-        "color: #FF6347;",
-      );
       createExplosionAnimation(
         rocket.currentX,
         rocket.currentY,
@@ -14040,7 +13916,6 @@ function updateSpaceRadar(node, deltaTime) {
   let increment = 0;
   if (node.manualAdvanceIncrement) {
     increment = node.manualAdvanceIncrement;
-    // Prevent huge jumps that could trigger all orbs in one frame
     const twoPi = Math.PI * 2;
     increment = ((increment % twoPi) + twoPi) % twoPi;
     if (increment > Math.PI) increment -= twoPi;
@@ -15889,843 +15764,839 @@ function handleMouseMove(event) {
 }
 
 function handleMouseUp(event) {
-    
-    if (event.button === 2) return;
+  if (event.button === 2) return;
 
-    if (!isAudioReady) return;
-    const targetIsPanelControl =
-        hamburgerMenuPanel.contains(event.target) ||
-        sideToolbar.contains(event.target) ||
-        transportControlsDiv.contains(event.target) ||
-        mixerPanel.contains(event.target);
+  if (!isAudioReady) return;
+  const targetIsPanelControl =
+      hamburgerMenuPanel.contains(event.target) ||
+      sideToolbar.contains(event.target) ||
+      transportControlsDiv.contains(event.target) ||
+      mixerPanel.contains(event.target);
 
-    if (targetIsPanelControl) {
-        isDragging = false;
-        isConnecting = false;
-        isResizing = false;
-        isSelecting = false;
-        isPanning = false;
-        isRotatingRocket = null;
-        isCrankingRadar = null;
-        isResizingTimelineGrid = false;
-        isDrawingNewTimelineGrid = false;
-        selectionRect.active = false;
-        connectingNode = null;
-        nodeClickedAtMouseDown = null;
-        connectionClickedAtMouseDown = null;
-        currentlyPlacingTimelineNodeId = null;
-        newTimelineGridInitialCorner = null;
-        canvas.style.cursor = "crosshair";
-        return;
-    }
+  if (targetIsPanelControl) {
+      isDragging = false;
+      isConnecting = false;
+      isResizing = false;
+      isSelecting = false;
+      isPanning = false;
+      isRotatingRocket = null;
+      isCrankingRadar = null;
+      isResizingTimelineGrid = false;
+      isDrawingNewTimelineGrid = false;
+      selectionRect.active = false;
+      connectingNode = null;
+      nodeClickedAtMouseDown = null;
+      connectionClickedAtMouseDown = null;
+      currentlyPlacingTimelineNodeId = null;
+      newTimelineGridInitialCorner = null;
+      canvas.style.cursor = "crosshair";
+      return;
+  }
 
-    updateMousePos(event);
-    const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-    const ctrlLike = (isMac ? event.metaKey : event.ctrlKey) || ctrlLikeAtMouseDown;
-    let stateWasChanged = false;
-    let actionHandledInMainBlock = false;
+  updateMousePos(event);
+  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const ctrlLike = (isMac ? event.metaKey : event.ctrlKey) || ctrlLikeAtMouseDown;
+  let stateWasChanged = false;
+  let actionHandledInMainBlock = false;
 
-    const wasSelectedAtStart = _tempWasSelectedAtMouseDown;
-    _tempWasSelectedAtMouseDown = false;
+  const wasSelectedAtStart = _tempWasSelectedAtMouseDown;
+  _tempWasSelectedAtMouseDown = false;
 
-    const wasResizingNode = isResizing;
-    const wasConnectingNodes = isConnecting;
-    const wasDraggingNode = isDragging;
-    const wasCreatingSelectionRect = isSelecting && didDrag;
-    const wasPanningView = isPanning;
-    const wasRotatingARocketNode = isRotatingRocket;
-    const wasCrankingRadar = isCrankingRadar;
-    const wasResizingTimeline = isResizingTimelineGrid;
-    const wasDrawingNewTimeline = isDrawingNewTimelineGrid;
+  const wasResizingNode = isResizing;
+  const wasConnectingNodes = isConnecting;
+  const wasDraggingNode = isDragging;
+  const wasCreatingSelectionRect = isSelecting && didDrag;
+  const wasPanningView = isPanning;
+  const wasRotatingARocketNode = isRotatingRocket;
+  const wasCrankingRadar = isCrankingRadar;
+  const wasResizingTimeline = isResizingTimelineGrid;
+  const wasDrawingNewTimeline = isDrawingNewTimelineGrid;
 
-    const wasRotatingTimelineGridObject = isRotatingTimelineGrid;
-    const rotatedTimelineGridNodeObject = rotatingTimelineGridNode;
+  const wasRotatingTimelineGridObject = isRotatingTimelineGrid;
+  const rotatedTimelineGridNodeObject = rotatingTimelineGridNode;
 
-    isResizing = false;
-    isConnecting = false;
-    isDragging = false;
-    isSelecting = false;
-    isPanning = false;
-    isRotatingRocket = null;
-    isCrankingRadar = null;
-    isResizingTimelineGrid = false;
-    selectionRect.active = false;
-    canvas.style.cursor = "crosshair";
+  isResizing = false;
+  isConnecting = false;
+  isDragging = false;
+  isSelecting = false;
+  isPanning = false;
+  isRotatingRocket = null;
+  isCrankingRadar = null;
+  isResizingTimelineGrid = false;
+  selectionRect.active = false;
+  canvas.style.cursor = "crosshair";
 
-    isRotatingTimelineGrid = false;
-    rotatingTimelineGridNode = null;
+  isRotatingTimelineGrid = false;
+  rotatingTimelineGridNode = null;
 
-    const nodeClickedStart = nodeClickedAtMouseDown;
-    const connectionClickedStart = connectionClickedAtMouseDown;
-    const elementClickedStartOriginal = nodeClickedStart ?
-        { type: "node", id: nodeClickedStart.id, nodeRef: nodeClickedStart } :
-        connectionClickedStart ?
-        {
-            type: "connection",
-            id: connectionClickedStart.id,
-            connRef: connectionClickedStart,
-        } :
-        null;
+  const nodeClickedStart = nodeClickedAtMouseDown;
+  const connectionClickedStart = connectionClickedAtMouseDown;
+  const elementClickedStartOriginal = nodeClickedStart ?
+      { type: "node", id: nodeClickedStart.id, nodeRef: nodeClickedStart } :
+      connectionClickedStart ?
+      {
+          type: "connection",
+          id: connectionClickedStart.id,
+          connRef: connectionClickedStart,
+      } :
+      null;
 
-    let nodeUnderCursorOnUp = findNodeAt(mousePos.x, mousePos.y);
-    let connectToCrankHandle = false;
-    const handleCandidate = findCrankRadarHandleAt(mousePos.x, mousePos.y);
-    if (handleCandidate && (!nodeUnderCursorOnUp || handleCandidate.id === nodeUnderCursorOnUp.id)) {
-        nodeUnderCursorOnUp = handleCandidate;
-        connectToCrankHandle = true;
-    }
-    const connectionUnderCursorOnUp = !nodeUnderCursorOnUp ?
-        findConnectionNear(mousePos.x, mousePos.y) :
-        null;
-    let elementUnderCursorAtUp = null;
-    if (nodeUnderCursorOnUp)
-        elementUnderCursorAtUp = {
-            type: "node",
-            id: nodeUnderCursorOnUp.id,
-            nodeRef: nodeUnderCursorOnUp,
-        };
-    else if (connectionUnderCursorOnUp)
-        elementUnderCursorAtUp = {
-            type: "connection",
-            id: connectionUnderCursorOnUp.id,
-            connRef: connectionUnderCursorOnUp,
-        };
+  let nodeUnderCursorOnUp = findNodeAt(mousePos.x, mousePos.y);
+  let connectToCrankHandle = false;
+  const handleCandidate = findCrankRadarHandleAt(mousePos.x, mousePos.y);
+  if (handleCandidate && (!nodeUnderCursorOnUp || handleCandidate.id === nodeUnderCursorOnUp.id)) {
+      nodeUnderCursorOnUp = handleCandidate;
+      connectToCrankHandle = true;
+  }
+  const connectionUnderCursorOnUp = !nodeUnderCursorOnUp ?
+      findConnectionNear(mousePos.x, mousePos.y) :
+      null;
+  let elementUnderCursorAtUp = null;
+  if (nodeUnderCursorOnUp)
+      elementUnderCursorAtUp = {
+          type: "node",
+          id: nodeUnderCursorOnUp.id,
+          nodeRef: nodeUnderCursorOnUp,
+      };
+  else if (connectionUnderCursorOnUp)
+      elementUnderCursorAtUp = {
+          type: "connection",
+          id: connectionUnderCursorOnUp.id,
+          connRef: connectionUnderCursorOnUp,
+      };
 
-    if (wasRotatingTimelineGridObject) {
-        actionHandledInMainBlock = true;
-        if (didDrag && rotatedTimelineGridNodeObject) {
-            rotatedTimelineGridNodeObject.rotation =
-                rotatedTimelineGridNodeObject.audioParams.rotation;
-            stateWasChanged = true;
-        }
-    } else if (wasDrawingNewTimeline) {
-        actionHandledInMainBlock = true;
-        const node = findNodeById(currentlyPlacingTimelineNodeId);
-        if (node && node.type === TIMELINE_GRID_TYPE) {
-            let startX = newTimelineGridInitialCorner.x;
-            let startY = newTimelineGridInitialCorner.y;
+  if (wasRotatingTimelineGridObject) {
+      actionHandledInMainBlock = true;
+      if (didDrag && rotatedTimelineGridNodeObject) {
+          rotatedTimelineGridNodeObject.rotation =
+              rotatedTimelineGridNodeObject.audioParams.rotation;
+          stateWasChanged = true;
+      }
+  } else if (wasDrawingNewTimeline) {
+      actionHandledInMainBlock = true;
+      const node = findNodeById(currentlyPlacingTimelineNodeId);
+      if (node && node.type === TIMELINE_GRID_TYPE) {
+          let startX = newTimelineGridInitialCorner.x;
+          let startY = newTimelineGridInitialCorner.y;
 
-            let currentX = mousePos.x;
-            let currentY = mousePos.y;
+          let currentX = mousePos.x;
+          let currentY = mousePos.y;
 
-            let finalWidth, finalHeight, finalLeft, finalTop;
-            const effectiveSnapOnDrawEnd =
-                isSnapEnabled && !(event && event.shiftKey);
+          let finalWidth, finalHeight, finalLeft, finalTop;
+          const effectiveSnapOnDrawEnd =
+              isSnapEnabled && !(event && event.shiftKey);
 
-            if (effectiveSnapOnDrawEnd) {
-                const spacing = calculateGridSpacing();
-                const snappedCurrentPos = snapToGrid(currentX, currentY);
-                currentX = snappedCurrentPos.x;
-                currentY = snappedCurrentPos.y;
+          if (effectiveSnapOnDrawEnd) {
+              const spacing = calculateGridSpacing();
+              const snappedCurrentPos = snapToGrid(currentX, currentY);
+              currentX = snappedCurrentPos.x;
+              currentY = snappedCurrentPos.y;
 
-                finalWidth = Math.abs(currentX - startX);
-                finalHeight = Math.abs(currentY - startY);
+              finalWidth = Math.abs(currentX - startX);
+              finalHeight = Math.abs(currentY - startY);
 
-                finalWidth = Math.max(
-                    spacing,
-                    Math.round(finalWidth / spacing) * spacing,
-                );
-                finalHeight = Math.max(
-                    spacing,
-                    Math.round(finalHeight / spacing) * spacing,
-                );
+              finalWidth = Math.max(
+                  spacing,
+                  Math.round(finalWidth / spacing) * spacing,
+              );
+              finalHeight = Math.max(
+                  spacing,
+                  Math.round(finalHeight / spacing) * spacing,
+              );
 
-                if (currentX < startX) {
-                    finalLeft = startX - finalWidth;
-                } else {
-                    finalLeft = startX;
-                }
-                if (currentY < startY) {
-                    finalTop = startY - finalHeight;
-                } else {
-                    finalTop = startY;
-                }
-            } else {
-                finalLeft = Math.min(startX, currentX);
-                finalTop = Math.min(startY, currentY);
-                finalWidth = Math.abs(currentX - startX);
-                finalHeight = Math.abs(currentY - startY);
-            }
+              if (currentX < startX) {
+                  finalLeft = startX - finalWidth;
+              } else {
+                  finalLeft = startX;
+              }
+              if (currentY < startY) {
+                  finalTop = startY - finalHeight;
+              } else {
+                  finalTop = startY;
+              }
+          } else {
+              finalLeft = Math.min(startX, currentX);
+              finalTop = Math.min(startY, currentY);
+              finalWidth = Math.abs(currentX - startX);
+              finalHeight = Math.abs(currentY - startY);
+          }
 
-            finalWidth = Math.max(20, finalWidth);
-            finalHeight = Math.max(20, finalHeight);
+          finalWidth = Math.max(20, finalWidth);
+          finalHeight = Math.max(20, finalHeight);
 
-            node.x = finalLeft + finalWidth / 2;
-            node.y = finalTop + finalHeight / 2;
-            node.width = finalWidth;
-            node.height = finalHeight;
-            node.isInResizeMode = true;
-            node.rotation = 0;
+          node.x = finalLeft + finalWidth / 2;
+          node.y = finalTop + finalHeight / 2;
+          node.width = finalWidth;
+          node.height = finalHeight;
+          node.isInResizeMode = true;
+          node.rotation = 0;
 
-            if (node.audioParams) {
-                node.audioParams.width = node.width;
-                node.audioParams.height = node.height;
-                node.audioParams.isInResizeMode = node.isInResizeMode;
-                node.audioParams.rotation = 0;
-            }
+          if (node.audioParams) {
+              node.audioParams.width = node.width;
+              node.audioParams.height = node.height;
+              node.audioParams.isInResizeMode = node.isInResizeMode;
+              node.audioParams.rotation = 0;
+          }
 
-            selectedElements.clear();
-            selectedElements.add({ type: "node", id: node.id });
-            populateEditPanel();
-            stateWasChanged = true;
-        }
-        isDrawingNewTimelineGrid = false;
-        newTimelineGridInitialCorner = null;
-        currentlyPlacingTimelineNodeId = null;
+          selectedElements.clear();
+          selectedElements.add({ type: "node", id: node.id });
+          populateEditPanel();
+          stateWasChanged = true;
+      }
+      isDrawingNewTimelineGrid = false;
+      newTimelineGridInitialCorner = null;
+      currentlyPlacingTimelineNodeId = null;
 
-        const addTimelineGridBtn = document.getElementById("addTimelineGridBtn");
-        if (addTimelineGridBtn && addTimelineGridBtn.classList.contains("active")) {
-            addTimelineGridBtn.classList.remove("active");
-        }
-    } else if (wasRotatingARocketNode) {
-        actionHandledInMainBlock = true;
-        stateWasChanged = true;
-    } else if (wasCrankingRadar) {
-        actionHandledInMainBlock = true;
-        stateWasChanged = true;
-    } else if (wasResizingTimeline) {
-        actionHandledInMainBlock = true;
-        if (resizingTimelineGridNode) {
-            resizingTimelineGridNode.isInResizeMode = true;
-            if (resizingTimelineGridNode.audioParams)
-                resizingTimelineGridNode.audioParams.isInResizeMode = true;
-        }
-        resizingTimelineGridNode = null;
-        resizeHandleType = null;
-        stateWasChanged = true;
-    } else if (wasConnectingNodes) {
-        actionHandledInMainBlock = true;
-        if (
-            connectingNode &&
-            nodeUnderCursorOnUp &&
-            nodeUnderCursorOnUp !== connectingNode &&
-            (!["nebula", PORTAL_NEBULA_TYPE, TIMELINE_GRID_TYPE, SPACERADAR_TYPE, CRANK_RADAR_TYPE].includes(
-                nodeUnderCursorOnUp.type,
-            ) || connectToCrankHandle)
-        ) {
-            connectNodes(connectingNode, nodeUnderCursorOnUp, connectionTypeToAdd, { nodeBHandle: connectToCrankHandle });
-            stateWasChanged = true;
-        }
-        connectingNode = null;
-    } else if (wasResizingNode) {
-        actionHandledInMainBlock = true;
-        stateWasChanged = true;
-    } else if (wasDraggingNode) {
-        actionHandledInMainBlock = true;
-        stateWasChanged = true;
-        identifyAndRouteAllGroups();
-        updateMistWetness();
-        updateCrushWetness();
-    } else if (wasCreatingSelectionRect) {
-        actionHandledInMainBlock = true;
-        const selX1 = Math.min(selectionRect.startX, selectionRect.endX);
-        const selY1 = Math.min(selectionRect.startY, selectionRect.endY);
-        const selX2 = Math.max(selectionRect.startX, selectionRect.endX);
-        const selY2 = Math.max(selectionRect.startY, selectionRect.endY);
-        if (!(event.shiftKey || ctrlLike)) selectedElements.clear();
-        nodes.forEach((n) => {
-            if (n.x >= selX1 && n.x <= selX2 && n.y >= selY1 && n.y <= selY2) {
-                selectedElements.add({ type: "node", id: n.id });
-            }
-        });
-        connections.forEach((c) => {
-            const nA = findNodeById(c.nodeAId);
-            const nB = findNodeById(c.nodeBId);
-            if (nA && nB) {
-                const pA = getConnectionPoint(nA, c.nodeAHandle);
-                const pB = getConnectionPoint(nB, c.nodeBHandle);
-                const midX = (pA.x + pB.x) / 2 + c.controlPointOffsetX;
-                const midY = (pA.y + pB.y) / 2 + c.controlPointOffsetY;
-                if (midX >= selX1 && midX <= selX2 && midY >= selY1 && midY <= selY2) {
-                    selectedElements.add({ type: "connection", id: c.id });
-                }
-            }
-        });
-        stateWasChanged = true;
-        updateConstellationGroup();
-        populateEditPanel();
-    } else if (!didDrag) {
-        actionHandledInMainBlock = true;
-        if (currentTool === "brush") {
-            if (!elementUnderCursorAtUp) {
-                let typeToPlace = brushNodeType;
-                let subtypeToPlace = brushNodeType === "sound" ? brushWaveform : null;
-                if (!isBrushing && brushStartWithPulse) {
-                    typeToPlace = "pulsar_standard";
-                    subtypeToPlace = null;
-                }
-                let prevNote = noteIndexToAdd;
-                if (brushNoteSequence.length > 0) {
-                    noteIndexToAdd = brushNoteSequence[brushNoteSequenceIndex];
-                    brushNoteSequenceIndex = (brushNoteSequenceIndex + 1) % brushNoteSequence.length;
-                }
-                const newNode = addNode(
-                    mousePos.x,
-                    mousePos.y,
-                    typeToPlace,
-                    subtypeToPlace,
-                );
-                noteIndexToAdd = prevNote;
-                if (newNode) {
-                    stateWasChanged = true;
-                    if (isBrushing && lastBrushNode) {
-                        connectNodes(lastBrushNode, newNode, "standard");
-                    }
-                    lastBrushNode = newNode;
-                    if (isPulsarType(newNode.type)) {
-                        triggerPulsarOnce(newNode);
-                    }
-                    isBrushing = true;
-                    selectedElements.clear();
-                    selectedElements.add({ type: "node", id: newNode.id });
-                    populateEditPanel();
-                }
-            } else {
-                isBrushing = false;
-                lastBrushNode = null;
-                brushNoteSequenceIndex = 0;
+      const addTimelineGridBtn = document.getElementById("addTimelineGridBtn");
+      if (addTimelineGridBtn && addTimelineGridBtn.classList.contains("active")) {
+          addTimelineGridBtn.classList.remove("active");
+      }
+  } else if (wasRotatingARocketNode) {
+      actionHandledInMainBlock = true;
+      stateWasChanged = true;
+  } else if (wasCrankingRadar) {
+      actionHandledInMainBlock = true;
+      stateWasChanged = true;
+  } else if (wasResizingTimeline) {
+      actionHandledInMainBlock = true;
+      if (resizingTimelineGridNode) {
+          resizingTimelineGridNode.isInResizeMode = true;
+          if (resizingTimelineGridNode.audioParams)
+              resizingTimelineGridNode.audioParams.isInResizeMode = true;
+      }
+      resizingTimelineGridNode = null;
+      resizeHandleType = null;
+      stateWasChanged = true;
+  } else if (wasConnectingNodes) {
+      actionHandledInMainBlock = true;
+      if (
+          connectingNode &&
+          nodeUnderCursorOnUp &&
+          nodeUnderCursorOnUp !== connectingNode &&
+          (!["nebula", PORTAL_NEBULA_TYPE, TIMELINE_GRID_TYPE, SPACERADAR_TYPE, CRANK_RADAR_TYPE].includes(
+              nodeUnderCursorOnUp.type,
+          ) || connectToCrankHandle)
+      ) {
+          connectNodes(connectingNode, nodeUnderCursorOnUp, connectionTypeToAdd, { nodeBHandle: connectToCrankHandle });
+          stateWasChanged = true;
+      }
+      connectingNode = null;
+  } else if (wasResizingNode) {
+      actionHandledInMainBlock = true;
+      stateWasChanged = true;
+  } else if (wasDraggingNode) {
+      actionHandledInMainBlock = true;
+      stateWasChanged = true;
+      identifyAndRouteAllGroups();
+      updateMistWetness();
+      updateCrushWetness();
+  } else if (wasCreatingSelectionRect) {
+      actionHandledInMainBlock = true;
+      const selX1 = Math.min(selectionRect.startX, selectionRect.endX);
+      const selY1 = Math.min(selectionRect.startY, selectionRect.endY);
+      const selX2 = Math.max(selectionRect.startX, selectionRect.endX);
+      const selY2 = Math.max(selectionRect.startY, selectionRect.endY);
+      if (!(event.shiftKey || ctrlLike)) selectedElements.clear();
+      nodes.forEach((n) => {
+          if (n.x >= selX1 && n.x <= selX2 && n.y >= selY1 && n.y <= selY2) {
+              selectedElements.add({ type: "node", id: n.id });
+          }
+      });
+      connections.forEach((c) => {
+          const nA = findNodeById(c.nodeAId);
+          const nB = findNodeById(c.nodeBId);
+          if (nA && nB) {
+              const pA = getConnectionPoint(nA, c.nodeAHandle);
+              const pB = getConnectionPoint(nB, c.nodeBHandle);
+              const midX = (pA.x + pB.x) / 2 + c.controlPointOffsetX;
+              const midY = (pA.y + pB.y) / 2 + c.controlPointOffsetY;
+              if (midX >= selX1 && midX <= selX2 && midY >= selY1 && midY <= selY2) {
+                  selectedElements.add({ type: "connection", id: c.id });
+              }
+          }
+      });
+      stateWasChanged = true;
+      updateConstellationGroup();
+      populateEditPanel();
+  } else if (!didDrag) {
+      actionHandledInMainBlock = true;
+      if (currentTool === "brush") {
+          if (!elementUnderCursorAtUp) {
+              let typeToPlace = brushNodeType;
+              let subtypeToPlace = brushNodeType === "sound" ? brushWaveform : null;
+              if (!isBrushing && brushStartWithPulse) {
+                  typeToPlace = "pulsar_standard";
+                  subtypeToPlace = null;
+              }
+              let prevNote = noteIndexToAdd;
+              if (brushNoteSequence.length > 0) {
+                  noteIndexToAdd = brushNoteSequence[brushNoteSequenceIndex];
+                  brushNoteSequenceIndex = (brushNoteSequenceIndex + 1) % brushNoteSequence.length;
+              }
+              const newNode = addNode(
+                  mousePos.x,
+                  mousePos.y,
+                  typeToPlace,
+                  subtypeToPlace,
+              );
+              noteIndexToAdd = prevNote;
+              if (newNode) {
+                  stateWasChanged = true;
+                  if (isBrushing && lastBrushNode) {
+                      connectNodes(lastBrushNode, newNode, "standard");
+                  }
+                  lastBrushNode = newNode;
+                  if (isPulsarType(newNode.type)) {
+                      triggerPulsarOnce(newNode);
+                  }
+                  isBrushing = true;
+                  selectedElements.clear();
+                  selectedElements.add({ type: "node", id: newNode.id });
+                  populateEditPanel();
+              }
+          } else {
+              isBrushing = false;
+              lastBrushNode = null;
+              brushNoteSequenceIndex = 0;
 
-                if (
-                    !isElementSelected(
-                        elementUnderCursorAtUp.type,
-                        elementUnderCursorAtUp.id,
-                    ) ||
-                    (selectedElements.size > 1 && !(event.shiftKey || ctrlLike))
-                ) {
-                    if (!(event.shiftKey || ctrlLike)) {
-                        selectedElements.forEach((selEl) => {
-                            if (selEl.type === "node") {
-                                const n = findNodeById(selEl.id);
-                                if (n && n.type === TIMELINE_GRID_TYPE)
-                                    n.isInResizeMode = false;
-                            }
-                        });
-                        selectedElements.clear();
-                    }
-                    selectedElements.add(elementUnderCursorAtUp);
-                    if (
-                        elementUnderCursorAtUp.type === "node" &&
-                        elementUnderCursorAtUp.nodeRef?.type === TIMELINE_GRID_TYPE
-                    ) {
-                        const nodeRef = elementUnderCursorAtUp.nodeRef;
-                        if (nodeRef) {
-                            nodeRef.isInResizeMode = true;
-                            if (nodeRef.audioParams)
-                                nodeRef.audioParams.isInResizeMode = true;
-                        }
-                    }
-                    stateWasChanged = true;
-                } else if (
-                    (event.shiftKey || ctrlLike) &&
-                    isElementSelected(
-                        elementUnderCursorAtUp.type,
-                        elementUnderCursorAtUp.id,
-                    )
-                ) {
-                    selectedElements = new Set(
-                        [...selectedElements].filter(
-                            (el) =>
-                            !(
-                                el.type === elementUnderCursorAtUp.type &&
-                                el.id === elementUnderCursorAtUp.id
-                            ),
-                        ),
-                    );
-                    stateWasChanged = true;
-                }
-                if (stateWasChanged) {
-                    updateConstellationGroup();
-                    populateEditPanel();
-                }
-            }
-        } else if (currentTool === "edit") {
-            if (
-                elementClickedStartOriginal &&
-                elementUnderCursorAtUp &&
-                elementClickedStartOriginal.type === elementUnderCursorAtUp.type &&
-                elementClickedStartOriginal.id === elementUnderCursorAtUp.id
-            ) {
-                const targetElement = elementClickedStartOriginal;
-                const node = targetElement.type === "node" ? nodeClickedStart : null;
-                const connection =
-                    targetElement.type === "connection" ? connectionClickedStart : null;
-                if (event.button === 0) {
-                    if (event.altKey) {
-                        if (
-                            node &&
-                            (node.type === "sound" ||
-                                node.type === "nebula" ||
-                                node.type === "pitchShift" ||
-                                node.type === PRORB_TYPE)
-                        ) {
-                            handlePitchCycleDown(targetElement);
-                            stateWasChanged = true;
-                        } else if (connection && connection.type === "string_violin") {
-                            handlePitchCycleDown(targetElement);
-                            stateWasChanged = true;
-                        }
-                    } else if (!(event.shiftKey || ctrlLike)) {
-                        if (wasSelectedAtStart) {
-                            if (node) {
-                                if (node.type === "pulsar_manual") triggerManualPulsar(node);
-                                else if (
-                                    node.isStartNode &&
-                                    node.type !== "pulsar_triggerable" &&
-                                    node.type !== "pulsar_random_particles" &&
-                                    node.type !== "pulsar_rocket" &&
-                                    node.type !== "pulsar_ufo"
-                                ) {
-                                    if (isGlobalSyncEnabled) handleSubdivisionCycle(node);
-                                    else handleTapTempo(node);
-                                    stateWasChanged = true;
-                                } else if (
-                                    node.type === "sound" ||
-                                    node.type === "nebula" ||
-                                    node.type === PRORB_TYPE
-                                ) {
-                                    handlePitchCycle(targetElement);
-                                    stateWasChanged = true;
-                                } else if (node.type === "gate") {
-                                    handleGateCycle(node);
-                                    stateWasChanged = true;
-                                } else if (node.type === "probabilityGate") {
-                                    handleProbabilityCycle(node);
-                                    stateWasChanged = true;
-                                } else if (node.type === "pitchShift") {
-                                    handlePitchShiftCycle(node);
-                                    stateWasChanged = true;
-                                } else if (isDrumType(node.type)) triggerNodeEffect(node);
-                                else if (node.type === TIMELINE_GRID_TYPE) {
-                                    node.isInResizeMode = !node.isInResizeMode;
-                                    if (node.audioParams)
-                                        node.audioParams.isInResizeMode = node.isInResizeMode;
-                                    stateWasChanged = true;
-                                    populateEditPanel();
-                                }
-                            } else if (connection && connection.type === "string_violin") {
-                                handlePitchCycle(targetElement);
-                                stateWasChanged = true;
-                            }
-                        } else {
-                            if (
-                                !isElementSelected(targetElement.type, targetElement.id) ||
-                                selectedElements.size > 1
-                            ) {
-                                selectedElements.clear();
-                                selectedElements.add(targetElement);
-                                if (node && node.type === TIMELINE_GRID_TYPE) {
-                                    node.isInResizeMode = true;
-                                    if (node.audioParams) node.audioParams.isInResizeMode = true;
-                                } else if (
-                                    node &&
-                                    node.type !== TIMELINE_GRID_TYPE &&
-                                    node.type !== GRID_SEQUENCER_TYPE &&
-                                    node.type !== SPACERADAR_TYPE &&
-                                    node.type !== CRANK_RADAR_TYPE &&
-                                    node.hasOwnProperty("isInResizeMode")
-                                )
-                                    node.isInResizeMode = false;
-                                if (
-                                    node &&
-                                    node.audioParams &&
-                                    node.audioParams.hasOwnProperty("isInResizeMode")
-                                )
-                                    node.audioParams.isInResizeMode = node.isInResizeMode;
+              if (
+                  !isElementSelected(
+                      elementUnderCursorAtUp.type,
+                      elementUnderCursorAtUp.id,
+                  ) ||
+                  (selectedElements.size > 1 && !(event.shiftKey || ctrlLike))
+              ) {
+                  if (!(event.shiftKey || ctrlLike)) {
+                      selectedElements.forEach((selEl) => {
+                          if (selEl.type === "node") {
+                              const n = findNodeById(selEl.id);
+                              if (n && n.type === TIMELINE_GRID_TYPE)
+                                  n.isInResizeMode = false;
+                          }
+                      });
+                      selectedElements.clear();
+                  }
+                  selectedElements.add(elementUnderCursorAtUp);
+                  if (
+                      elementUnderCursorAtUp.type === "node" &&
+                      elementUnderCursorAtUp.nodeRef?.type === TIMELINE_GRID_TYPE
+                  ) {
+                      const nodeRef = elementUnderCursorAtUp.nodeRef;
+                      if (nodeRef) {
+                          nodeRef.isInResizeMode = true;
+                          if (nodeRef.audioParams)
+                              nodeRef.audioParams.isInResizeMode = true;
+                      }
+                  }
+                  stateWasChanged = true;
+              } else if (
+                  (event.shiftKey || ctrlLike) &&
+                  isElementSelected(
+                      elementUnderCursorAtUp.type,
+                      elementUnderCursorAtUp.id,
+                  )
+              ) {
+                  selectedElements = new Set(
+                      [...selectedElements].filter(
+                          (el) =>
+                          !(
+                              el.type === elementUnderCursorAtUp.type &&
+                              el.id === elementUnderCursorAtUp.id
+                          ),
+                      ),
+                  );
+                  stateWasChanged = true;
+              }
+              if (stateWasChanged) {
+                  updateConstellationGroup();
+                  populateEditPanel();
+              }
+          }
+      } else if (currentTool === "edit") {
+          if (
+              elementClickedStartOriginal &&
+              elementUnderCursorAtUp &&
+              elementClickedStartOriginal.type === elementUnderCursorAtUp.type &&
+              elementClickedStartOriginal.id === elementUnderCursorAtUp.id
+          ) {
+              const targetElement = elementClickedStartOriginal;
+              const node = targetElement.type === "node" ? nodeClickedStart : null;
+              const connection =
+                  targetElement.type === "connection" ? connectionClickedStart : null;
+              if (event.button === 0) {
+                  if (event.altKey) {
+                      if (
+                          node &&
+                          (node.type === "sound" ||
+                              node.type === "nebula" ||
+                              node.type === "pitchShift" ||
+                              node.type === PRORB_TYPE)
+                      ) {
+                          handlePitchCycleDown(targetElement);
+                          stateWasChanged = true;
+                      } else if (connection && connection.type === "string_violin") {
+                          handlePitchCycleDown(targetElement);
+                          stateWasChanged = true;
+                      }
+                  } else if (!(event.shiftKey || ctrlLike)) {
+                      if (wasSelectedAtStart) {
+                          if (node) {
+                              if (node.type === "pulsar_manual") triggerManualPulsar(node);
+                              else if (
+                                  node.isStartNode &&
+                                  node.type !== "pulsar_triggerable" &&
+                                  node.type !== "pulsar_random_particles" &&
+                                  node.type !== "pulsar_rocket" &&
+                                  node.type !== "pulsar_ufo"
+                              ) {
+                                  if (isGlobalSyncEnabled) handleSubdivisionCycle(node);
+                                  else handleTapTempo(node);
+                                  stateWasChanged = true;
+                              } else if (
+                                  node.type === "sound" ||
+                                  node.type === "nebula" ||
+                                  node.type === PRORB_TYPE
+                              ) {
+                                  handlePitchCycle(targetElement);
+                                  stateWasChanged = true;
+                              } else if (node.type === "gate") {
+                                  handleGateCycle(node);
+                                  stateWasChanged = true;
+                              } else if (node.type === "probabilityGate") {
+                                  handleProbabilityCycle(node);
+                                  stateWasChanged = true;
+                              } else if (node.type === "pitchShift") {
+                                  handlePitchShiftCycle(node);
+                                  stateWasChanged = true;
+                              } else if (isDrumType(node.type)) triggerNodeEffect(node);
+                              else if (node.type === TIMELINE_GRID_TYPE) {
+                                  node.isInResizeMode = !node.isInResizeMode;
+                                  if (node.audioParams)
+                                      node.audioParams.isInResizeMode = node.isInResizeMode;
+                                  stateWasChanged = true;
+                                  populateEditPanel();
+                              }
+                          } else if (connection && connection.type === "string_violin") {
+                              handlePitchCycle(targetElement);
+                              stateWasChanged = true;
+                          }
+                      } else {
+                          if (
+                              !isElementSelected(targetElement.type, targetElement.id) ||
+                              selectedElements.size > 1
+                          ) {
+                              selectedElements.clear();
+                              selectedElements.add(targetElement);
+                              if (node && node.type === TIMELINE_GRID_TYPE) {
+                                  node.isInResizeMode = true;
+                                  if (node.audioParams) node.audioParams.isInResizeMode = true;
+                              } else if (
+                                  node &&
+                                  node.type !== TIMELINE_GRID_TYPE &&
+                                  node.type !== GRID_SEQUENCER_TYPE &&
+                                  node.type !== SPACERADAR_TYPE &&
+                                  node.type !== CRANK_RADAR_TYPE &&
+                                  node.hasOwnProperty("isInResizeMode")
+                              )
+                                  node.isInResizeMode = false;
+                              if (
+                                  node &&
+                                  node.audioParams &&
+                                  node.audioParams.hasOwnProperty("isInResizeMode")
+                              )
+                                  node.audioParams.isInResizeMode = node.isInResizeMode;
 
-                                updateConstellationGroup();
-                                populateEditPanel();
-                                stateWasChanged = true;
-                            }
-                        }
-                    }
-                }
-            } else if (
-                !elementClickedStartOriginal &&
-                !(event.shiftKey || ctrlLike) &&
-                currentTool === "edit"
-            ) {
-                if (selectedElements.size > 0) {
-                    selectedElements.forEach((selEl) => {
-                        if (selEl.type === "node") {
-                            const n = findNodeById(selEl.id);
-                            if (n && n.type === TIMELINE_GRID_TYPE) {
-                                n.isInResizeMode = false;
-                                if (n.audioParams) n.audioParams.isInResizeMode = false;
-                            }
-                        }
-                    });
-                    selectedElements.clear();
-                    updateConstellationGroup();
-                    populateEditPanel();
-                    stateWasChanged = true;
-                }
-            }
-        } else if (
-            currentTool === "add" &&
-            nodeTypeToAdd !== TIMELINE_GRID_TYPE &&
-            !didDrag
-        ) {
-            actionHandledInMainBlock = true;
-            const clickedOnTimelineGridOriginal =
-                elementClickedStartOriginal &&
-                elementClickedStartOriginal.type === "node" &&
-                elementClickedStartOriginal.nodeRef &&
-                elementClickedStartOriginal.nodeRef.type === TIMELINE_GRID_TYPE;
-            const clickedOnSpaceRadarOriginal =
-                elementClickedStartOriginal &&
-                elementClickedStartOriginal.type === "node" &&
-                elementClickedStartOriginal.nodeRef &&
-                (elementClickedStartOriginal.nodeRef.type === SPACERADAR_TYPE ||
-                    elementClickedStartOriginal.nodeRef.type === CRANK_RADAR_TYPE);
-            const clickedOnEmptySpaceOriginal = !elementClickedStartOriginal;
-            const canPlaceNodeHereOriginal =
-                clickedOnEmptySpaceOriginal ||
-                clickedOnTimelineGridOriginal ||
-                clickedOnSpaceRadarOriginal;
+                              updateConstellationGroup();
+                              populateEditPanel();
+                              stateWasChanged = true;
+                          }
+                      }
+                  }
+              }
+          } else if (
+              !elementClickedStartOriginal &&
+              !(event.shiftKey || ctrlLike) &&
+              currentTool === "edit"
+          ) {
+              if (selectedElements.size > 0) {
+                  selectedElements.forEach((selEl) => {
+                      if (selEl.type === "node") {
+                          const n = findNodeById(selEl.id);
+                          if (n && n.type === TIMELINE_GRID_TYPE) {
+                              n.isInResizeMode = false;
+                              if (n.audioParams) n.audioParams.isInResizeMode = false;
+                          }
+                      }
+                  });
+                  selectedElements.clear();
+                  updateConstellationGroup();
+                  populateEditPanel();
+                  stateWasChanged = true;
+              }
+          }
+      } else if (
+          currentTool === "add" &&
+          nodeTypeToAdd !== TIMELINE_GRID_TYPE &&
+          !didDrag
+      ) {
+          actionHandledInMainBlock = true;
+          const clickedOnTimelineGridOriginal =
+              elementClickedStartOriginal &&
+              elementClickedStartOriginal.type === "node" &&
+              elementClickedStartOriginal.nodeRef &&
+              elementClickedStartOriginal.nodeRef.type === TIMELINE_GRID_TYPE;
+          const clickedOnSpaceRadarOriginal =
+              elementClickedStartOriginal &&
+              elementClickedStartOriginal.type === "node" &&
+              elementClickedStartOriginal.nodeRef &&
+              (elementClickedStartOriginal.nodeRef.type === SPACERADAR_TYPE ||
+                  elementClickedStartOriginal.nodeRef.type === CRANK_RADAR_TYPE);
+          const clickedOnEmptySpaceOriginal = !elementClickedStartOriginal;
+          const canPlaceNodeHereOriginal =
+              clickedOnEmptySpaceOriginal ||
+              clickedOnTimelineGridOriginal ||
+              clickedOnSpaceRadarOriginal;
 
-            if (canPlaceNodeHereOriginal) {
-                const canActuallyAddThisNode =
-                    (nodeTypeToAdd !== "sound" && nodeTypeToAdd !== "nebula") ||
-                    (nodeTypeToAdd === "sound" && waveformToAdd) ||
-                    (nodeTypeToAdd === "nebula" && waveformToAdd) ||
-                    isPulsarType(nodeTypeToAdd) ||
-                    isDrumType(nodeTypeToAdd) ||
-                    nodeTypeToAdd === PRORB_TYPE ||
-                    nodeTypeToAdd === ALIEN_ORB_TYPE ||
-                    nodeTypeToAdd === ALIEN_DRONE_TYPE ||
-                    [
-                        "gate",
-                        "probabilityGate",
-                        "pitchShift",
-                        "relay",
-                        "reflector",
-                        "switch",
-                        PORTAL_NEBULA_TYPE,
-                    ].includes(nodeTypeToAdd);
+          if (canPlaceNodeHereOriginal) {
+              const canActuallyAddThisNode =
+                  (nodeTypeToAdd !== "sound" && nodeTypeToAdd !== "nebula") ||
+                  (nodeTypeToAdd === "sound" && waveformToAdd) ||
+                  (nodeTypeToAdd === "nebula" && waveformToAdd) ||
+                  isPulsarType(nodeTypeToAdd) ||
+                  isDrumType(nodeTypeToAdd) ||
+                  nodeTypeToAdd === PRORB_TYPE ||
+                  nodeTypeToAdd === ALIEN_ORB_TYPE ||
+                  nodeTypeToAdd === ALIEN_DRONE_TYPE ||
+                  [
+                      "gate",
+                      "probabilityGate",
+                      "pitchShift",
+                      "relay",
+                      "reflector",
+                      "switch",
+                      PORTAL_NEBULA_TYPE,
+                  ].includes(nodeTypeToAdd);
 
-                if (canActuallyAddThisNode) {
-                    let finalX = mousePos.x;
-                    let finalY = mousePos.y;
-                    const effectiveGlobalSnapForAdd =
-                        isSnapEnabled && !(event && event.shiftKey);
+              if (canActuallyAddThisNode) {
+                  let finalX = mousePos.x;
+                  let finalY = mousePos.y;
+                  const effectiveGlobalSnapForAdd =
+                      isSnapEnabled && !(event && event.shiftKey);
 
-                    if (nodeTypeToAdd !== TIMELINE_GRID_TYPE && nodeTypeToAdd !== SPACERADAR_TYPE && nodeTypeToAdd !== CRANK_RADAR_TYPE) {
-                        for (const timelineGridNode of nodes) {
-                            if (
-                                timelineGridNode.type === TIMELINE_GRID_TYPE &&
-                                timelineGridNode.snapToInternalGrid &&
-                                timelineGridNode.internalGridDivisions > 1
-                            ) {
-                                const cosRot = Math.cos(
-                                    -(timelineGridNode.audioParams?.rotation || 0),
-                                );
-                                const sinRot = Math.sin(
-                                    -(timelineGridNode.audioParams?.rotation || 0),
-                                );
-                                const tX = mousePos.x - timelineGridNode.x;
-                                const tY = mousePos.y - timelineGridNode.y;
-                                const localMouseX = tX * cosRot - tY * sinRot;
-                                const localMouseY = tX * sinRot + tY * cosRot;
+                  if (nodeTypeToAdd !== TIMELINE_GRID_TYPE && nodeTypeToAdd !== SPACERADAR_TYPE && nodeTypeToAdd !== CRANK_RADAR_TYPE) {
+                      for (const timelineGridNode of nodes) {
+                          if (
+                              timelineGridNode.type === TIMELINE_GRID_TYPE &&
+                              timelineGridNode.snapToInternalGrid &&
+                              timelineGridNode.internalGridDivisions > 1
+                          ) {
+                              const cosRot = Math.cos(
+                                  -(timelineGridNode.audioParams?.rotation || 0),
+                              );
+                              const sinRot = Math.sin(
+                                  -(timelineGridNode.audioParams?.rotation || 0),
+                              );
+                              const tX = mousePos.x - timelineGridNode.x;
+                              const tY = mousePos.y - timelineGridNode.y;
+                              const localMouseX = tX * cosRot - tY * sinRot;
+                              const localMouseY = tX * sinRot + tY * cosRot;
 
-                                if (
-                                    localMouseX >= -timelineGridNode.width / 2 &&
-                                    localMouseX <= timelineGridNode.width / 2 &&
-                                    localMouseY >= -timelineGridNode.height / 2 &&
-                                    localMouseY <= timelineGridNode.height / 2
-                                ) {
-                                    const internalSnapPos = snapToInternalGrid(
-                                        { x: mousePos.x, y: mousePos.y },
-                                        timelineGridNode,
-                                    );
-                                    finalX = internalSnapPos.x;
-                                    finalY = internalSnapPos.y;
-                                    break;
-                                }
-                            }
-                        }
-                        if (finalX === mousePos.x && finalY === mousePos.y) {
-                            for (const radarNode of nodes) {
-                                if (
-                                    (radarNode.type === SPACERADAR_TYPE || radarNode.type === CRANK_RADAR_TYPE) &&
-                                    radarNode.snapToInternalGrid &&
-                                    radarNode.internalGridDivisions > 1
-                                ) {
-                                    const distToCenter = distance(mousePos.x, mousePos.y, radarNode.x, radarNode.y);
-                                    if (distToCenter <= radarNode.radius) {
-                                        const snapPos = snapToSpaceRadarInternalGrid(
-                                            { x: mousePos.x, y: mousePos.y },
-                                            radarNode,
-                                        );
-                                        finalX = snapPos.x;
-                                        finalY = snapPos.y;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                              if (
+                                  localMouseX >= -timelineGridNode.width / 2 &&
+                                  localMouseX <= timelineGridNode.width / 2 &&
+                                  localMouseY >= -timelineGridNode.height / 2 &&
+                                  localMouseY <= timelineGridNode.height / 2
+                              ) {
+                                  const internalSnapPos = snapToInternalGrid(
+                                      { x: mousePos.x, y: mousePos.y },
+                                      timelineGridNode,
+                                  );
+                                  finalX = internalSnapPos.x;
+                                  finalY = internalSnapPos.y;
+                                  break;
+                              }
+                          }
+                      }
+                      if (finalX === mousePos.x && finalY === mousePos.y) {
+                          for (const radarNode of nodes) {
+                              if (
+                                  (radarNode.type === SPACERADAR_TYPE || radarNode.type === CRANK_RADAR_TYPE) &&
+                                  radarNode.snapToInternalGrid &&
+                                  radarNode.internalGridDivisions > 1
+                              ) {
+                                  const distToCenter = distance(mousePos.x, mousePos.y, radarNode.x, radarNode.y);
+                                  if (distToCenter <= radarNode.radius) {
+                                      const snapPos = snapToSpaceRadarInternalGrid(
+                                          { x: mousePos.x, y: mousePos.y },
+                                          radarNode,
+                                      );
+                                      finalX = snapPos.x;
+                                      finalY = snapPos.y;
+                                      break;
+                                  }
+                              }
+                          }
+                      }
+                  }
 
-                    if (
-                        effectiveGlobalSnapForAdd &&
-                        nodeTypeToAdd !== TIMELINE_GRID_TYPE
-                    ) {
-                        let wasSnappedToInternal = false;
-                        for (const timelineGridNode of nodes) {
-                            if (
-                                timelineGridNode.type === TIMELINE_GRID_TYPE &&
-                                timelineGridNode.snapToInternalGrid
-                            ) {
-                                const cosRot = Math.cos(
-                                    -(timelineGridNode.audioParams?.rotation || 0),
-                                );
-                                const sinRot = Math.sin(
-                                    -(timelineGridNode.audioParams?.rotation || 0),
-                                );
-                                const tX = mousePos.x - timelineGridNode.x;
-                                const tY = mousePos.y - timelineGridNode.y;
-                                const localMouseX = tX * cosRot - tY * sinRot;
-                                const localMouseY = tX * sinRot + tY * cosRot;
-                                if (
-                                    localMouseX >= -timelineGridNode.width / 2 &&
-                                    localMouseX <= timelineGridNode.width / 2 &&
-                                    localMouseY >= -timelineGridNode.height / 2 &&
-                                    localMouseY <= timelineGridNode.height / 2
-                                ) {
-                                    wasSnappedToInternal = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!wasSnappedToInternal) {
-                            for (const radarNode of nodes) {
-                                if (
-                                    (radarNode.type === SPACERADAR_TYPE || radarNode.type === CRANK_RADAR_TYPE) &&
-                                    radarNode.snapToInternalGrid
-                                ) {
-                                    const dist = distance(mousePos.x, mousePos.y, radarNode.x, radarNode.y);
-                                    if (dist <= radarNode.radius) {
-                                        wasSnappedToInternal = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (!wasSnappedToInternal) {
-                            const globalSnapped = snapToGrid(finalX, finalY);
-                            finalX = globalSnapped.x;
-                            finalY = globalSnapped.y;
-                        }
-                    }
+                  if (
+                      effectiveGlobalSnapForAdd &&
+                      nodeTypeToAdd !== TIMELINE_GRID_TYPE
+                  ) {
+                      let wasSnappedToInternal = false;
+                      for (const timelineGridNode of nodes) {
+                          if (
+                              timelineGridNode.type === TIMELINE_GRID_TYPE &&
+                              timelineGridNode.snapToInternalGrid
+                          ) {
+                              const cosRot = Math.cos(
+                                  -(timelineGridNode.audioParams?.rotation || 0),
+                              );
+                              const sinRot = Math.sin(
+                                  -(timelineGridNode.audioParams?.rotation || 0),
+                              );
+                              const tX = mousePos.x - timelineGridNode.x;
+                              const tY = mousePos.y - timelineGridNode.y;
+                              const localMouseX = tX * cosRot - tY * sinRot;
+                              const localMouseY = tX * sinRot + tY * cosRot;
+                              if (
+                                  localMouseX >= -timelineGridNode.width / 2 &&
+                                  localMouseX <= timelineGridNode.width / 2 &&
+                                  localMouseY >= -timelineGridNode.height / 2 &&
+                                  localMouseY <= timelineGridNode.height / 2
+                              ) {
+                                  wasSnappedToInternal = true;
+                                  break;
+                              }
+                          }
+                      }
+                      if (!wasSnappedToInternal) {
+                          for (const radarNode of nodes) {
+                              if (
+                                  (radarNode.type === SPACERADAR_TYPE || radarNode.type === CRANK_RADAR_TYPE) &&
+                                  radarNode.snapToInternalGrid
+                              ) {
+                                  const dist = distance(mousePos.x, mousePos.y, radarNode.x, radarNode.y);
+                                  if (dist <= radarNode.radius) {
+                                      wasSnappedToInternal = true;
+                                      break;
+                                  }
+                              }
+                          }
+                      }
+                      if (!wasSnappedToInternal) {
+                          const globalSnapped = snapToGrid(finalX, finalY);
+                          finalX = globalSnapped.x;
+                          finalY = globalSnapped.y;
+                      }
+                  }
 
-                    const newNode = addNode(finalX, finalY, nodeTypeToAdd, waveformToAdd);
-                    if (newNode) {
-                        if (!(event.shiftKey || ctrlLike)) selectedElements.clear();
-                        selectedElements.add({ type: "node", id: newNode.id });
-                        if (newNode.type === PRORB_TYPE) newNode.isSelected = true;
-                        populateEditPanel();
-                        stateWasChanged = true;
-                    }
-                }
-            }
-        } else if (
-            currentTool === "delete" &&
-            elementClickedStartOriginal &&
-            !didDrag
-        ) {
-            actionHandledInMainBlock = true;
-            if (elementClickedStartOriginal.type === "node")
-                removeNode(nodeClickedStart);
-            else if (elementClickedStartOriginal.type === "connection")
-                removeConnection(connectionClickedStart);
-            stateWasChanged = true;
-        } else if (
-            !elementClickedStartOriginal &&
-            !(event.shiftKey || ctrlLike) &&
-            !didDrag &&
-            currentTool !== "add" &&
-            currentTool !== "brush" &&
-            currentTool !== "delete" &&
-            currentTool !== "connect" &&
-            currentTool !== "connect_string" &&
-            currentTool !== "connect_glide" &&
-            currentTool !== "connect_rope" &&
-            currentTool !== "connect_wavetrail" &&
-            currentTool !== "connect_oneway"
-        ) {
-            actionHandledInMainBlock = true;
-            if (selectedElements.size > 0) {
-                selectedElements.forEach((selEl) => {
-                    if (selEl.type === "node") {
-                        const n = findNodeById(selEl.id);
-                        if (n && n.type === TIMELINE_GRID_TYPE) {
-                            n.isInResizeMode = false;
-                            if (n.audioParams) n.audioParams.isInResizeMode = false;
-                        }
-                    }
-                });
-                selectedElements.clear();
-                updateGroupControlsUI();
-                populateEditPanel();
-                stateWasChanged = true;
-            }
-        }
-    }
+                  const newNode = addNode(finalX, finalY, nodeTypeToAdd, waveformToAdd);
+                  if (newNode) {
+                      if (!(event.shiftKey || ctrlLike)) selectedElements.clear();
+                      selectedElements.add({ type: "node", id: newNode.id });
+                      if (newNode.type === PRORB_TYPE) newNode.isSelected = true;
+                      populateEditPanel();
+                      stateWasChanged = true;
+                  }
+              }
+          }
+      } else if (
+          currentTool === "delete" &&
+          elementClickedStartOriginal &&
+          !didDrag
+      ) {
+          actionHandledInMainBlock = true;
+          if (elementClickedStartOriginal.type === "node")
+              removeNode(nodeClickedStart);
+          else if (elementClickedStartOriginal.type === "connection")
+              removeConnection(connectionClickedStart);
+          stateWasChanged = true;
+      } else if (
+          !elementClickedStartOriginal &&
+          !(event.shiftKey || ctrlLike) &&
+          !didDrag &&
+          currentTool !== "add" &&
+          currentTool !== "brush" &&
+          currentTool !== "delete" &&
+          currentTool !== "connect" &&
+          currentTool !== "connect_string" &&
+          currentTool !== "connect_glide" &&
+          currentTool !== "connect_rope" &&
+          currentTool !== "connect_wavetrail" &&
+          currentTool !== "connect_oneway"
+      ) {
+          actionHandledInMainBlock = true;
+          if (selectedElements.size > 0) {
+              selectedElements.forEach((selEl) => {
+                  if (selEl.type === "node") {
+                      const n = findNodeById(selEl.id);
+                      if (n && n.type === TIMELINE_GRID_TYPE) {
+                          n.isInResizeMode = false;
+                          if (n.audioParams) n.audioParams.isInResizeMode = false;
+                      }
+                  }
+              });
+              selectedElements.clear();
+              updateGroupControlsUI();
+              populateEditPanel();
+              stateWasChanged = true;
+          }
+      }
+  }
 
-    didDrag = false;
+  didDrag = false;
 
-    nodeClickedAtMouseDown = null;
-    connectionClickedAtMouseDown = null;
-    elementClickedAtMouseDown = null;
-    nodeDragOffsets.clear();
-    panStart = { x: 0, y: 0 };
+  nodeClickedAtMouseDown = null;
+  connectionClickedAtMouseDown = null;
+  elementClickedAtMouseDown = null;
+  nodeDragOffsets.clear();
+  panStart = { x: 0, y: 0 };
 
-    if (
-        currentTool !== "connect" &&
-        currentTool !== "connect_string" &&
-        currentTool !== "connect_glide" &&
-        currentTool !== "connect_rope" &&
-        currentTool !== "connect_wavetrail" &&
-        currentTool !== "connect_oneway"
-    ) {
-        connectionTypeToAdd = "standard";
-    }
+  if (
+      currentTool !== "connect" &&
+      currentTool !== "connect_string" &&
+      currentTool !== "connect_glide" &&
+      currentTool !== "connect_rope" &&
+      currentTool !== "connect_wavetrail" &&
+      currentTool !== "connect_oneway"
+  ) {
+      connectionTypeToAdd = "standard";
+  }
 
-    resizingTimelineGridNode = null;
-    resizeHandleType = null;
+  resizingTimelineGridNode = null;
+  resizeHandleType = null;
 
-    if (!isDrawingNewTimelineGrid) {
-        newTimelineGridInitialCorner = null;
-        currentlyPlacingTimelineNodeId = null;
-    }
+  if (!isDrawingNewTimelineGrid) {
+      newTimelineGridInitialCorner = null;
+      currentlyPlacingTimelineNodeId = null;
+  }
 
-    if (currentTool !== "brush" && isBrushing) {
-        isBrushing = false;
-        lastBrushNode = null;
-        brushNoteSequenceIndex = 0;
-    }
+  if (currentTool !== "brush" && isBrushing) {
+      isBrushing = false;
+      lastBrushNode = null;
+      brushNoteSequenceIndex = 0;
+  }
 
-    if (stateWasChanged && !isPerformingUndoRedo) {
-        saveState();
-    }
-    updateGroupControlsUI();
-    const selectedArray = Array.from(selectedElements);
-    console.log(`[handleMouseUp] Mouse up. Selected elements: ${selectedArray.length}`);
+  if (stateWasChanged && !isPerformingUndoRedo) {
+      saveState();
+  }
+  updateGroupControlsUI();
+  const selectedArray = Array.from(selectedElements);
 
-    if (selectedArray.length === 1 && selectedArray[0].type === 'node' && currentTool === 'edit') {
-        const selectedNode = findNodeById(selectedArray[0].id);
-        if (selectedNode && selectedNode.type === PRORB_TYPE) {
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-        } else if (selectedNode && (selectedNode.type === ALIEN_ORB_TYPE || selectedNode.type === ALIEN_DRONE_TYPE)) {
-            showAlienOrbMenu(selectedNode);
-            hideResonauterOrbMenu();
-            hideArvoDroneOrbMenu();
-        } else if (selectedNode && selectedNode.type === ARVO_DRONE_TYPE) {
-            showArvoDroneOrbMenu(selectedNode);
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideRadioOrbMenu();
-        } else if (selectedNode && (selectedNode.type === RESONAUTER_TYPE)) {
-            showResonauterOrbMenu(selectedNode);
-            hideAlienOrbMenu();
-            hideRadioOrbMenu();
-            hideArvoDroneOrbMenu();
-        } else if (selectedNode && selectedNode.type === MOTOR_ORB_TYPE) {
-            showMotorOrbMenu(selectedNode);
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideRadioOrbMenu();
-            hideArvoDroneOrbMenu();
-        } else if (selectedNode && selectedNode.type === CLOCKWORK_ORB_TYPE) {
-            showClockworkOrbMenu(selectedNode);
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideRadioOrbMenu();
-            hideArvoDroneOrbMenu();
-        } else if (selectedNode && selectedNode.type === RADIO_ORB_TYPE) {
-            showRadioOrbMenu(selectedNode);
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideArvoDroneOrbMenu();
-        } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tone') {
-            showToneSynthMenu(selectedNode);
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideRadioOrbMenu();
-            hideArvoDroneOrbMenu();
-            hideSamplerOrbMenu();
-        } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.waveform && selectedNode.audioParams.waveform.startsWith("sampler_")) {
-            showSamplerOrbMenu(selectedNode);
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideRadioOrbMenu();
-            hideArvoDroneOrbMenu();
-        } else {
-            console.log("[handleMouseUp] A non-PrOrb node is selected. Hiding menu.");
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideArvoDroneOrbMenu();
-            hideRadioOrbMenu();
-            hideMotorOrbMenu();
-            hideMotorOrbPanel();
-            hideClockworkOrbMenu();
-            hideClockworkOrbPanel();
-            hideStringConnectionMenu();
-            hideAlienPanel();
-            hideResonauterPanel();
-            hideArvoPanel();
-            hideTonePanel();
-            hideToneSynthMenu();
-            hideSamplerPanel();
-            hideStringPanel();
-        }
-    } else if (selectedArray.length === 1 && selectedArray[0].type === 'connection') {
-        const selectedConn = findConnectionById(selectedArray[0].id);
-        if (selectedConn && selectedConn.type === 'string_violin') {
-            showStringConnectionMenu(selectedConn);
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideToneSynthMenu();
-            hideSamplerOrbMenu();
-            hideRadioOrbMenu();
-            hideMotorOrbMenu();
-            hideMotorOrbPanel();
-            hideClockworkOrbMenu();
-            hideClockworkOrbPanel();
-            hideArvoDroneOrbMenu();
-        } else {
-            hideStringConnectionMenu();
-            hideAlienOrbMenu();
-            hideResonauterOrbMenu();
-            hideToneSynthMenu();
-            hideSamplerOrbMenu();
-            hideRadioOrbMenu();
-            hideMotorOrbMenu();
-            hideMotorOrbPanel();
-            hideArvoDroneOrbMenu();
-            hideStringPanel();
-        }
-    } else {
-        console.log(`[handleMouseUp] ${selectedArray.length} elements selected. Hiding menu.`);
+  if (selectedArray.length === 1 && selectedArray[0].type === 'node' && currentTool === 'edit') {
+      const selectedNode = findNodeById(selectedArray[0].id);
+      if (selectedNode && selectedNode.type === PRORB_TYPE) {
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+      } else if (selectedNode && (selectedNode.type === ALIEN_ORB_TYPE || selectedNode.type === ALIEN_DRONE_TYPE)) {
+          showAlienOrbMenu(selectedNode);
+          hideResonauterOrbMenu();
+          hideArvoDroneOrbMenu();
+      } else if (selectedNode && selectedNode.type === ARVO_DRONE_TYPE) {
+          showArvoDroneOrbMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideRadioOrbMenu();
+      } else if (selectedNode && (selectedNode.type === RESONAUTER_TYPE)) {
+          showResonauterOrbMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideRadioOrbMenu();
+          hideArvoDroneOrbMenu();
+      } else if (selectedNode && selectedNode.type === MOTOR_ORB_TYPE) {
+          showMotorOrbMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideRadioOrbMenu();
+          hideArvoDroneOrbMenu();
+      } else if (selectedNode && selectedNode.type === CLOCKWORK_ORB_TYPE) {
+          showClockworkOrbMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideRadioOrbMenu();
+          hideArvoDroneOrbMenu();
+      } else if (selectedNode && selectedNode.type === RADIO_ORB_TYPE) {
+          showRadioOrbMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideArvoDroneOrbMenu();
+      } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tone') {
+          showToneSynthMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideRadioOrbMenu();
+          hideArvoDroneOrbMenu();
+          hideSamplerOrbMenu();
+      } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.waveform && selectedNode.audioParams.waveform.startsWith("sampler_")) {
+          showSamplerOrbMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideRadioOrbMenu();
+          hideArvoDroneOrbMenu();
+      } else {
         hideAlienOrbMenu();
         hideResonauterOrbMenu();
-        hideToneSynthMenu();
-        hideSamplerOrbMenu();
+        hideArvoDroneOrbMenu();
         hideRadioOrbMenu();
         hideMotorOrbMenu();
         hideMotorOrbPanel();
         hideClockworkOrbMenu();
         hideClockworkOrbPanel();
-        hideArvoDroneOrbMenu();
         hideStringConnectionMenu();
         hideAlienPanel();
         hideResonauterPanel();
         hideArvoPanel();
         hideTonePanel();
+        hideToneSynthMenu();
         hideSamplerPanel();
         hideStringPanel();
-    }
-    ctrlLikeAtMouseDown = false;
+      }
+  } else if (selectedArray.length === 1 && selectedArray[0].type === 'connection') {
+      const selectedConn = findConnectionById(selectedArray[0].id);
+      if (selectedConn && selectedConn.type === 'string_violin') {
+          showStringConnectionMenu(selectedConn);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideToneSynthMenu();
+          hideSamplerOrbMenu();
+          hideRadioOrbMenu();
+          hideMotorOrbMenu();
+          hideMotorOrbPanel();
+          hideClockworkOrbMenu();
+          hideClockworkOrbPanel();
+          hideArvoDroneOrbMenu();
+      } else {
+          hideStringConnectionMenu();
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideToneSynthMenu();
+          hideSamplerOrbMenu();
+          hideRadioOrbMenu();
+          hideMotorOrbMenu();
+          hideMotorOrbPanel();
+          hideArvoDroneOrbMenu();
+          hideStringPanel();
+      }
+  } else {
+    hideAlienOrbMenu();
+    hideResonauterOrbMenu();
+    hideToneSynthMenu();
+    hideSamplerOrbMenu();
+    hideRadioOrbMenu();
+    hideMotorOrbMenu();
+    hideMotorOrbPanel();
+    hideClockworkOrbMenu();
+    hideClockworkOrbPanel();
+    hideArvoDroneOrbMenu();
+    hideStringConnectionMenu();
+    hideAlienPanel();
+    hideResonauterPanel();
+    hideArvoPanel();
+    hideTonePanel();
+    hideSamplerPanel();
+    hideStringPanel();
+  }
+  ctrlLikeAtMouseDown = false;
 }
 
 function snapToInternalGrid(positionToSnap, timelineGridNode) {
@@ -17191,7 +17062,6 @@ function createHexNoteSelectorDOM(
       hexDiv.addEventListener("mousedown", (e) => {
         e.stopPropagation();
         if (e.currentTarget.classList.contains("hex-disabled")) {
-          console.log("Clicked disabled hex. Ignoring.");
           return;
         }
 
@@ -17206,40 +17076,26 @@ function createHexNoteSelectorDOM(
           return;
         }
         const clickedScaleIndex = parseInt(clickedScaleIndexStr, 10);
-        console.log(
-          `Hex Click Detected. MIDI: ${clickedMidiNote}, ScaleIndex: ${clickedScaleIndex}`,
-        );
 
         isRandomActive = false;
         randomToggleButton.classList.remove("active");
         currentSelectedValue = clickedScaleIndex;
 
         if (isEditing) {
-          console.log(
-            `Applying scale index ${clickedScaleIndex} to selection.`,
-          );
           applyScaleIndexToSelection(clickedScaleIndex, targetElementsData);
         } else {
-          console.log(`Setting noteIndexToAdd to ${clickedScaleIndex}.`);
           noteIndexToAdd = clickedScaleIndex;
         }
 
-        console.log("Updating visual selection...");
         const previouslySelected = container.querySelectorAll(
           ".hexagon-note.hex-selected",
         );
 
         previouslySelected.forEach((selectedHex) => {
-          console.log(
-            "Removing .hex-selected from MIDI:",
-            selectedHex.dataset.midiNote,
-          );
           selectedHex.classList.remove("hex-selected");
         });
 
-        console.log("Adding .hex-selected to MIDI:", clickedMidiNote);
         e.currentTarget.classList.add("hex-selected");
-        console.log("Visual selection update complete.");
       });
       hexDiv.addEventListener("mouseup", (e) => e.stopPropagation());
       columnDiv.appendChild(hexDiv);
@@ -17301,7 +17157,6 @@ function applyScaleIndexToSelection(scaleIndex, targetElementsData) {
               }
             });
           }
-          // also refresh the standalone synth if the panel is open
           updateAlienParams();
         }
         } else if (elData.type === "connection") {
@@ -21103,8 +20958,6 @@ export function handleNewWorkspace(skipConfirm = false) {
     }
   }
 
-  console.log("Starting new workspace...");
-
   nodes.forEach((node) => stopNodeAudio(node));
   connections.forEach((conn) => stopConnectionAudio(conn));
   activePulses = [];
@@ -21149,11 +21002,6 @@ export function handleNewWorkspace(skipConfirm = false) {
     if (appMenuPlayPauseBtn) appMenuPlayPauseBtn.textContent = "Play ▶";
   }
 
-  console.log("New workspace created.");
-
-  // Ensure the canvas is refreshed when not playing so newly added
-  // canvases don't appear blank. This draws one frame immediately
-  // after resetting the workspace.
   draw();
 }
 
@@ -21293,9 +21141,6 @@ if (tapeLoopDurationInput) {
     const newDuration = parseFloat(e.target.value);
     if (!isNaN(newDuration) && newDuration > 0) {
       configuredTapeLoopDurationSeconds = newDuration;
-      console.log(
-        `Tape loop duration set to: ${configuredTapeLoopDurationSeconds}s`,
-      );
       if (!isTapeLoopRecording && !isTapeLoopPlaying) {
         updateTapeLooperUI();
       }
@@ -21393,8 +21238,6 @@ function showHelpStep() {
     wizardHighlight.style.display = step.target ? "block" : "none";
   }
 
-  // If the target is near the top toolbar, show the arrow and text to the
-  // side so they don't cover the button being highlighted.
   if (rect.top < 100) {
     if (wizardArrow) wizardArrow.textContent = "⬅️";
     arrowTop = rect.top + scrollY + rect.height / 2;
@@ -21617,10 +21460,6 @@ function handleWaveformSelect(button, waveformType) {
   }
 
   waveformToAdd = waveformType;
-  console.log(
-    `%c[handleWaveformSelect] waveformToAdd SET TO: ${waveformToAdd} (for nodeType: ${nodeTypeToAdd})`,
-    "color: blue; font-weight: bold;",
-  );
 
   const currentWaveButtons = sideToolbarContent.querySelectorAll(
     ".waveform-button, .sampler-button",
@@ -22945,13 +22784,6 @@ function resetTimelineGridPositions() {
 }
 
 async function stopAllPlayback() {
-  console.log(
-    '[Playback] stopAllPlayback called. isPlaying=',
-    isPlaying,
-    'state=',
-    audioContext ? audioContext.state : 'none',
-    new Error().stack
-  );
   if (audioContext && audioContext.state === "running") {
     try {
       await audioContext.suspend();
@@ -23300,7 +23132,6 @@ if (appMenuBpmInput) {
     if (!isNaN(newBPMValue) && newBPMValue >= 30 && newBPMValue <= 300) {
       globalBPM = newBPMValue;
       saveState();
-      console.log(`Global BPM is nu: ${globalBPM}`);
       updateMidiClockInterval();
 
       if (
@@ -23315,9 +23146,6 @@ if (appMenuBpmInput) {
           newPlaybackRate,
           audioContext.currentTime,
           0.05,
-        );
-        console.log(
-          `Tape loop playbackRate aangepast naar: ${newPlaybackRate.toFixed(2)}`,
         );
       }
     } else {
@@ -23380,7 +23208,6 @@ if (connectRopeBtn) {
 if (connectWaveTrailBtn) {
   connectWaveTrailBtn.addEventListener("click", () => {
     setActiveTool("connect_wavetrail");
-    console.log("WaveTrail tool selected.");
   });
 } else {
   console.warn("#connectWaveTrailBtn not found during listener setup!");
@@ -23562,8 +23389,6 @@ if (wandBtn) {
 }
 if (addSamplerBtn) {
   addSamplerBtn.addEventListener("click", (e) => {
-    console.log("Sampler button clicked!");
-
     setupAddTool(e.currentTarget, "sound", true, "samplers", "Samplers");
   });
 }
@@ -23904,7 +23729,6 @@ window.addEventListener("keydown", (e) => {
       isBrushing = false;
       lastBrushNode = null;
       brushNoteSequenceIndex = 0;
-      console.log("Brush: Chain ended by Escape key.");
 
       setActiveTool("edit");
       e.preventDefault();
@@ -23981,7 +23805,6 @@ function handleContextMenu(event) {
     isBrushing = false;
     lastBrushNode = null;
     brushNoteSequenceIndex = 0;
-    console.log("Brush: Chain ended by right-click.");
   }
   if (currentTool === "add") {
     setActiveTool("edit");
@@ -23993,14 +23816,11 @@ function handleContextMenu(event) {
 
 function startAnimationLoop() {
   if (!animationFrameId) {
-    console.log('Starting animation loop');
     previousFrameTime = audioContext
       ? audioContext.currentTime
       : performance.now() / 1000;
     animationLoop();
-  } else {
-    console.log('Animation loop already running');
-  }
+  } else {}
 }
 
 function createSlider(
@@ -24052,7 +23872,6 @@ function handleWaveTrailFileInputChange(event, connection) {
   );
 
   if (file) {
-    console.log(`File selected for WaveTrail ${connection.id}: ${file.name}`);
     if (fileNameDisplay)
       fileNameDisplay.textContent = `Loading: ${file.name}...`;
 
@@ -24073,85 +23892,69 @@ function handleWaveTrailFileInputChange(event, connection) {
 }
 
 async function loadAndDecodeAudio(arrayBuffer, connection) {
-    if (!audioContext || !connection || !arrayBuffer) {
-        console.error(
-            "[Wavetrail Debug] loadAndDecodeAudio: Called with invalid parameters.",
-            { audioContextPresent: !!audioContext, connectionPresent: !!connection, arrayBufferPresent: !!arrayBuffer }
-        );
-        if (connection && connection.audioParams) {
-            connection.audioParams.buffer = null;
-            connection.audioParams.waveformPath = null;
-            const fileNameDisplay = document.getElementById(`edit-wavetrail-filename-${connection.id}`);
-            if (fileNameDisplay) {
-                fileNameDisplay.textContent = `Error: Invalid data for ${connection.audioParams.fileName || "file"}`;
-            }
-        }
-        populateEditPanel();
-        return;
+  if (!audioContext || !connection || !arrayBuffer) {
+      console.error(
+          "[Wavetrail Debug] loadAndDecodeAudio: Called with invalid parameters.",
+          { audioContextPresent: !!audioContext, connectionPresent: !!connection, arrayBufferPresent: !!arrayBuffer }
+      );
+      if (connection && connection.audioParams) {
+          connection.audioParams.buffer = null;
+          connection.audioParams.waveformPath = null;
+          const fileNameDisplay = document.getElementById(`edit-wavetrail-filename-${connection.id}`);
+          if (fileNameDisplay) {
+              fileNameDisplay.textContent = `Error: Invalid data for ${connection.audioParams.fileName || "file"}`;
+          }
+      }
+      populateEditPanel();
+      return;
+  }
+
+  const fileNameDisplay = document.getElementById(`edit-wavetrail-filename-${connection.id}`);
+
+  try {
+    let decodedBuffer;
+    if (audioContext.decodeAudioData.length !== 1) {
+        decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    } else {
+        decodedBuffer = await new Promise((resolve, reject) => {
+            audioContext.decodeAudioData(arrayBuffer, resolve, reject);
+        });
     }
 
-    const fileNameDisplay = document.getElementById(`edit-wavetrail-filename-${connection.id}`);
-    console.log(
-        `[Wavetrail Debug] loadAndDecodeAudio: Starting for connection ${connection.id}, file: ${connection.audioParams.fileName || 'unknown file'}`
-    );
-
-    try {
-        console.log(`[Wavetrail Debug] loadAndDecodeAudio: Attempting to decode audio data for ${connection.id}...`);
-        let decodedBuffer;
-        if (audioContext.decodeAudioData.length !== 1) {
-            decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        } else {
-            decodedBuffer = await new Promise((resolve, reject) => {
-                audioContext.decodeAudioData(arrayBuffer, resolve, reject);
-            });
-        }
-        console.log(`[Wavetrail Debug] loadAndDecodeAudio: Audio decoding finished for ${connection.id}. Buffer valid: ${!!decodedBuffer}`);
-
-        if (!decodedBuffer) {
-            throw new Error("Decoded buffer is null or undefined after decodeAudioData.");
-        }
-
-        connection.audioParams.buffer = decodedBuffer;
-        console.log(
-            `[Wavetrail Debug] loadAndDecodeAudio: Buffer set for ${connection.id}. Duration: ${decodedBuffer.duration}s, Channels: ${decodedBuffer.numberOfChannels}, SampleRate: ${decodedBuffer.sampleRate}`
-        );
-
-        console.log(`[Wavetrail Debug] loadAndDecodeAudio: Generating waveform path for ${connection.id}...`);
-        connection.audioParams.waveformPath = generateWaveformPath(decodedBuffer, 200);
-
-        if (connection.audioParams.waveformPath && connection.audioParams.waveformPath.length > 0) {
-            console.log(
-                `[Wavetrail Debug] loadAndDecodeAudio: Waveform path generated for ${connection.id}, points: ${connection.audioParams.waveformPath.length}`
-            );
-        } else {
-            console.warn(
-                `[Wavetrail Debug] loadAndDecodeAudio: Failed to generate a valid waveform path for ${connection.id}. Buffer duration: ${decodedBuffer?.duration}`
-            );
-        }
-
-        if (fileNameDisplay) {
-            fileNameDisplay.textContent = `Current: ${connection.audioParams.fileName || "Unnamed"}`;
-        }
-
-        if (connection.audioParams.endTimeOffset === null && connection.audioParams.buffer) {
-            connection.audioParams.endTimeOffset = connection.audioParams.buffer.duration;
-        }
-
-        populateEditPanel();
-        
-        
-    } catch (error) {
-        console.error(
-            `[Wavetrail Debug] Error in loadAndDecodeAudio for connection ${connection.id} (${connection.audioParams.fileName || 'unknown file'}):`,
-            error
-        );
-        if (fileNameDisplay) {
-            fileNameDisplay.textContent = `Error decoding: ${connection.audioParams.fileName || "file"}`;
-        }
-        connection.audioParams.buffer = null;
-        connection.audioParams.waveformPath = null;
-        populateEditPanel();
+    if (!decodedBuffer) {
+        throw new Error("Decoded buffer is null or undefined after decodeAudioData.");
     }
+
+    connection.audioParams.buffer = decodedBuffer;
+    connection.audioParams.waveformPath = generateWaveformPath(decodedBuffer, 200);
+
+    if (connection.audioParams.waveformPath && connection.audioParams.waveformPath.length > 0) {} else {
+        console.warn(
+            `[Wavetrail Debug] loadAndDecodeAudio: Failed to generate a valid waveform path for ${connection.id}. Buffer duration: ${decodedBuffer?.duration}`
+        );
+    }
+
+    if (fileNameDisplay) {
+        fileNameDisplay.textContent = `Current: ${connection.audioParams.fileName || "Unnamed"}`;
+    }
+
+    if (connection.audioParams.endTimeOffset === null && connection.audioParams.buffer) {
+        connection.audioParams.endTimeOffset = connection.audioParams.buffer.duration;
+    }
+
+    populateEditPanel();
+  } catch (error) {
+      console.error(
+          `[Wavetrail Debug] Error in loadAndDecodeAudio for connection ${connection.id} (${connection.audioParams.fileName || 'unknown file'}):`,
+          error
+      );
+      if (fileNameDisplay) {
+          fileNameDisplay.textContent = `Error decoding: ${connection.audioParams.fileName || "file"}`;
+      }
+      connection.audioParams.buffer = null;
+      connection.audioParams.waveformPath = null;
+      populateEditPanel();
+  }
 }
 
 function drawConnection(conn) {
@@ -24190,19 +23993,16 @@ function drawConnection(conn) {
         dash = [4 / viewScale, 4 / viewScale];
         ctx.setLineDash(dash);
     } else if (conn.type === "wavetrail") {
-        console.log(
-            `[DrawConnection Wavetrail DEBUG] Conn ID: ${conn.id}, Buffer valid: ${!!conn.audioParams?.buffer}, Path valid: ${!!conn.audioParams?.waveformPath}, Path Length: ${conn.audioParams?.waveformPath?.length ?? 'N/A'}`
-        );
-        thickness = Math.max(0.5, 1.5 / viewScale);
-        dash = [];
-        if (conn.audioParams?.buffer && conn.audioParams?.waveformPath && conn.audioParams.waveformPath.length > 0) {
-            baseClr = "rgba(180, 255, 180, 0.8)";
-            drawAsWaveformBars = true;
-        } else {
-            baseClr = "rgba(200, 200, 200, 0.5)";
-            dash = [4 / viewScale, 4 / viewScale];
-            ctx.setLineDash(dash);
-        }
+      thickness = Math.max(0.5, 1.5 / viewScale);
+      dash = [];
+      if (conn.audioParams?.buffer && conn.audioParams?.waveformPath && conn.audioParams.waveformPath.length > 0) {
+          baseClr = "rgba(180, 255, 180, 0.8)";
+          drawAsWaveformBars = true;
+      } else {
+          baseClr = "rgba(200, 200, 200, 0.5)";
+          dash = [4 / viewScale, 4 / viewScale];
+          ctx.setLineDash(dash);
+      }
     } else {
         baseClr =
             getComputedStyle(document.documentElement)
@@ -24542,13 +24342,8 @@ function handleHexPianoRollClick(event) {
   }
 
   if (clickedSemitone !== -1) {
-    console.log(
-      `Piano Roll Click: Detected semitone <span class="math-inline">\{NOTE_NAMES\[clickedSemitone\]\} \(</span>{clickedSemitone})`,
-    );
     setRootNote(clickedSemitone);
-  } else {
-    console.log("Piano Roll Click: Click outside any detected hexagon.");
-  }
+  } else {}
 }
 
 function drawKeysPianoRoll() {
@@ -24761,18 +24556,17 @@ function handlePianoRollMouseLeave() {
 
 
 function setRootNote(newRootNote, preventSave = false) {
-    const newRootMod = newRootNote % 12;
-    if (currentRootNote === newRootMod) {
-        return;
-    }
-    console.log(`setRootNote called with newRootNote: ${newRootNote} (${NOTE_NAMES[newRootMod]}). Prevent save: ${preventSave}`);
-    currentRootNote = newRootMod;
+  const newRootMod = newRootNote % 12;
+  if (currentRootNote === newRootMod) {
+      return;
+  }
+  currentRootNote = newRootMod;
 
-    updateAllPitchesAndUI();
+  updateAllPitchesAndUI();
 
-    if (!preventSave) {
-        saveState();
-    }
+  if (!preventSave) {
+      saveState();
+  }
 }
 
 function setAbsoluteTranspose(absoluteSemitone, preventSave = false) {
@@ -24791,8 +24585,6 @@ function setAbsoluteTranspose(absoluteSemitone, preventSave = false) {
 
 function triggerManualPulsar(node) {
   if (!node || node.type !== "pulsar_manual" || !isAudioReady) return;
-
-  console.log(`Manual Pulsar ${node.id} triggered by click.`);
 
   const pulseData = {
     intensity: node.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY,
@@ -24982,7 +24774,6 @@ function handleFileLoad(event) {
         unsavedChanges = false;
 
         saveState();
-        console.log("File loaded successfully. New history state created.");
       } else {
         console.error(
           "Loaded file is not a valid ResonAut state object after parsing.",
@@ -25193,9 +24984,6 @@ function onPlaybackStopped() {
 if (glideToolButton) {
   glideToolButton.addEventListener("click", () => {
     setActiveTool("connect_glide");
-    console.log(
-      "Connect Glide mode AAN (via setActiveTool). Sleep van start naar doel ster.",
-    );
 
     isConnecting = false;
     connectingNode = null;
@@ -25224,24 +25012,11 @@ window.addEventListener("resize", () => {
   }
 });
 window.addEventListener("load", () => {
-  document.addEventListener('visibilitychange', () => {
-    console.log(
-      '[Doc] visibilitychange:',
-      document.visibilityState,
-      'audioContext state:',
-      audioContext ? audioContext.state : 'none'
-    );
-  });
+  document.addEventListener('visibilitychange', () => {});
   ['pointerdown', 'click', 'touchstart'].forEach((evt) => {
     window.addEventListener(
       evt,
-      (e) => {
-        console.log(
-          `[Event] ${evt} on ${e.target.tagName}#${e.target.id}`,
-          'audioState:',
-          audioContext ? audioContext.state : 'none'
-        );
-      },
+      (e) => {},
       true
     );
   });
@@ -25373,13 +25148,12 @@ window.addEventListener("load", () => {
   });
 
   if (startEngineBtn) startEngineBtn.addEventListener("click", async () => {
-      console.log('[UI] Start button clicked. AudioContext state:', audioContext ? audioContext.state : 'none');
-      if (loadingIndicator) {
-          loadingIndicator.style.display = "block";
-          loadingIndicator.style.opacity = "1";
-      }
-      if (startMessage) startMessage.style.display = "none";
-      await startApplication();
+    if (loadingIndicator) {
+        loadingIndicator.style.display = "block";
+        loadingIndicator.style.opacity = "1";
+    }
+    if (startMessage) startMessage.style.display = "none";
+    await startApplication();
   });
   setupLoopHandles();
   loadTapeTrack(0);

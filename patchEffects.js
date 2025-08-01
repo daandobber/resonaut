@@ -9,7 +9,6 @@ import {
 } from './utils/appConstants.js';
 import { crushLayer, mistLayer } from './utils/domElements.js';
 
-// State shared with app.js
 export const patchState = {
   isMisting: false,
   isErasing: false,
@@ -20,7 +19,6 @@ export const patchState = {
   currentCrushGroup: null,
 };
 
-// Functions to retrieve shared variables from app.js
 let getIsAudioReady = () => false;
 let getAudioContext = () => null;
 let getNodes = () => [];
@@ -65,7 +63,6 @@ export function initPatchEffects(deps = {}) {
   }
 }
 
-// Helper functions rely on utilities provided via initPatchEffects from main.js.
 
 export function findOrCreateCrushGroup(x, y) {
   const threshold = 150;

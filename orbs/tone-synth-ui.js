@@ -1,6 +1,3 @@
-// Synth UI uses a subset of parameters from the old Pro-Orb implementation.
-// Copy the menu config and envelope drawing utility here so we can remove the
-// Pro-Orb module entirely.
 import { tonePanel, tonePanelContent } from '../utils/domElements.js';
 import { updateNodeAudioParams, getScreenCoords } from '../main.js';
 

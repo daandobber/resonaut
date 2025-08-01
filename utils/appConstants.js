@@ -1,4 +1,3 @@
-// Centralized constants extracted from app.js for easier management
 export const PRORB_TYPE = 'prorb';
 export const PORTAL_NEBULA_TYPE = 'portal_nebula';
 export const NODE_RADIUS_BASE = 12;

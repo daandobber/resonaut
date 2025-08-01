@@ -61,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
   delayNode.connect(filterNode);
   filterNode.connect(distortionNode);
   distortionNode.connect(window.radioGainNode);
-  // Route radio through FX chain instead of bypassing
   source.connect(fxInput);
   const FX_MAX = { delay: 1.0, filter: 10000, distortion: 1.0, pitch: 12 };
 
@@ -360,7 +359,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const lfo = audioCtx.createOscillator();
   const lfoGain = audioCtx.createGain();
   lfo.frequency.value = 0.7;
-  // Start with no modulation to avoid static on page load
   lfoGain.gain.value = 0;
   lfo.connect(lfoGain).connect(noiseGain.gain);
   lfo.start();

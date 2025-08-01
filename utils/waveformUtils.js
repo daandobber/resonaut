@@ -1,5 +1,4 @@
 export function generateWaveformPath(audioBuffer, targetPointCount = 200) {
-    console.log(`[Wavetrail Debug] generateWaveformPath: Called. Buffer valid: ${!!audioBuffer}, targetPoints: ${targetPointCount}`);
     if (!audioBuffer || targetPointCount <= 0) {
         console.warn("[Wavetrail Debug] generateWaveformPath: Invalid audioBuffer or targetPointCount <= 0. Returning null.");
         return null;
@@ -11,7 +10,6 @@ export function generateWaveformPath(audioBuffer, targetPointCount = 200) {
         }
         const channelData = audioBuffer.getChannelData(0);
         const totalSamples = channelData.length;
-        console.log(`[Wavetrail Debug] generateWaveformPath: totalSamples: ${totalSamples}`);
 
         if (totalSamples === 0) {
             console.warn("[Wavetrail Debug] generateWaveformPath: AudioBuffer has 0 samples. Returning minimal path.");
@@ -63,7 +61,6 @@ export function generateWaveformPath(audioBuffer, targetPointCount = 200) {
             console.warn("[Wavetrail Debug] generateWaveformPath: WaveformPath ended up empty, returning minimal path.");
             return Array(targetPointCount).fill({ min: 0, max: 0 });
         }
-        console.log(`[Wavetrail Debug] generateWaveformPath: Generated path with ${waveformPath.length} points.`);
         return waveformPath;
     } catch (error) {
         console.error("[Wavetrail Debug] Error in generateWaveformPath:", error);

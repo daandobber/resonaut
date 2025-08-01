@@ -1,5 +1,3 @@
-// Helper functions for drawing directional connectors
-// Extracted from app.js
 import { lerp } from './mathUtils.js';
 
 const CRANK_RADAR_PIVOT_OFFSET_FACTOR = 1.15;

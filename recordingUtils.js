@@ -142,10 +142,6 @@ export function startRecording() {
     appMenuRecordBtn.textContent = "◼ Stop";
     appMenuRecordBtn.classList.add("active");
   }
-  console.log(
-    "Opname gestart (parallel tap). MimeType:",
-    mediaRecorder.mimeType,
-  );
 }
 
 export function stopRecording() {
@@ -157,6 +153,5 @@ export function stopRecording() {
     appMenuRecordBtn.textContent = "🔴 Record";
     appMenuRecordBtn.classList.remove("active");
   }
-  console.log("Opname gestopt (parallel tap).");
 }
 

@@ -147,7 +147,6 @@ export const stringPanel = safeGetById("string-panel");
 export const stringPanelContent = safeGetById("string-panel-content");
 export const stringPanelCloseBtn = safeGetById("string-panel-close-btn");
 
-// Recording and tape looper controls
 export const appMenuRecordBtn = safeGetById("app-menu-record-btn");
 export const appMenuToggleTapeLooperBtn = safeGetById("app-menu-toggle-tape-looper-btn");
 export const appMenuRadioSamplerBtn = safeGetById("app-menu-radio-sampler-btn");

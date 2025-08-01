@@ -1,6 +1,5 @@
 import * as Tone from 'tone';
 
-// Example of using Tone.PolySynth to trigger chord orbitones
 const synth = new Tone.PolySynth(Tone.Synth).toDestination();
 
 const C_chord = ['C3', 'E3', 'G3'];

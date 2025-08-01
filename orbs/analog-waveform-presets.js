@@ -1,4 +1,3 @@
-// Presets for analog waveform orbs extracted from app.js
 export const analogWaveformPresets = [
   {
     type: "sine",
