@@ -7,10 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest",
-    "server": "node multiplayer-server.js",
-    "server-wss": "WSS=1 node multiplayer-server.js",
-    "trpc-server": "node trpc-server.js"
+    "test": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -21,11 +18,6 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "tone": "^15.1.22",
-    "ws": "^8.18.3",
-    "@trpc/server": "^11.4.3",
-    "@trpc/client": "^11.4.3",
-    "socket.io": "^4.7.4",
-    "zod": "^4.0.2"
+    "tone": "^15.1.22"
   }
 }

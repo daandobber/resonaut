@@ -70,7 +70,6 @@ import { rgbaToHex, hexToRgba, hexToRgbForGradient, hslToRgba, rgbaToHsl } from 
 import { startMeteorShower, updateAndDrawMeteorShowers, createCollisionImpactVisual, METEOR_SHOWER_DEFAULT_MAX_RADIUS, METEOR_SHOWER_DEFAULT_GROWTH_RATE, MAX_METEOR_SHOWER_GENERATIONS, PAIR_INTERACTION_COOLDOWN_SECONDS, COLLISION_SPAWN_COOLDOWN_SECONDS } from './utils/meteor.js';
 import { startRecording, stopRecording } from "./recordingUtils.js";
 import { canvases, switchTo, canvasStates, getCurrentIndex as getCurrentCanvasIndex } from './canvasManager.js';
-import { connectMultiplayer, fetchAvailableRooms, sendCursorPosition, sendChatMessage, sendPulse, ws as multiplayerWs, localPlayerName as multiplayerName, getMultiplayerFeatures, getLocalStateVersion, getPendingState, clearPendingState } from './utils/multiplayer.js';
 import { base64ToArrayBuffer } from './utils/audioBufferUtils.js';
 import {
   patchState,
@@ -174,12 +173,6 @@ const {
   startProBtn,
   loadingIndicator,
   startEngineBtn,
-  nicknameInput,
-  roomSelect,
-  startMultiplayerBtn,
-  startTabButtons,
-  singlePlayerTab,
-  multiplayerTab,
   appMenuNew,
   appMenuLoad,
   appMenuSave,
@@ -343,18 +336,12 @@ const {
   wizardPrevBtn,
   wizardCloseBtn,
   wizardEndBtn,
-  chatBtn,
-  chatInput,
-  chatContainer,
 } = el;
 let canvas = el.canvas;
 let ctx = el.ctx;
 let selectedMode = 'chill';
 let samplesLoadedCount = 0;
 let totalSamples = 0;
-if (typeof window !== 'undefined') {
-  window.multiplayerFeatures = {};
-}
 
 function updateCanvasRefs() {
   canvas = el.canvas;
@@ -381,36 +368,6 @@ window.addEventListener('canvas-set', () => {
 
 patchConsole();
 const dailyTipManager = createDailyTipManager(dailyTipEl, prevTipBtn, nextTipBtn);
-
-function applyMultiplayerFeatureFlags(flags) {
-  if (!flags) return;
-  if (flags.tape === false) {
-    if (appMenuToggleTapeLooperBtn) appMenuToggleTapeLooperBtn.style.display = 'none';
-    if (tapeLooperPanel) tapeLooperPanel.classList.add('hidden');
-    window.multiplayerFeatures.tape = false;
-  }
-  if (flags.radioSampler === false) {
-    if (appMenuRadioSamplerBtn) appMenuRadioSamplerBtn.style.display = 'none';
-    if (radioSamplerPanel) radioSamplerPanel.classList.add('hidden');
-    window.multiplayerFeatures.radioSampler = false;
-  }
-  if (flags.radioOrb === false) {
-    window.multiplayerFeatures.radioOrb = false;
-  }
-  if (flags.timelineRecording === false) {
-    window.multiplayerFeatures.timelineRecording = false;
-  }
-  if (flags.sessionRecording === false) {
-    if (appMenuRecordBtn) appMenuRecordBtn.style.display = 'none';
-    window.multiplayerFeatures.sessionRecording = false;
-  }
-  if (flags.timeline === false) {
-    if (appMenuToggleTimelineBtn) appMenuToggleTimelineBtn.style.display = 'none';
-    const timelineView = document.getElementById('timelineView');
-    if (timelineView) timelineView.classList.add('hidden');
-    window.multiplayerFeatures.timeline = false;
-  }
-}
 
 
 let currentSamplerNode = null;
@@ -7187,16 +7144,8 @@ function createVisualPulse(
 
   activePulses.push(visualPulse);
 
-  if (broadcast && multiplayerWs && multiplayerWs.readyState === WebSocket.OPEN) {
-    sendPulse({
-      connectionId: connId,
-      duration: dur,
-      startNodeId,
-      hopsLeft: hopsLeft === Infinity ? -1 : hopsLeft,
-      pulseType,
-      color: pulseColor,
-      intensity,
-    });
+  if (broadcast) {
+    // multiplayer functionality removed
   }
 
   if (connection.type === "string_violin") {
@@ -7871,22 +7820,7 @@ export function saveState() {
         console.warn('Failed to save state to localStorage:', e);
     }
     console.log("State saved correctly. History index:", historyIndex, "Stack size:", historyStack.length);
-    if (multiplayerWs && multiplayerWs.readyState === WebSocket.OPEN) {
-        const networkState = { ...stateToSerialize };
-        delete networkState.selectedElements;
-        delete networkState.viewOffsetX;
-        delete networkState.viewOffsetY;
-        delete networkState.viewScale;
-        const networkStateString = JSON.stringify(networkState, replacer);
-        multiplayerWs.send(
-          JSON.stringify({
-            type: 'stateUpdate',
-            state: networkStateString,
-            name: multiplayerName,
-            version: getLocalStateVersion(),
-          })
-        );
-    }
+    // multiplayer state synchronization removed
 }
 
 async function loadState(stateToLoad) {
@@ -20030,10 +19964,6 @@ function openReplaceInstrumentMenu() {
     { icon: "🥁", label: "Drum", handler: () => populateReplacePresetMenu('drumElements', 'Drum Elements') },
     { icon: "⚙️", label: "Motor Orb", handler: () => setupAddTool(null, MOTOR_ORB_TYPE, false) },
   ];
-  if (window.multiplayerFeatures.radioOrb !== false) {
-    instruments.push({ icon: "📻", label: "Radio Orb", handler: () => populateReplacePresetMenu('radio', 'Radio Pads') });
-  }
-
   instruments.forEach(inst => {
     const btn = document.createElement('button');
     btn.classList.add('type-button');
@@ -20206,14 +20136,6 @@ function populateInstrumentMenu() {
       },
     },
   ];
-  if (window.multiplayerFeatures.radioOrb !== false) {
-    instruments.splice(3, 0, {
-      icon: "📻",
-      label: "Radio Orb",
-      handler: () => setupAddTool(null, RADIO_ORB_TYPE, false),
-    });
-  }
-
   instruments.forEach((inst) => {
     const btn = document.createElement("button");
     btn.classList.add("type-button");
@@ -25447,23 +25369,7 @@ window.addEventListener("load", () => {
   noteSelectContainer = null;
   startMessage.style.display = "block";
   dailyTipManager.random();
-  fetchAvailableRooms();
   loadStateFromLocalStorage();
-  if (startTabButtons && singlePlayerTab && multiplayerTab) {
-      startTabButtons.forEach(btn => {
-          btn.addEventListener('click', () => {
-              startTabButtons.forEach(b => b.classList.remove('active'));
-              btn.classList.add('active');
-              if (btn.dataset.target === 'multiplayerTab') {
-                  multiplayerTab.classList.remove('hidden');
-                  singlePlayerTab.classList.add('hidden');
-              } else {
-                  singlePlayerTab.classList.remove('hidden');
-                  multiplayerTab.classList.add('hidden');
-              }
-          });
-      });
-  }
   if (startChillBtn) startChillBtn.addEventListener("click", () => {
       selectedMode = "chill";
       startChillBtn.classList.add("selected");
@@ -25474,22 +25380,7 @@ window.addEventListener("load", () => {
       startProBtn.classList.add("selected");
       if (startChillBtn) startChillBtn.classList.remove("selected");
   });
-  // room selection handled via dropdown only
-  if (startMultiplayerBtn) startMultiplayerBtn.addEventListener("click", async () => {
-      const name = nicknameInput ? nicknameInput.value || 'anon' : 'anon';
-      const room = roomSelect ? roomSelect.value || '1' : '1';
-      if (loadingIndicator) {
-          loadingIndicator.style.display = "block";
-          loadingIndicator.style.opacity = "1";
-      }
-      if (startMessage) startMessage.style.display = "none";
-      await connectMultiplayer(name, room, loadState, handleIncomingTapeData);
-      if (chatContainer) chatContainer.classList.remove('hidden');
-      window.multiplayerFeatures = await getMultiplayerFeatures();
-      applyMultiplayerFeatureFlags(window.multiplayerFeatures);
-      window.addEventListener('mousemove', sendCursorPosition);
-      await startApplication();
-  });
+
   if (startEngineBtn) startEngineBtn.addEventListener("click", async () => {
       console.log('[UI] Start button clicked. AudioContext state:', audioContext ? audioContext.state : 'none');
       if (loadingIndicator) {
@@ -25502,17 +25393,6 @@ window.addEventListener("load", () => {
   setupLoopHandles();
   loadTapeTrack(0);
 
-  if (chatBtn && chatInput && chatContainer) {
-    chatBtn.addEventListener('click', () => {
-      chatInput.classList.toggle('hidden');
-      if (!chatInput.classList.contains('hidden')) {
-        chatInput.focus();
-      }
-    });
-    chatInput.addEventListener('input', () => {
-      sendChatMessage(chatInput.value.slice(0, 144));
-    });
-  }
 
   makePanelDraggable(alienPanel, document.getElementById('alien-panel-header'));
   makePanelDraggable(resonauterPanel, document.getElementById('resonauter-panel-header'));
