@@ -1,7 +1,0 @@
-{
-  "port": 3001,
-  "wss": true,
-  "ssl_cert": "/usr/local/psa/var/modules/sslit/etc/live/resonaut.daandobber.nl/cert.pem",
-  "ssl_key": "/usr/local/psa/var/modules/sslit/etc/live/resonaut.daandobber.nl/privkey.pem",
-  "host": "resonaut.daandobber.nl"
-}

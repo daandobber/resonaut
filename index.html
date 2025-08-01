@@ -337,10 +337,6 @@
         <button id="app-menu-toggle-timeline-btn" class="app-menu-bar-button" title="Toggle Timeline">🕒 Timeline</button>
         <button id="app-menu-canvas-timeline-btn" class="app-menu-bar-button" title="Toggle Canvas Timeline">🖼️ Canvases</button>
         <div class="app-menu-spacer"></div>
-        <div id="chatContainer" class="app-menu-bar-item hidden">
-            <button id="chatBtn" class="app-menu-bar-button" title="Open Chat">💬</button>
-            <input id="chatInput" maxlength="144" placeholder="Chat..." class="hidden" />
-        </div>
         <button id="app-menu-help-btn" class="app-menu-bar-button" title="Help">?</button>
     </div>
     <div id="canvasContainer">
@@ -351,7 +347,6 @@
     <div id="mistLayer"></div>
     <div id="crushLayer"></div>
     <div id="cursorLayer"></div>
-    <div id="playerList" class="player-list"></div>
 
     <div id="timelineView" class="hidden">
         <div class="timeline-controls">
@@ -749,27 +744,12 @@
                     <button id="nextTipBtn" class="tip-nav">&#9654;</button>
                 </div>
             </div>
-            <div class="start-tabs">
-                <button id="startTabSingle" class="start-tab active" data-target="singlePlayerTab">Single Player</button>
-                <button id="startTabMulti" class="start-tab" data-target="multiplayerTab">Multiplayer</button>
+            <div class="start-buttons">
+                <button id="startChillBtn" class="selected">Chill Mode</button>
+                <button id="startProBtn">Pro Mode</button>
             </div>
-
-            <div id="singlePlayerTab" class="start-tab-content">
-                <div class="start-buttons">
-                    <button id="startChillBtn" class="selected">Chill Mode</button>
-                    <button id="startProBtn">Pro Mode</button>
-                </div>
-                <button id="startEngineBtn" style="margin-top:10px;">Start</button>
-                <p class="start-instruction">Select a mode and press Start.</p>
-            </div>
-
-            <div id="multiplayerTab" class="start-tab-content hidden">
-                <div class="multiplayer-block">
-                    <input id="nicknameInput" placeholder="Nickname">
-                    <select id="roomSelect"></select>
-                    <button id="startMultiplayerBtn" style="margin-top:5px;">Multiplayer</button>
-                </div>
-            </div>
+            <button id="startEngineBtn" style="margin-top:10px;">Start</button>
+            <p class="start-instruction">Select a mode and press Start.</p>
 
             <p class="start-credits">Made by Daan Dobber</p>
         </div>

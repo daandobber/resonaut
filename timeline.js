@@ -242,10 +242,7 @@ function createTrack() {
   const trackEl = document.createElement('div');
   trackEl.className = 'timeline-track';
   trackEl.dataset.trackId = trackIdCounter;
-  const recordControls =
-    !window.multiplayerFeatures || window.multiplayerFeatures.timelineRecording !== false
-      ? '<button class="track-rec-btn">Rec</button><button class="track-stop-btn" disabled>Stop</button>'
-      : '';
+  const recordControls = '<button class="track-rec-btn">Rec</button><button class="track-stop-btn" disabled>Stop</button>';
   trackEl.innerHTML = `
     <div class="track-header">
       <span class="track-label">Track ${trackIdCounter + 1}</span>
@@ -344,9 +341,6 @@ function deleteTrack(track) {
 }
 
 function startTrackRecording(track) {
-  if (window.multiplayerFeatures && window.multiplayerFeatures.timelineRecording === false) {
-    return;
-  }
   const recBtn = track.el.querySelector('.track-rec-btn');
   const stopBtn = track.el.querySelector('.track-stop-btn');
 

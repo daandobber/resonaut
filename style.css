@@ -536,7 +536,6 @@ so normal mist drawing remains unaffected.
 #startMessage .start-tab.active { background-color: var(--button-active); color:#fff; }
 #startMessage .start-tab-content.hidden { display:none; }
 #startMessage .start-buttons button.selected { background-color: var(--button-hover); }
-#startMessage .multiplayer-block { display:flex; flex-direction:column; gap:5px; margin-top:10px; }
 #startMessage input { background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 6px 8px; border-radius: 4px; }
 #roomSelect { background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 6px 8px; border-radius: 4px; }
 #startMultiplayerBtn { background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 6px 12px; border-radius: 4px; cursor: pointer; }
@@ -2024,33 +2023,8 @@ margin-top: 6px;
   display: none;
 }
 
-#playerList {
-  position: fixed;
-  left: 10px;
-  bottom: 10px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  padding: 5px 8px;
-  border-radius: 4px;
-  font-size: 0.8em;
-  z-index: 10;
-}
 
-#chatContainer {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 
-#chatInput {
-  background-color: var(--button-bg);
-  color: var(--text-color);
-  border: 1px solid var(--button-hover);
-  padding: 4px 6px;
-  border-radius: 3px;
-  width: 150px;
-  height: calc(var(--app-menu-bar-height) - 18px);
-}
 
 /* Help Wizard Overlay */
 #help-wizard.wizard-overlay {
