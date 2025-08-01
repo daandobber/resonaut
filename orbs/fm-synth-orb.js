@@ -253,4 +253,3 @@ export function createFmSynthOrb(node) {
 
   return audioNodes;
 }
-export { createToneFmSynthOrb, DEFAULT_TONE_FM_SYNTH_PARAMS } from './tone-fm-synth-orb.js';
