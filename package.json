@@ -1,0 +1,31 @@
+{
+  "name": "resonautweb",
+  "version": "1.0.0",
+  "description": "The application now features a **Parallax Starfield** background by default. This animated wallpaper reacts to incoming audio, changing colour and motion depending on the dominant frequencies. Louder peaks briefly create extra connections that glow and then fade away. The colours adapt to the active musical scale so the visuals match the selected theme.",
+  "main": "app.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "server": "node multiplayer-server.js",
+    "server-wss": "WSS=1 node multiplayer-server.js",
+    "trpc-server": "node trpc-server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "tone": "^15.1.22",
+    "ws": "^8.18.3",
+    "@trpc/server": "^11.4.3",
+    "@trpc/client": "^11.4.3",
+    "socket.io": "^4.7.4",
+    "zod": "^4.0.2"
+  }
+}

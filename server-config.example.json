@@ -1,0 +1,7 @@
+{
+  "port": 3001,
+  "wss": false,
+  "ssl_cert": "cert.pem",
+  "ssl_key": "key.pem",
+  "host": "localhost"
+}
