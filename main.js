@@ -615,15 +615,6 @@ async function startApplication() {
       hideOverlappingPanels();
       updateTapeLooperUI();
       loadStateFromLocalStorage();
-      const pending = getPendingState();
-      if (pending) {
-        try {
-          loadState(pending);
-        } catch (e) {
-          console.warn('Failed to apply pending multiplayer state', e);
-        }
-        clearPendingState();
-      }
       startWithMode(selectedMode);
       if (isAudioReady && !isPlaying) {
         togglePlayPause();
