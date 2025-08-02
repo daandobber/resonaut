@@ -23,7 +23,13 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
 
 export function createToneFmSynthOrb(node) {
   const p = node.audioParams;
-  const synth = new Tone.FMSynth().toDestination();
+  let synth;
+  try {
+    synth = new Tone.FMSynth().toDestination();
+  } catch (e) {
+    console.warn('Tone.FMSynth could not be created in this environment:', e);
+    return null;
+  }
   synth.volume.value = -Infinity;
 
   synth.set({
