@@ -23,25 +23,30 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
 
 export function createToneFmSynthOrb(node) {
   const p = node.audioParams;
-  const synth = new Tone.FMSynth({
+  const synth = new Tone.FMSynth().toDestination();
+  synth.volume.value = -Infinity;
+
+  synth.set({
     oscillator: { type: sanitizeWaveformType(p.carrierWaveform) },
     modulation: { type: sanitizeWaveformType(p.modulatorWaveform) },
-    harmonicity: p.modulatorRatio ?? 1,
-    modulationIndex: p.modulatorDepthScale ?? 2,
-    envelope: {
-      attack: p.carrierEnvAttack ?? 0.01,
-      decay: p.carrierEnvDecay ?? 0.3,
-      sustain: p.carrierEnvSustain ?? 0,
-      release: p.carrierEnvRelease ?? 0.3,
-    },
-    modulationEnvelope: {
-      attack: p.modulatorEnvAttack ?? 0.01,
-      decay: p.modulatorEnvDecay ?? 0.2,
-      sustain: p.modulatorEnvSustain ?? 0,
-      release: p.modulatorEnvRelease ?? 0.2,
-    },
-  }).toDestination();
-  synth.volume.value = -Infinity;
+  });
+
+  synth.harmonicity.value = p.modulatorRatio ?? 1;
+  synth.modulationIndex.value = p.modulatorDepthScale ?? 2;
+
+  synth.envelope.set({
+    attack: p.carrierEnvAttack ?? 0.01,
+    decay: p.carrierEnvDecay ?? 0.3,
+    sustain: p.carrierEnvSustain ?? 0,
+    release: p.carrierEnvRelease ?? 0.3,
+  });
+
+  synth.modulationEnvelope.set({
+    attack: p.modulatorEnvAttack ?? 0.01,
+    decay: p.modulatorEnvDecay ?? 0.2,
+    sustain: p.modulatorEnvSustain ?? 0,
+    release: p.modulatorEnvRelease ?? 0.2,
+  });
 
   const reverbSendGain = new Tone.Gain(p.reverbSend ?? 0.1);
   const delaySendGain = new Tone.Gain(p.delaySend ?? 0.1);
@@ -71,7 +76,7 @@ export function createToneFmSynthOrb(node) {
 
   synth.triggerStart = (time, velocity = 1) => {
     synth.volume.setValueAtTime(-6 * velocity, time);
-    synth.triggerAttack(Tone.now(), velocity);
+    synth.triggerAttack(time, velocity);
   };
   synth.triggerStop = (time) => {
     synth.triggerRelease(time);
