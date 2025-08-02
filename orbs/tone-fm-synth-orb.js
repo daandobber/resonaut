@@ -76,7 +76,7 @@ export function createToneFmSynthOrb(node) {
 
   synth.triggerStart = (time, velocity = 1) => {
     synth.volume.setValueAtTime(-6 * velocity, time);
-    synth.triggerAttack(Tone.now(), velocity);
+    synth.triggerAttack(time, velocity);
   };
   synth.triggerStop = (time) => {
     synth.triggerRelease(time);
