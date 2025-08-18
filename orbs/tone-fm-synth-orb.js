@@ -1,4 +1,3 @@
-import * as Tone from 'tone';
 import { sanitizeWaveformType } from '../utils/oscillatorUtils.js';
 
 export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
@@ -21,72 +20,114 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   ignoreGlobalSync: false,
 };
 
+function applyEnvelope(param, attack, decay, sustain, release, time, velocity = 1) {
+  param.cancelScheduledValues(time);
+  param.setValueAtTime(0, time);
+  const peakTime = time + attack;
+  param.linearRampToValueAtTime(velocity, peakTime);
+  const sustainTime = peakTime + decay;
+  param.linearRampToValueAtTime(velocity * sustain, sustainTime);
+  return (stopTime) => {
+    param.cancelScheduledValues(stopTime);
+    param.setValueAtTime(param.value, stopTime);
+    param.linearRampToValueAtTime(0, stopTime + release);
+  };
+}
+
 export function createToneFmSynthOrb(node) {
   const p = node.audioParams;
-  let synth;
-  try {
-    synth = new Tone.FMSynth().toDestination();
-  } catch (e) {
-    console.warn('Tone.FMSynth could not be created in this environment:', e);
+  if (typeof audioContext === 'undefined') {
+    console.warn('AudioContext not ready for FM synth');
     return null;
   }
-  synth.volume.value = -Infinity;
+  const carrier = audioContext.createOscillator();
+  carrier.type = sanitizeWaveformType(p.carrierWaveform);
+  const modulator = audioContext.createOscillator();
+  modulator.type = sanitizeWaveformType(p.modulatorWaveform);
 
-  synth.set({
-    oscillator: { type: sanitizeWaveformType(p.carrierWaveform) },
-    modulation: { type: sanitizeWaveformType(p.modulatorWaveform) },
-  });
+  const modGain = audioContext.createGain();
+  modGain.gain.value = 0;
+  modulator.connect(modGain);
+  modGain.connect(carrier.frequency);
 
-  synth.harmonicity.value = p.modulatorRatio ?? 1;
-  synth.modulationIndex.value = p.modulatorDepthScale ?? 2;
+  const ampGain = audioContext.createGain();
+  ampGain.gain.value = 0;
+  carrier.connect(ampGain);
 
-  synth.envelope.set({
-    attack: p.carrierEnvAttack ?? 0.01,
-    decay: p.carrierEnvDecay ?? 0.3,
-    sustain: p.carrierEnvSustain ?? 0,
-    release: p.carrierEnvRelease ?? 0.3,
-  });
+  const reverbSendGain = audioContext.createGain();
+  reverbSendGain.gain.value = p.reverbSend ?? 0.1;
+  const delaySendGain = audioContext.createGain();
+  delaySendGain.gain.value = p.delaySend ?? 0.1;
+  ampGain.connect(reverbSendGain);
+  ampGain.connect(delaySendGain);
 
-  synth.modulationEnvelope.set({
-    attack: p.modulatorEnvAttack ?? 0.01,
-    decay: p.modulatorEnvDecay ?? 0.2,
-    sustain: p.modulatorEnvSustain ?? 0,
-    release: p.modulatorEnvRelease ?? 0.2,
-  });
-
-  const reverbSendGain = new Tone.Gain(p.reverbSend ?? 0.1);
-  const delaySendGain = new Tone.Gain(p.delaySend ?? 0.1);
-  synth.connect(reverbSendGain);
-  synth.connect(delaySendGain);
   if (globalThis.isReverbReady && globalThis.reverbPreDelayNode) {
     reverbSendGain.connect(globalThis.reverbPreDelayNode);
   }
   if (globalThis.isDelayReady && globalThis.masterDelaySendGain) {
     delaySendGain.connect(globalThis.masterDelaySendGain);
   }
+  let mistSendGain = null;
   if (globalThis.mistEffectInput) {
-    const mistSendGain = new Tone.Gain(0);
-    synth.connect(mistSendGain);
+    mistSendGain = audioContext.createGain();
+    mistSendGain.gain.value = 0;
+    ampGain.connect(mistSendGain);
     mistSendGain.connect(globalThis.mistEffectInput);
-    synth.mistSendGain = mistSendGain;
   }
+  let crushSendGain = null;
   if (globalThis.crushEffectInput) {
-    const crushSendGain = new Tone.Gain(0);
-    synth.connect(crushSendGain);
+    crushSendGain = audioContext.createGain();
+    crushSendGain.gain.value = 0;
+    ampGain.connect(crushSendGain);
     crushSendGain.connect(globalThis.crushEffectInput);
-    synth.crushSendGain = crushSendGain;
+  }
+  if (globalThis.masterGain) {
+    ampGain.connect(globalThis.masterGain);
   }
 
-  synth.reverbSendGain = reverbSendGain;
-  synth.delaySendGain = delaySendGain;
+  try { carrier.start(); } catch {}
+  try { modulator.start(); } catch {}
 
-  synth.triggerStart = (time, velocity = 1) => {
-    synth.volume.setValueAtTime(-6 * velocity, time);
-    synth.triggerAttack(time, velocity);
-  };
-  synth.triggerStop = (time) => {
-    synth.triggerRelease(time);
+  const triggerStart = (time, velocity = 1) => {
+    const baseFreq = carrier.frequency.value || 440;
+    modulator.frequency.setValueAtTime(baseFreq * (p.modulatorRatio ?? 1), time);
+    const stopAmpEnv = applyEnvelope(
+      ampGain.gain,
+      p.carrierEnvAttack ?? 0.01,
+      p.carrierEnvDecay ?? 0.3,
+      p.carrierEnvSustain ?? 0,
+      p.carrierEnvRelease ?? 0.3,
+      time,
+      velocity
+    );
+    const stopModEnv = applyEnvelope(
+      modGain.gain,
+      p.modulatorEnvAttack ?? 0.01,
+      p.modulatorEnvDecay ?? 0.2,
+      p.modulatorEnvSustain ?? 0,
+      p.modulatorEnvRelease ?? 0.2,
+      time,
+      p.modulatorDepthScale ?? 2
+    );
+    triggerStart.stopAmpEnv = stopAmpEnv;
+    triggerStart.stopModEnv = stopModEnv;
   };
 
-  return synth;
+  const triggerStop = (time) => {
+    if (triggerStart.stopAmpEnv) triggerStart.stopAmpEnv(time);
+    if (triggerStart.stopModEnv) triggerStart.stopModEnv(time);
+  };
+
+  return {
+    oscillator1: carrier,
+    modulatorOsc1: modulator,
+    modulatorGain1: modGain,
+    gainNode: ampGain,
+    reverbSendGain,
+    delaySendGain,
+    mistSendGain,
+    crushSendGain,
+    triggerStart,
+    triggerStop,
+  };
 }
