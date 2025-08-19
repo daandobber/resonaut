@@ -4387,7 +4387,39 @@ export function triggerNodeEffect(
     const orbitoneIndividualGains = audioNodes.orbitoneIndividualGains;
     const osc1Gain = audioNodes.osc1Gain;
 
-    if (node.audioParams && (node.audioParams.engine === 'tone' || node.audioParams.engine === 'tonefm')) {
+    if (node.audioParams && node.audioParams.engine === 'tonefm') {
+      node.isTriggered = true;
+      node.animationState = 1;
+
+      const atk = params.carrierEnvAttack ?? 0.01;
+      const dec = params.carrierEnvDecay ?? 0.3;
+      const sus = params.carrierEnvSustain ?? 0;
+      const rel = params.carrierEnvRelease ?? 0.3;
+
+      if (oscillator1 && oscillator1.frequency) {
+        oscillator1.frequency.setValueAtTime(
+          effectivePitch * (params.carrierRatio ?? 1),
+          now,
+        );
+      }
+
+      if (audioNodes.triggerStart) {
+        audioNodes.triggerStart(now, intensity);
+      }
+
+      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      if (audioNodes.triggerStop) {
+        audioNodes.triggerStop(noteOffTime);
+      }
+
+      setTimeout(() => {
+        const stillNode = findNodeById(node.id);
+        if (stillNode) stillNode.isTriggered = false;
+      }, (noteOffTime - now + rel) * 1000 + 100);
+      return;
+    }
+
+    if (node.audioParams && node.audioParams.engine === 'tone') {
       node.isTriggered = true;
       node.animationState = 1;
 
