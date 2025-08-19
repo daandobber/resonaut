@@ -42,6 +42,9 @@ export function createToneFmSynthOrb(node) {
   }
   const carrier = audioContext.createOscillator();
   carrier.type = sanitizeWaveformType(p.carrierWaveform);
+  // Ensure the carrier starts at an audible pitch; this will be updated
+  // later when notes are triggered.
+  carrier.frequency.value = 440;
   const modulator = audioContext.createOscillator();
   modulator.type = sanitizeWaveformType(p.modulatorWaveform);
 
@@ -81,8 +84,13 @@ export function createToneFmSynthOrb(node) {
     ampGain.connect(crushSendGain);
     crushSendGain.connect(globalThis.crushEffectInput);
   }
+  // Route the FM synth output to the master bus if available, otherwise
+  // connect directly to the destination so the synth can still be heard
+  // even when the global master gain has not been initialised yet.
   if (globalThis.masterGain) {
     ampGain.connect(globalThis.masterGain);
+  } else {
+    ampGain.connect(audioContext.destination);
   }
 
   try { carrier.start(); } catch {}
