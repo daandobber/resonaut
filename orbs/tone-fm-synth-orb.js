@@ -3,7 +3,6 @@ import { sanitizeWaveformType } from '../utils/oscillatorUtils.js';
 export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   carrierWaveform: 'sine',
   modulatorWaveform: 'sine',
-  carrierRatio: 1,
   modulatorRatio: 1,
   modulatorDepthScale: 2,
   carrierEnvAttack: 0.01,

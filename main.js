@@ -2,7 +2,9 @@ import { fmSynthPresets, createToneFmSynthOrb, DEFAULT_TONE_FM_SYNTH_PARAMS } fr
 import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { createAnalogSynthOrb as createToneSynthOrb, DEFAULT_ANALOG_SYNTH_PARAMS } from './orbs/tone-synth-orb.js';
 import { showToneSynthMenu, hideToneSynthMenu, hideTonePanel } from './orbs/tone-synth-ui.js';
+import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
 import * as Tone from 'tone';
+import { sanitizeWaveformType } from './utils/oscillatorUtils.js';
 import { DEFAULT_RESONAUTER_PARAMS, resonauterGranParams, createResonauterOrbAudioNodes, playResonauterSound } from './orbs/resonauter-orb.js';
 import { NOTE_NAMES, MIN_SCALE_INDEX, MAX_SCALE_INDEX } from './utils/musicConstants.js';
 import {
@@ -3732,6 +3734,17 @@ export function updateNodeAudioParams(node) {
       });
     }
 
+    if (oscillator1 && params.carrierWaveform) {
+      oscillator1.type = sanitizeWaveformType(params.carrierWaveform);
+    }
+    if (modulatorOsc1 && params.modulatorWaveform) {
+      modulatorOsc1.type = sanitizeWaveformType(params.modulatorWaveform);
+    }
+    if (modulatorOsc1 && params.modulatorRatio !== undefined && oscillator1 && oscillator1.frequency) {
+      const base = oscillator1.frequency.value;
+      modulatorOsc1.frequency.setTargetAtTime(base * params.modulatorRatio, now, generalUpdateTimeConstant);
+    }
+
     if (node.audioNodes.noiseGain) {
       node.audioNodes.noiseGain.gain.setTargetAtTime(
         params.noiseLevel ?? 0,
@@ -4398,7 +4411,7 @@ export function triggerNodeEffect(
 
       if (oscillator1 && oscillator1.frequency) {
         oscillator1.frequency.setValueAtTime(
-          effectivePitch * (params.carrierRatio ?? 1),
+          effectivePitch,
           now,
         );
       }
@@ -16576,13 +16589,20 @@ function handleMouseUp(event) {
           hideAlienOrbMenu();
           hideResonauterOrbMenu();
           hideArvoDroneOrbMenu();
-      } else if (selectedNode && selectedNode.type === "sound" && (selectedNode.audioParams.engine === 'tone' || selectedNode.audioParams.engine === 'tonefm')) {
+      } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tone') {
         showToneSynthMenu(selectedNode);
         hideAlienOrbMenu();
         hideResonauterOrbMenu();
-          hideRadioOrbMenu();
-          hideArvoDroneOrbMenu();
-          hideSamplerOrbMenu();
+        hideRadioOrbMenu();
+        hideArvoDroneOrbMenu();
+        hideSamplerOrbMenu();
+      } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tonefm') {
+        showToneFmSynthMenu(selectedNode);
+        hideAlienOrbMenu();
+        hideResonauterOrbMenu();
+        hideRadioOrbMenu();
+        hideArvoDroneOrbMenu();
+        hideSamplerOrbMenu();
       } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.waveform && selectedNode.audioParams.waveform.startsWith("sampler_")) {
           showSamplerOrbMenu(selectedNode);
           hideAlienOrbMenu();
@@ -22562,7 +22582,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         const existing = { ...newNode.audioParams };
         Object.assign(newNode.audioParams, DEFAULT_TONE_FM_SYNTH_PARAMS);
         Object.assign(newNode.audioParams, existing);
-        if (nodeSubtypeForAudioParams) {
+        if (nodeSubtypeForAudioParams && !existing.carrierWaveform) {
           newNode.audioParams.carrierWaveform = nodeSubtypeForAudioParams;
         }
       }
