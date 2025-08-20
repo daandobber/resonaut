@@ -81,9 +81,9 @@ export function showToneFmSynthMenu(node) {
     0,
     10,
     0.1,
-    node.audioParams.modulatorDepthScale ?? 2,
+    node.audioParams.modulatorDepthScale ?? 1,
     v => { node.audioParams.modulatorDepthScale = v; updateNodeAudioParams(node); },
-    v => v.toFixed(1)
+    v => (v * 10).toFixed(1)
   );
   container.appendChild(depthSlider);
 
