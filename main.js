@@ -3745,6 +3745,40 @@ export function updateNodeAudioParams(node) {
       modulatorOsc1.frequency.setTargetAtTime(base * params.modulatorRatio, now, generalUpdateTimeConstant);
     }
 
+    if (
+      node.audioParams &&
+      node.audioParams.engine === 'tonefm' &&
+      modulatorGain1 &&
+      params.modulatorDepthScale !== undefined
+    ) {
+      modulatorGain1.gain.setTargetAtTime(
+        params.modulatorDepthScale * 10,
+        now,
+        generalUpdateTimeConstant,
+      );
+    }
+
+    if (
+      node.audioParams &&
+      node.audioParams.engine === 'tonefm' &&
+      oscillator1 &&
+      oscillator1.envelope &&
+      oscillator1.modulationEnvelope
+    ) {
+      oscillator1.envelope.attack = params.carrierEnvAttack ?? oscillator1.envelope.attack;
+      oscillator1.envelope.decay = params.carrierEnvDecay ?? oscillator1.envelope.decay;
+      oscillator1.envelope.sustain = params.carrierEnvSustain ?? oscillator1.envelope.sustain;
+      oscillator1.envelope.release = params.carrierEnvRelease ?? oscillator1.envelope.release;
+      oscillator1.modulationEnvelope.attack =
+        params.modulatorEnvAttack ?? params.carrierEnvAttack ?? oscillator1.modulationEnvelope.attack;
+      oscillator1.modulationEnvelope.decay =
+        params.modulatorEnvDecay ?? params.carrierEnvDecay ?? oscillator1.modulationEnvelope.decay;
+      oscillator1.modulationEnvelope.sustain =
+        params.modulatorEnvSustain ?? 1;
+      oscillator1.modulationEnvelope.release =
+        params.modulatorEnvRelease ?? params.carrierEnvRelease ?? oscillator1.modulationEnvelope.release;
+    }
+
     if (node.audioNodes.noiseGain) {
       node.audioNodes.noiseGain.gain.setTargetAtTime(
         params.noiseLevel ?? 0,

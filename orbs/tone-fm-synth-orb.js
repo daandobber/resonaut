@@ -5,15 +5,15 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   carrierWaveform: 'sine',
   modulatorWaveform: 'sine',
   modulatorRatio: 1,
-  modulatorDepthScale: 2,
+  modulatorDepthScale: 1,
   carrierEnvAttack: 0.01,
   carrierEnvDecay: 0.3,
   carrierEnvSustain: 0,
   carrierEnvRelease: 0.3,
-  modulatorEnvAttack: 0.01,
-  modulatorEnvDecay: 0.2,
-  modulatorEnvSustain: 0,
-  modulatorEnvRelease: 0.2,
+  modulatorEnvAttack: null,
+  modulatorEnvDecay: null,
+  modulatorEnvSustain: 1,
+  modulatorEnvRelease: null,
   reverbSend: 0.1,
   delaySend: 0.1,
   visualStyle: 'fm_default',
@@ -25,7 +25,7 @@ export function createToneFmSynthOrb(node) {
 
   const fm = new Tone.FMSynth({
     harmonicity: p.modulatorRatio ?? 1,
-    modulationIndex: p.modulatorDepthScale ?? 2,
+    modulationIndex: (p.modulatorDepthScale ?? 1) * 10,
     oscillator: { type: sanitizeWaveformType(p.carrierWaveform) },
     modulation: { type: sanitizeWaveformType(p.modulatorWaveform) },
     envelope: {
@@ -35,10 +35,10 @@ export function createToneFmSynthOrb(node) {
       release: p.carrierEnvRelease ?? 0.3,
     },
     modulationEnvelope: {
-      attack: p.modulatorEnvAttack ?? 0.01,
-      decay: p.modulatorEnvDecay ?? 0.2,
-      sustain: p.modulatorEnvSustain ?? 0,
-      release: p.modulatorEnvRelease ?? 0.2,
+      attack: p.modulatorEnvAttack ?? p.carrierEnvAttack ?? 0.01,
+      decay: p.modulatorEnvDecay ?? p.carrierEnvDecay ?? 0.3,
+      sustain: p.modulatorEnvSustain ?? 1,
+      release: p.modulatorEnvRelease ?? p.carrierEnvRelease ?? 0.3,
     },
   });
 
