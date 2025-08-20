@@ -82,7 +82,7 @@ export function createToneFmSynthOrb(node) {
   }
 
   const triggerStart = (time, velocity = 1) => {
-    fm.triggerAttack(undefined, time, velocity);
+    fm.triggerAttack(fm.frequency.value, time, velocity);
   };
 
   const triggerStop = (time) => {
@@ -90,7 +90,7 @@ export function createToneFmSynthOrb(node) {
   };
 
   return {
-    oscillator1: fm.oscillator,
+    oscillator1: fm,
     modulatorOsc1: fm.modulation,
     modulatorGain1: { gain: fm.modulationIndex },
     lowPassFilter,
