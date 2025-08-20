@@ -14,6 +14,9 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   modulatorEnvDecay: null,
   modulatorEnvSustain: 1,
   modulatorEnvRelease: null,
+  filterType: 'lowpass',
+  filterCutoff: 20000,
+  filterResonance: 1,
   reverbSend: 0.1,
   delaySend: 0.1,
   visualStyle: 'fm_default',
@@ -42,12 +45,12 @@ export function createToneFmSynthOrb(node) {
     },
   });
 
-  const lowPassFilter = new Tone.Filter(20000, 'lowpass');
-  lowPassFilter.Q.value = 1;
-  fm.connect(lowPassFilter);
+  const filter = new Tone.Filter(p.filterCutoff ?? 20000, p.filterType ?? 'lowpass');
+  filter.Q.value = p.filterResonance ?? 1;
+  fm.connect(filter);
 
   const gainNode = new Tone.Gain(1);
-  lowPassFilter.connect(gainNode);
+  filter.connect(gainNode);
 
   const reverbSendGain = new Tone.Gain(p.reverbSend ?? 0.1);
   const delaySendGain = new Tone.Gain(p.delaySend ?? 0.1);
@@ -93,7 +96,7 @@ export function createToneFmSynthOrb(node) {
     oscillator1: fm,
     modulatorOsc1: fm.modulation,
     modulatorGain1: { gain: fm.modulationIndex },
-    lowPassFilter,
+    lowPassFilter: filter,
     gainNode,
     reverbSendGain,
     delaySendGain,
