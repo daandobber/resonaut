@@ -1,6 +1,7 @@
 import { tonePanelContent } from '../utils/domElements.js';
 import { updateNodeAudioParams } from '../main.js';
 import { showTonePanel, positionTonePanel, hideToneSynthMenu } from './tone-synth-ui.js';
+import { fmAlgorithms } from './fm-synth-orb.js';
 
 function createSlider(id, labelText, min, max, step, value, onInput, format = v => v.toFixed(step.toString().includes('.') ? step.toString().split('.')[1].length : 0)) {
   const wrap = document.createElement('div');
@@ -74,6 +75,7 @@ export function showToneFmSynthMenu(node) {
     v => v.toFixed(1)
   );
   container.appendChild(ratioSlider);
+  const ratioSliderInput = ratioSlider.querySelector('input');
 
   const depthSlider = createSlider(
     `fm-modDepth-${node.id}`,
@@ -86,6 +88,31 @@ export function showToneFmSynthMenu(node) {
     v => (v * 10).toFixed(1)
   );
   container.appendChild(depthSlider);
+  const depthSliderInput = depthSlider.querySelector('input');
+
+  const algRow = document.createElement('div');
+  algRow.style.display = 'flex';
+  algRow.style.marginTop = '6px';
+  fmAlgorithms.forEach((alg, idx) => {
+    const btn = document.createElement('button');
+    btn.textContent = alg.label || `Alg ${idx + 1}`;
+    btn.className = 'waveform-button';
+    btn.style.marginRight = '4px';
+    if (node.audioParams.algorithm === idx) btn.classList.add('selected');
+    btn.addEventListener('click', () => {
+      node.audioParams.algorithm = idx;
+      node.audioParams.modulatorRatio = alg.modulatorRatio;
+      node.audioParams.modulatorDepthScale = alg.modulatorDepthScale;
+      ratioSliderInput.value = alg.modulatorRatio;
+      ratioSliderInput.dispatchEvent(new Event('input'));
+      depthSliderInput.value = alg.modulatorDepthScale;
+      depthSliderInput.dispatchEvent(new Event('input'));
+      Array.from(algRow.children).forEach(c => c.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+    algRow.appendChild(btn);
+  });
+  container.appendChild(algRow);
 
   const carEnvLabel = document.createElement('div');
   carEnvLabel.textContent = 'Car Env';

@@ -111,4 +111,8 @@ export const fmSynthPresets = [
   },
 ];
 
-export { createToneFmSynthOrb, DEFAULT_TONE_FM_SYNTH_PARAMS } from './tone-fm-synth-orb.js';
+export {
+  createToneFmSynthOrb,
+  DEFAULT_TONE_FM_SYNTH_PARAMS,
+  fmAlgorithms,
+} from './tone-fm-synth-orb.js';
