@@ -106,33 +106,105 @@ export async function showToneFmSynthMenu(node) {
   tonePanelContent.innerHTML = '';
   tonePanelContent.appendChild(container);
 
-  const oscRow = document.createElement('div');
-  oscRow.style.display = 'flex';
-  ['carrierWaveform', 'modulatorWaveform'].forEach((param, idx) => {
-    const wrap = document.createElement('div');
-    const label = document.createElement('label');
-    label.textContent = idx === 0 ? 'Car' : 'Mod';
-    const select = document.createElement('select');
-    ['sine', 'square', 'triangle', 'sawtooth'].forEach(wf => {
-      const opt = document.createElement('option');
-      opt.value = wf;
-      opt.textContent = wf;
-      if (node.audioParams[param] === wf) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener('change', e => {
-      node.audioParams[param] = e.target.value;
-      updateNodeAudioParams(node);
-    });
-    wrap.appendChild(label);
-    wrap.appendChild(select);
-    wrap.style.marginRight = '6px';
-    oscRow.appendChild(wrap);
-  });
-  container.appendChild(oscRow);
+  const operatorsRow = document.createElement('div');
+  operatorsRow.style.display = 'flex';
+  operatorsRow.style.marginBottom = '6px';
+  operatorsRow.style.gap = '12px';
 
-  const modRow = document.createElement('div');
-  modRow.style.display = 'flex';
+  // Carrier operator
+  const carSection = document.createElement('div');
+  carSection.style.display = 'flex';
+  carSection.style.flexDirection = 'column';
+  const carLabel = document.createElement('div');
+  carLabel.textContent = 'Car';
+  carLabel.style.fontWeight = 'bold';
+  carLabel.style.marginBottom = '4px';
+  carSection.appendChild(carLabel);
+
+  const carControls = document.createElement('div');
+  carControls.style.display = 'flex';
+  carControls.style.flexWrap = 'wrap';
+  carSection.appendChild(carControls);
+
+  const carWaveWrap = document.createElement('div');
+  const carWaveLabel = document.createElement('label');
+  carWaveLabel.textContent = 'Wave';
+  const carWaveSelect = document.createElement('select');
+  ['sine', 'square', 'triangle', 'sawtooth'].forEach(wf => {
+    const opt = document.createElement('option');
+    opt.value = wf;
+    opt.textContent = wf;
+    if (node.audioParams.carrierWaveform === wf) opt.selected = true;
+    carWaveSelect.appendChild(opt);
+  });
+  carWaveSelect.addEventListener('change', e => {
+    node.audioParams.carrierWaveform = e.target.value;
+    updateNodeAudioParams(node);
+  });
+  carWaveWrap.appendChild(carWaveLabel);
+  carWaveWrap.appendChild(carWaveSelect);
+  carWaveWrap.style.marginRight = '4px';
+  carWaveWrap.style.marginBottom = '4px';
+  carControls.appendChild(carWaveWrap);
+
+  const carrierEnvControls = [
+    { key: 'carrierEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01 },
+    { key: 'carrierEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01 },
+    { key: 'carrierEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01 },
+  ];
+  for (const c of carrierEnvControls) {
+    const dialWrap = await createDial(
+      `fm-${c.key}-${node.id}`,
+      c.label,
+      c.min,
+      c.max,
+      c.step,
+      node.audioParams[c.key] ?? 0,
+      v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
+      v => v.toFixed(c.step < 1 ? 2 : 0)
+    );
+    dialWrap.style.marginRight = '4px';
+    dialWrap.style.marginBottom = '4px';
+    carControls.appendChild(dialWrap);
+  }
+
+  operatorsRow.appendChild(carSection);
+
+  // Modulator operator
+  const modSection = document.createElement('div');
+  modSection.style.display = 'flex';
+  modSection.style.flexDirection = 'column';
+  const modLabel = document.createElement('div');
+  modLabel.textContent = 'Mod';
+  modLabel.style.fontWeight = 'bold';
+  modLabel.style.marginBottom = '4px';
+  modSection.appendChild(modLabel);
+
+  const modControls = document.createElement('div');
+  modControls.style.display = 'flex';
+  modControls.style.flexWrap = 'wrap';
+  modSection.appendChild(modControls);
+
+  const modWaveWrap = document.createElement('div');
+  const modWaveLabel = document.createElement('label');
+  modWaveLabel.textContent = 'Wave';
+  const modWaveSelect = document.createElement('select');
+  ['sine', 'square', 'triangle', 'sawtooth'].forEach(wf => {
+    const opt = document.createElement('option');
+    opt.value = wf;
+    opt.textContent = wf;
+    if (node.audioParams.modulatorWaveform === wf) opt.selected = true;
+    modWaveSelect.appendChild(opt);
+  });
+  modWaveSelect.addEventListener('change', e => {
+    node.audioParams.modulatorWaveform = e.target.value;
+    updateNodeAudioParams(node);
+  });
+  modWaveWrap.appendChild(modWaveLabel);
+  modWaveWrap.appendChild(modWaveSelect);
+  modWaveWrap.style.marginRight = '4px';
+  modWaveWrap.style.marginBottom = '4px';
+  modControls.appendChild(modWaveWrap);
 
   const ratioDial = await createDial(
     `fm-modulatorRatio-${node.id}`,
@@ -144,8 +216,9 @@ export async function showToneFmSynthMenu(node) {
     v => { node.audioParams.modulatorRatio = v; updateNodeAudioParams(node); },
     v => v.toFixed(1)
   );
-  ratioDial.style.marginRight = '6px';
-  modRow.appendChild(ratioDial);
+  ratioDial.style.marginRight = '4px';
+  ratioDial.style.marginBottom = '4px';
+  modControls.appendChild(ratioDial);
   const ratioDialInstance = ratioDial.dial;
 
   const depthDial = await createDial(
@@ -158,14 +231,39 @@ export async function showToneFmSynthMenu(node) {
     v => { node.audioParams.modulatorDepthScale = v; updateNodeAudioParams(node); },
     v => (v * 10).toFixed(1)
   );
-  modRow.appendChild(depthDial);
+  depthDial.style.marginRight = '4px';
+  depthDial.style.marginBottom = '4px';
+  modControls.appendChild(depthDial);
   const depthDialInstance = depthDial.dial;
 
-  container.appendChild(modRow);
+  const modEnvControls = [
+    { key: 'modulatorEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvAttack' },
+    { key: 'modulatorEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvDecay' },
+    { key: 'modulatorEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvRelease' },
+  ];
+  for (const c of modEnvControls) {
+    const val = node.audioParams[c.key] ?? node.audioParams[c.fallback] ?? 0;
+    const dialWrap = await createDial(
+      `fm-${c.key}-${node.id}`,
+      c.label,
+      c.min,
+      c.max,
+      c.step,
+      val,
+      v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
+      v => v.toFixed(c.step < 1 ? 2 : 0)
+    );
+    dialWrap.style.marginRight = '4px';
+    dialWrap.style.marginBottom = '4px';
+    modControls.appendChild(dialWrap);
+  }
+
+  operatorsRow.appendChild(modSection);
+  container.appendChild(operatorsRow);
 
   const algRow = document.createElement('div');
   algRow.style.display = 'flex';
-  algRow.style.marginTop = '6px';
+  algRow.style.marginBottom = '6px';
   fmAlgorithms.forEach((alg, idx) => {
     const btn = document.createElement('button');
     btn.textContent = alg.label || `Alg ${idx + 1}`;
@@ -190,63 +288,6 @@ export async function showToneFmSynthMenu(node) {
     algRow.appendChild(btn);
   });
   container.appendChild(algRow);
-
-  const carEnvLabel = document.createElement('div');
-  carEnvLabel.textContent = 'Car Env';
-  carEnvLabel.style.marginTop = '6px';
-  container.appendChild(carEnvLabel);
-
-  const carrierEnvRow = document.createElement('div');
-  carrierEnvRow.style.display = 'flex';
-  const carrierEnvControls = [
-    { key: 'carrierEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01 },
-    { key: 'carrierEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01 },
-    { key: 'carrierEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01 },
-  ];
-  for (const c of carrierEnvControls) {
-    const dialWrap = await createDial(
-      `fm-${c.key}-${node.id}`,
-      c.label,
-      c.min,
-      c.max,
-      c.step,
-      node.audioParams[c.key] ?? 0,
-      v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
-      v => v.toFixed(c.step < 1 ? 2 : 0)
-    );
-    dialWrap.style.marginRight = '4px';
-    carrierEnvRow.appendChild(dialWrap);
-  }
-  container.appendChild(carrierEnvRow);
-
-  const modEnvLabel = document.createElement('div');
-  modEnvLabel.textContent = 'Mod Env';
-  modEnvLabel.style.marginTop = '6px';
-  container.appendChild(modEnvLabel);
-
-  const modEnvRow = document.createElement('div');
-  modEnvRow.style.display = 'flex';
-  const modEnvControls = [
-    { key: 'modulatorEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvAttack' },
-    { key: 'modulatorEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvDecay' },
-    { key: 'modulatorEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvRelease' },
-  ];
-  for (const c of modEnvControls) {
-    const val = node.audioParams[c.key] ?? node.audioParams[c.fallback] ?? 0;
-    const dialWrap = await createDial(
-      `fm-${c.key}-${node.id}`,
-      c.label,
-      c.min,
-      c.max,
-      c.step,
-      val,
-      v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
-      v => v.toFixed(c.step < 1 ? 2 : 0)
-    );
-    dialWrap.style.marginRight = '4px';
-    modEnvRow.appendChild(dialWrap);
-  }
-  container.appendChild(modEnvRow);
 
   const filterRow = document.createElement('div');
   filterRow.style.display = 'flex';
