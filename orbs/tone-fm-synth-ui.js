@@ -196,12 +196,11 @@ export async function showToneFmSynthMenu(node) {
     return wrap;
   }
 
-  let ratioDialWrap = null;
-  let depthDialWrap = null;
-
   const operators = [
     { prefix: 'carrier', label: 'Car' },
-    { prefix: 'modulator', label: 'Mod', envFallback: 'carrier' },
+    { prefix: 'modulator', label: 'M1', envFallback: 'carrier' },
+    { prefix: 'modulator2', label: 'M2', envFallback: 'carrier' },
+    { prefix: 'modulator3', label: 'M3', envFallback: 'carrier' },
   ];
 
   const columns = [
@@ -248,8 +247,6 @@ export async function showToneFmSynthMenu(node) {
           col.format,
           updateDisplay
         );
-        if (op.prefix === 'modulator' && col.suffix === 'Ratio') ratioDialWrap = wrap;
-        if (op.prefix === 'modulator' && col.suffix === 'DepthScale') depthDialWrap = wrap;
       }
       dialsGrid.appendChild(wrap);
     }
@@ -305,24 +302,6 @@ export async function showToneFmSynthMenu(node) {
     if (node.audioParams.algorithm === idx) btn.classList.add('selected');
     btn.addEventListener('click', () => {
       node.audioParams.algorithm = idx;
-      node.audioParams.modulatorRatio = alg.modulatorRatio;
-      node.audioParams.modulatorDepthScale = alg.modulatorDepthScale;
-      if (ratioDialWrap && ratioDialWrap.dial) {
-        ratioDialWrap.dial.value = alg.modulatorRatio;
-        if (ratioDialWrap.dial.emit) {
-          ratioDialWrap.dial.emit('change', ratioDialWrap.dial.value);
-        } else {
-          ratioDialWrap.dial.dispatchEvent(new Event('input'));
-        }
-      }
-      if (depthDialWrap && depthDialWrap.dial) {
-        depthDialWrap.dial.value = alg.modulatorDepthScale;
-        if (depthDialWrap.dial.emit) {
-          depthDialWrap.dial.emit('change', depthDialWrap.dial.value);
-        } else {
-          depthDialWrap.dial.dispatchEvent(new Event('input'));
-        }
-      }
       Array.from(algRow.children).forEach(c => c.classList.remove('selected'));
       btn.classList.add('selected');
       updateNodeAudioParams(node);
