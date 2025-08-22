@@ -42,84 +42,103 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
 export const fmAlgorithms = [
   {
     label: 'Alg 1',
-    chain: [
+    connections: [
+      { source: 4, target: 3 },
       { source: 3, target: 2 },
       { source: 2, target: 1 },
-      { source: 1, target: 0 },
     ],
+    carriers: [1],
   },
   {
     label: 'Alg 2',
-    chain: [
+    connections: [
+      { source: 4, target: 3 },
       { source: 3, target: 2 },
-      { source: 2, target: 0 },
-      { source: 1, target: 0 },
     ],
+    carriers: [2, 1],
   },
   {
     label: 'Alg 3',
-    chain: [
-      { source: 3, target: 1 },
-      { source: 1, target: 0 },
-      { source: 2, target: 0 },
+    connections: [
+      { source: 4, target: 3 },
+      { source: 2, target: 1 },
     ],
+    carriers: [3, 1],
   },
   {
     label: 'Alg 4',
-    chain: [
-      { source: 3, target: 0 },
-      { source: 2, target: 0 },
-      { source: 1, target: 0 },
+    connections: [
+      { source: 4, target: 3 },
+      { source: 4, target: 2 },
+      { source: 3, target: 1 },
+      { source: 2, target: 1 },
     ],
+    carriers: [1],
+  },
+  {
+    label: 'Alg 5',
+    connections: [
+      { source: 4, target: 3 },
+      { source: 3, target: 1 },
+      { source: 2, target: 1 },
+    ],
+    carriers: [1],
+  },
+  {
+    label: 'Alg 6',
+    connections: [
+      { source: 4, target: 2 },
+      { source: 2, target: 1 },
+      { source: 3, target: 1 },
+    ],
+    carriers: [1],
+  },
+  {
+    label: 'Alg 7',
+    connections: [
+      { source: 4, target: 3 },
+    ],
+    carriers: [3, 2, 1],
+  },
+  {
+    label: 'Alg 8',
+    connections: [],
+    carriers: [4, 3, 2, 1],
   },
 ];
 
 export function createToneFmSynthOrb(node) {
   const p = node.audioParams;
 
-  // Create carrier oscillator
-  const carrierOsc = new Tone.Oscillator({
-    type: sanitizeWaveformType(p.carrierWaveform),
-    frequency: 440,
-  });
-  const carrierEnv = new Tone.Envelope({
-    attack: p.carrierEnvAttack ?? 0.01,
-    decay: p.carrierEnvDecay ?? 0.3,
-    sustain: p.carrierEnvSustain ?? 0,
-    release: p.carrierEnvRelease ?? 0.3,
-  });
-  const carrierGain = new Tone.Gain(0);
-  carrierEnv.connect(carrierGain.gain);
-  carrierOsc.connect(carrierGain);
-
-  // Helper to create a modulator operator
-  function createMod(prefix) {
+  function createOperator(prefix, envFallback = 'carrier') {
     const osc = new Tone.Oscillator({
       type: sanitizeWaveformType(p[`${prefix}Waveform`]) || 'sine',
       frequency: 440,
     });
     const env = new Tone.Envelope({
-      attack: p[`${prefix}EnvAttack`] ?? p.modulatorEnvAttack ?? p.carrierEnvAttack ?? 0.01,
-      decay: p[`${prefix}EnvDecay`] ?? p.modulatorEnvDecay ?? p.carrierEnvDecay ?? 0.3,
-      sustain: p[`${prefix}EnvSustain`] ?? p.modulatorEnvSustain ?? 1,
-      release: p[`${prefix}EnvRelease`] ?? p.modulatorEnvRelease ?? p.carrierEnvRelease ?? 0.3,
+      attack: p[`${prefix}EnvAttack`] ?? p[`${envFallback}EnvAttack`] ?? 0.01,
+      decay: p[`${prefix}EnvDecay`] ?? p[`${envFallback}EnvDecay`] ?? 0.3,
+      sustain: p[`${prefix}EnvSustain`] ?? p[`${envFallback}EnvSustain`] ?? 1,
+      release: p[`${prefix}EnvRelease`] ?? p[`${envFallback}EnvRelease`] ?? 0.3,
     });
     const envGain = new Tone.Gain(0);
     env.connect(envGain.gain);
     osc.connect(envGain);
-    const depthGain = new Tone.Gain((p[`${prefix}DepthScale`] ?? 0) * 10);
-    envGain.connect(depthGain);
-    return { osc, env, envGain, depthGain };
+    const modGain = new Tone.Gain((p[`${prefix}DepthScale`] ?? 0) * 10);
+    envGain.connect(modGain);
+    const outGain = new Tone.Gain(1);
+    envGain.connect(outGain);
+    return { osc, env, modGain, outGain };
   }
 
-  const mod1 = createMod('modulator');
-  const mod2 = createMod('modulator2');
-  const mod3 = createMod('modulator3');
+  const op1 = createOperator('carrier', 'carrier');
+  const op2 = createOperator('modulator');
+  const op3 = createOperator('modulator2');
+  const op4 = createOperator('modulator3');
 
   // Filter and effects chain
   const filter = new Tone.Filter(p.filterCutoff ?? 20000, p.filterType ?? 'lowpass');
   filter.Q.value = p.filterResonance ?? 1;
-  carrierGain.connect(filter);
 
   const gainNode = new Tone.Gain(1);
   filter.connect(gainNode);
@@ -156,58 +175,58 @@ export function createToneFmSynthOrb(node) {
     gainNode.connect(Tone.getContext().destination);
   }
 
-  // Apply algorithm routing
-  const modulators = [null, mod1, mod2, mod3];
+  const operators = [null, op1, op2, op3, op4];
+
   function applyAlgorithm(index = 0) {
     const alg = fmAlgorithms[index] || fmAlgorithms[0];
-    // Disconnect existing
-    [mod1, mod2, mod3].forEach(m => m.depthGain.disconnect());
-    alg.chain.forEach(({ source, target }) => {
-      modulators[source].depthGain.connect(
-        target === 0 ? carrierOsc.frequency : modulators[target].osc.frequency,
-      );
+    for (let i = 1; i <= 4; i++) {
+      operators[i].modGain.disconnect();
+      operators[i].outGain.disconnect();
+    }
+    alg.connections.forEach(({ source, target }) => {
+      operators[source].modGain.connect(operators[target].osc.frequency);
+    });
+    alg.carriers.forEach(idx => {
+      operators[idx].outGain.connect(filter);
     });
   }
   applyAlgorithm(p.algorithm ?? 0);
 
   // Start oscillators
-  carrierOsc.start();
-  mod1.osc.start();
-  mod2.osc.start();
-  mod3.osc.start();
+  [op1, op2, op3, op4].forEach(o => o.osc.start());
 
   const triggerStart = (time, velocity = 1) => {
-    const baseFreq = carrierOsc.frequency.value;
-    mod1.osc.frequency.setValueAtTime(baseFreq * (p.modulatorRatio ?? 1), time);
-    mod2.osc.frequency.setValueAtTime(baseFreq * (p.modulator2Ratio ?? 1), time);
-    mod3.osc.frequency.setValueAtTime(baseFreq * (p.modulator3Ratio ?? 1), time);
-    carrierEnv.triggerAttack(time, velocity);
-    mod1.env.triggerAttack(time);
-    mod2.env.triggerAttack(time);
-    mod3.env.triggerAttack(time);
+    const baseFreq = op1.osc.frequency.value;
+    op2.osc.frequency.setValueAtTime(baseFreq * (p.modulatorRatio ?? 1), time);
+    op3.osc.frequency.setValueAtTime(baseFreq * (p.modulator2Ratio ?? 1), time);
+    op4.osc.frequency.setValueAtTime(baseFreq * (p.modulator3Ratio ?? 1), time);
+    op1.env.triggerAttack(time, velocity);
+    op2.env.triggerAttack(time);
+    op3.env.triggerAttack(time);
+    op4.env.triggerAttack(time);
   };
 
   const triggerStop = (time) => {
-    carrierEnv.triggerRelease(time);
-    mod1.env.triggerRelease(time);
-    mod2.env.triggerRelease(time);
-    mod3.env.triggerRelease(time);
+    op1.env.triggerRelease(time);
+    op2.env.triggerRelease(time);
+    op3.env.triggerRelease(time);
+    op4.env.triggerRelease(time);
   };
 
-  carrierOsc.detune.value = p.detune ?? 0;
+  op1.osc.detune.value = p.detune ?? 0;
 
   return {
-    oscillator1: carrierOsc,
-    carrierEnv,
-    modulatorOsc1: mod1.osc,
-    modulatorGain1: mod1.depthGain,
-    modulatorEnv1: mod1.env,
-    modulatorOsc2: mod2.osc,
-    modulatorGain2: mod2.depthGain,
-    modulatorEnv2: mod2.env,
-    modulatorOsc3: mod3.osc,
-    modulatorGain3: mod3.depthGain,
-    modulatorEnv3: mod3.env,
+    oscillator1: op1.osc,
+    carrierEnv: op1.env,
+    modulatorOsc1: op2.osc,
+    modulatorGain1: op2.modGain,
+    modulatorEnv1: op2.env,
+    modulatorOsc2: op3.osc,
+    modulatorGain2: op3.modGain,
+    modulatorEnv2: op3.env,
+    modulatorOsc3: op4.osc,
+    modulatorGain3: op4.modGain,
+    modulatorEnv3: op4.env,
     lowPassFilter: filter,
     gainNode,
     reverbSendGain,
