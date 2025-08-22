@@ -21,7 +21,7 @@ export function lerpColor(colorA, colorB, t) {
  const b_ = Math.round(a.b + (b.b - a.b) * t);
  return rgbToHex(r, g, b_);
 }
-export function getDialColor(value) {
+export function getDialColor(value) { 
   const computedStyles = getComputedStyle(document.body); 
   const colorStart = computedStyles.getPropertyValue('--mixer-gradient-start').trim() || '#7CFC00';
   const colorMid = computedStyles.getPropertyValue('--mixer-gradient-mid').trim() || '#00BFFF';
@@ -36,27 +36,14 @@ export function getDialColor(value) {
   }
 }
 
-let dialOverlayElement = null;
-
-function getDialOverlayElement() {
-  if (!dialOverlayElement) {
-    dialOverlayElement = document.createElement('div');
-    dialOverlayElement.id = 'dial-active-display';
-    dialOverlayElement.style.position = 'fixed';
-    dialOverlayElement.style.bottom = '10px';
-    dialOverlayElement.style.left = '50%';
-    dialOverlayElement.style.transform = 'translateX(-50%)';
-    dialOverlayElement.style.padding = '4px 8px';
-    dialOverlayElement.style.background = 'rgba(0,0,0,0.7)';
-    dialOverlayElement.style.color = '#fff';
-    dialOverlayElement.style.fontSize = '12px';
-    dialOverlayElement.style.borderRadius = '4px';
-    dialOverlayElement.style.pointerEvents = 'none';
-    dialOverlayElement.style.display = 'none';
-    document.body.appendChild(dialOverlayElement);
-  }
-  return dialOverlayElement;
-}
+const segmentsMap = {
+ '0': [1,1,1,1,1,1,0], '1': [0,1,1,0,0,0,0], '2': [1,1,0,1,1,0,1],
+ '3': [1,1,1,1,0,0,1], '4': [0,1,1,0,0,1,1], '5': [1,0,1,1,0,1,1],
+ '6': [1,0,1,1,1,1,1], '7': [1,1,1,0,0,0,0], '8': [1,1,1,1,1,1,1],
+ '9': [1,1,1,1,0,1,1], ' ': [0,0,0,0,0,0,0], '-': [0,0,0,0,0,0,1],
+  'P': [1,1,0,0,1,1,1], 'A': [1,1,1,0,1,1,1], 'N': [0,1,0,1,0,1,0],
+  'C': [1,0,0,1,1,1,0], 'L': [0,0,0,1,1,1,0], 'R': [0,0,0,0,1,0,1]
+};
 
 
 export function initDial(dialContainerElement, labelElement, targetAudioParamOrGainNode, initialValuePercent = 0, valueMappingFn = null, displayMappingFn = null, saveStateFn = null) {
@@ -76,35 +63,73 @@ export function initDial(dialContainerElement, labelElement, targetAudioParamOrG
               <circle class="fg-circle" cx="90" cy="90" r="80" fill="none" stroke="url(#dialGrad)"
                       stroke-width="20" stroke-dasharray="0 503" stroke-linecap="round"/>
           </svg>
+          <div class="display">
+              ${Array(3).fill(0).map(() => `
+                  <div class="digit">
+                      ${['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(seg => `<div class="segment seg-${seg}"></div>`).join('')}
+                  </div>`).join('')}
+          </div>
       `;
   }
 
   const fgCircle = dialContainerElement.querySelector('svg.dial-fg > circle.fg-circle');
+  const displayDiv = dialContainerElement.querySelector('div.display');
+  const digitElems = displayDiv ? displayDiv.querySelectorAll('.digit') : [];
+
   if (!fgCircle) {
       return;
   }
-
+   if (displayDiv && digitElems.length !== 3) {
+      
+  }
+  
   const RADIUS = 80;
   const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
   fgCircle.setAttribute('stroke-dasharray', `${CIRCUMFERENCE} ${CIRCUMFERENCE}`);
 
   let currentValuePercent = Math.max(0, Math.min(100, initialValuePercent));
 
-  function setCircleVisual(valuePercent) {
-      const pct = Math.max(0, Math.min(100, valuePercent));
+  function setCircleVisual(valuePercentForCircle) {
+      const pct = Math.max(0, Math.min(100, valuePercentForCircle));
       const offset = CIRCUMFERENCE * (1 - pct / 100);
       fgCircle.setAttribute('stroke-dashoffset', offset);
   }
 
-  function updateLabelColor(valuePercent) {
-      const displayColor = getDialColor(valuePercent);
-      labelElement.style.color = displayColor;
+  function updateDisplayVisual(valuePercentForDisplay) {
+      const displayColor = getDialColor(valuePercentForDisplay); 
+      labelElement.style.color = displayColor; 
+
+      const offSegmentColor = getComputedStyle(document.body).getPropertyValue('--mixer-dial-segment-off-color').trim() || '#031a00';
+
+      if (displayDiv && digitElems.length === 3) {
+          let displayStr;
+          if (displayMappingFn) {
+              displayStr = displayMappingFn(valuePercentForDisplay); 
+          } else {
+              displayStr = String(Math.round(valuePercentForDisplay));
+          }
+          displayStr = String(displayStr).padStart(3, ' '); 
+          if (displayStr.length > 3) displayStr = displayStr.substr(displayStr.length - 3);
+
+          for (let i = 0; i < 3; i++) {
+               if (!digitElems[i]) continue;
+              const char = displayStr[i].toUpperCase();
+              const segStates = segmentsMap[char] || segmentsMap[' '];
+              const segments = digitElems[i].querySelectorAll('.segment');
+              segStates.forEach((on, idx) => {
+                  if (segments[idx]) {
+                      segments[idx].classList.toggle('on', !!on);
+                      segments[idx].style.background = on ? displayColor : offSegmentColor; 
+                  }
+              });
+          }
+      }
   }
 
-  function updateAudioParamValue(valuePercent) {
-      if (targetAudioParamOrGainNode && audioContext) {
-          let audioValue = valueMappingFn ? valueMappingFn(valuePercent) : valuePercent / 100;
-
+  function updateAudioParamValue(valuePercentForAudio) {
+      if (targetAudioParamOrGainNode && audioContext) { 
+          let audioValue = valueMappingFn ? valueMappingFn(valuePercentForAudio) : valuePercentForAudio / 100;
+          
           if (targetAudioParamOrGainNode instanceof AudioParam) {
                targetAudioParamOrGainNode.setTargetAtTime(audioValue, audioContext.currentTime, 0.01);
           } else if (targetAudioParamOrGainNode.gain && targetAudioParamOrGainNode.gain instanceof AudioParam) {
@@ -113,39 +138,31 @@ export function initDial(dialContainerElement, labelElement, targetAudioParamOrG
       }
   }
 
-  const overlayElem = getDialOverlayElement();
-
-  function updateOverlay(valuePercent) {
-      if (!overlayElem) return;
-      const textValue = displayMappingFn ? displayMappingFn(valuePercent) : Math.round(valuePercent);
-      overlayElem.textContent = `${labelElement.textContent}: ${textValue}`;
-  }
-
   setCircleVisual(currentValuePercent);
-  updateLabelColor(currentValuePercent);
+  updateDisplayVisual(currentValuePercent);
   if (targetAudioParamOrGainNode && (targetAudioParamOrGainNode instanceof AudioParam || (targetAudioParamOrGainNode.gain && targetAudioParamOrGainNode.gain instanceof AudioParam))) {
      updateAudioParamValue(currentValuePercent);
   }
 
   function getValueFromInteractionEvent(evt) {
       const rect = dialContainerElement.getBoundingClientRect();
-      const scaleApplied = 180 / rect.width;
+      const scaleApplied = 180 / rect.width; 
 
       const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
       const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
-
+      
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-
+      
       const dxScaled = (clientX - cx) * scaleApplied;
       const dyScaled = (clientY - cy) * scaleApplied;
-
-      let rawAngle = Math.atan2(dyScaled, dxScaled) * (180 / Math.PI);
-      let angleFromTop = rawAngle + 90;
+      
+      let rawAngle = Math.atan2(dyScaled, dxScaled) * (180 / Math.PI); 
+      let angleFromTop = rawAngle + 90; 
       if (angleFromTop < 0) angleFromTop += 360;
       angleFromTop %= 360;
-
-      const epsilon = 1;
+      
+      const epsilon = 1; 
       if (currentValuePercent > (100 - epsilon*15) && angleFromTop < epsilon*15) angleFromTop = 360;
       if (currentValuePercent < epsilon*15 && angleFromTop > (360 - epsilon*15)) angleFromTop = 0;
 
@@ -153,45 +170,42 @@ export function initDial(dialContainerElement, labelElement, targetAudioParamOrG
   }
 
   let isDraggingDial = false;
-  let lastSentValueForAudio = -1;
+  let lastSentValueForAudio = -1; 
 
   const handleInteraction = (e_evt, isEndingInteraction) => {
       const v = getValueFromInteractionEvent(e_evt);
-      if (v !== currentValuePercent || isEndingInteraction) {
-          currentValuePercent = v;
+      if (v !== currentValuePercent || isEndingInteraction) { 
+          currentValuePercent = v;          
           setCircleVisual(currentValuePercent);
-          updateLabelColor(currentValuePercent);
-          updateOverlay(currentValuePercent);
-
-          if (updateAudioParamValue && (Math.abs(currentValuePercent - lastSentValueForAudio) >= 0.1 || isEndingInteraction)) {
-              updateAudioParamValue(currentValuePercent);
+          updateDisplayVisual(currentValuePercent); 
+          
+          if (updateAudioParamValue && (Math.abs(currentValuePercent - lastSentValueForAudio) >= 0.1 || isEndingInteraction)) { 
+              updateAudioParamValue(currentValuePercent); 
               lastSentValueForAudio = currentValuePercent;
                if (isEndingInteraction && typeof saveStateFn === 'function') {
-                  saveStateFn();
+                  saveStateFn(); 
               }
           }
       }
   };
 
   const onPointerDown = (e) => {
-      if (e.button !== 0 && e.pointerType === 'mouse') return;
-      e.preventDefault(); e.stopPropagation();
-      isDraggingDial = true;
-      lastSentValueForAudio = -1;
-      overlayElem.style.display = 'block';
+      if (e.button !== 0 && e.pointerType === 'mouse') return; 
+      e.preventDefault(); e.stopPropagation(); 
+      isDraggingDial = true; 
+      lastSentValueForAudio = -1; 
       handleInteraction(e, false);
       try { dialContainerElement.setPointerCapture(e.pointerId); } catch (err) {}
   };
   const onPointerMove = (e) => {
       if (!isDraggingDial) return;
-      e.preventDefault();
+      e.preventDefault(); 
       handleInteraction(e, false);
   };
   const onPointerUpOrLeave = (e) => {
       if (isDraggingDial) {
-          handleInteraction(e, true);
+          handleInteraction(e, true); 
           isDraggingDial = false;
-          overlayElem.style.display = 'none';
           try { dialContainerElement.releasePointerCapture(e.pointerId); } catch (err) {}
       }
   };
@@ -199,7 +213,7 @@ export function initDial(dialContainerElement, labelElement, targetAudioParamOrG
   dialContainerElement.addEventListener('pointerdown', onPointerDown);
   dialContainerElement.addEventListener('pointermove', onPointerMove);
   dialContainerElement.addEventListener('pointerup', onPointerUpOrLeave);
-  dialContainerElement.addEventListener('pointerleave', (e) => {
+  dialContainerElement.addEventListener('pointerleave', (e) => { 
     if (isDraggingDial) {
       const rect = dialContainerElement.getBoundingClientRect();
       if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
@@ -210,7 +224,39 @@ export function initDial(dialContainerElement, labelElement, targetAudioParamOrG
   dialContainerElement.addEventListener('touchmove', (e) => { if(isDraggingDial) e.preventDefault(); }, { passive: false });
 }
 
-export function setDialSvgCircle(fgCircleElem, value, circumference) {
+export function updateDialSevenSegmentDisplay(displayDivElement, valueToDisplay, activeColor) {
+  if (!displayDivElement) return;
+  const digitElems = displayDivElement.querySelectorAll('.digit');
+  if (!digitElems || digitElems.length < 3) return;
+
+  let strValue;
+  if (typeof valueToDisplay === 'string' && (valueToDisplay === 'L' || valueToDisplay === 'C' || valueToDisplay === 'R')) {
+    strValue = valueToDisplay.padStart(3, ' ');
+  } else if (typeof valueToDisplay === 'string' && valueToDisplay.length <= 3 && /^[0-9- ]+$/.test(valueToDisplay) ) {
+    strValue = valueToDisplay.padStart(3, ' ');
+  } else {
+    strValue = String(Math.round(parseFloat(valueToDisplay))).padStart(3, ' ');
+  }
+
+  if (strValue.length > 3) strValue = strValue.substr(strValue.length - 3);
+
+  const offSegmentColor = getComputedStyle(document.body).getPropertyValue('--mixer-dial-segment-off-color').trim() || '#031a00';
+
+  for (let i = 0; i < 3; i++) {
+    if (!digitElems[i]) continue;
+    const char = strValue[i].toUpperCase();
+    const segStates = segmentsMap[char] || segmentsMap[' '];
+    const segments = digitElems[i].querySelectorAll('.segment');
+    segStates.forEach((on, idx) => {
+      if (segments[idx]) {
+        segments[idx].classList.toggle('on', !!on);
+        segments[idx].style.background = on ? activeColor : offSegmentColor;
+      }
+    });
+  }
+}
+
+export function setDialSvgCircle(fgCircleElem, value, circumference) { 
   const pct = Math.max(0, Math.min(100, value));
   const actualFillPercentage = pct / 100;
   const dashValue = actualFillPercentage * circumference;
@@ -226,23 +272,25 @@ export function initDial_custom(dialContainerElement, labelElement, initialNorma
       console.error("initDial_custom: labelElement is not a valid DOM element.", labelElement);
       return;
   }
-  const container = dialContainerElement;
+  const container = dialContainerElement; 
   const labelElem = labelElement;
   const fgCircle = container.querySelector('svg.dial-fg > circle.fg-circle');
+  const displayDiv = container.querySelector('div.display'); 
   if (!fgCircle) {
       console.error(`initDial_custom: Foreground circle (svg.dial-fg > circle.fg-circle) not found within provided dial container element.`);
       return;
   }
-  const RADIUS = 80;
-  const ACTUAL_CIRCUMFERENCE_FOR_SVG = 2 * Math.PI * RADIUS;
-  let currentValue = Math.max(0, Math.min(100, initialNormalizedValue));
-  const overlayElem = getDialOverlayElement();
-  function updateVisuals(valueForVisuals) {
+  const RADIUS = 80; 
+  const ACTUAL_CIRCUMFERENCE_FOR_SVG = 2 * Math.PI * RADIUS; 
+  let currentValue = Math.max(0, Math.min(100, initialNormalizedValue)); 
+  function updateVisuals(valueForVisuals) { 
       const activeColor = getDialColor(valueForVisuals);
       setDialSvgCircle(fgCircle, valueForVisuals, ACTUAL_CIRCUMFERENCE_FOR_SVG);
+      if (displayDiv) { 
+          const sevenSegFormattedValue = displayValueFormatter ? displayValueFormatter(valueForVisuals) : Math.round(valueForVisuals);           
+          updateDialSevenSegmentDisplay(displayDiv, sevenSegFormattedValue, activeColor);
+      }
       labelElem.style.color = activeColor;
-      const textValue = displayValueFormatter ? displayValueFormatter(valueForVisuals) : Math.round(valueForVisuals);
-      overlayElem.textContent = `${labelElem.textContent}: ${textValue}`;
   }
   updateVisuals(currentValue);
   function getValueFromInteractionEvent(evt) {
@@ -274,9 +322,8 @@ export function initDial_custom(dialContainerElement, labelElement, initialNorma
       }
   };
   const onPointerDown = (e) => {
-      if (e.button !== 0 && e.pointerType === 'mouse') return;
-      e.preventDefault(); e.stopPropagation(); isDragging = true; lastSentValue = -1;
-      overlayElem.style.display = 'block';
+      if (e.button !== 0 && e.pointerType === 'mouse') return; 
+      e.preventDefault(); e.stopPropagation(); isDragging = true; lastSentValue = -1; 
       handleInteraction(e, false);
       try { container.setPointerCapture(e.pointerId); } catch (err) {}
   };
@@ -287,7 +334,6 @@ export function initDial_custom(dialContainerElement, labelElement, initialNorma
   const onPointerUpOrLeave = (e) => {
       if (isDragging) {
           handleInteraction(e, true); isDragging = false;
-          overlayElem.style.display = 'none';
           try { container.releasePointerCapture(e.pointerId); } catch (err) {}
       }
   };
