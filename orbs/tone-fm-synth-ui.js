@@ -26,30 +26,31 @@ function initThemeObserver() {
   themeObserverInitialized = true;
 }
 
-function createSlider(id) {
+function createSlider(id, labelText, min, max, step, value, onInput, format = v => v.toFixed(step.toString().includes('.') ? step.toString().split('.')[1].length : 0)) {
   const wrap = document.createElement('div');
-  wrap.style.display = 'flex';
-  wrap.style.flexDirection = 'column';
-  wrap.style.alignItems = 'center';
+  const label = document.createElement('label');
+  label.htmlFor = id;
+  label.textContent = `${labelText} (${format(value)}):`;
   const input = document.createElement('input');
   input.type = 'range';
   input.id = id;
-  input.min = 0;
-  input.max = 1;
-  input.step = 0.01;
-  input.value = 0;
-  wrap.appendChild(input);
-  const label = document.createElement('div');
-  label.style.fontSize = '10px';
+  input.min = min;
+  input.max = max;
+  input.step = step;
+  input.value = value;
+  input.addEventListener('input', e => {
+    const val = parseFloat(e.target.value);
+    label.textContent = `${labelText} (${format(val)}):`;
+    if (onInput) onInput(val);
+  });
   wrap.appendChild(label);
-  wrap.dial = input;
-  wrap.label = label;
+  wrap.appendChild(input);
   return wrap;
 }
 
-async function createDial(id) {
+async function createDial(id, labelText, min, max, step, value, onChange, format = v => v.toFixed(step.toString().includes('.') ? step.toString().split('.')[1].length : 0)) {
   if (!NexusPromise) {
-    return createSlider(id);
+    return createSlider(id, labelText, min, max, step, value, onChange, format);
   }
 
   const { default: Nexus } = await NexusPromise;
@@ -58,31 +59,36 @@ async function createDial(id) {
   wrap.style.display = 'flex';
   wrap.style.flexDirection = 'column';
   wrap.style.alignItems = 'center';
-  wrap.style.width = '60px';
+
+  const label = document.createElement('label');
+  label.htmlFor = id;
+  label.textContent = `${labelText} (${format(value)}):`;
+  label.style.marginBottom = '4px';
 
   const target = document.createElement('div');
   target.id = id;
+  wrap.appendChild(label);
   wrap.appendChild(target);
 
   const dial = new Nexus.Dial(target, {
-    size: [50, 50],
+    size: [40, 40],
     interaction: 'radial',
-    mode: 'absolute',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    value: 0,
+    mode: 'relative',
+    min,
+    max,
+    step,
+    value,
   });
   applyDialTheme(dial);
   fmDials.add(dial);
   initThemeObserver();
 
-  const label = document.createElement('div');
-  label.style.fontSize = '10px';
-  wrap.appendChild(label);
+  dial.on('change', v => {
+    label.textContent = `${labelText} (${format(v)}):`;
+    if (onChange) onChange(v);
+  });
 
   wrap.dial = dial;
-  wrap.label = label;
   return wrap;
 }
 
@@ -100,75 +106,29 @@ export async function showToneFmSynthMenu(node) {
   tonePanelContent.innerHTML = '';
   tonePanelContent.appendChild(container);
 
-  const dialWrap = await createDial(`fm-main-${node.id}`);
-  container.appendChild(dialWrap);
-  const dial = dialWrap.dial;
-  const label = dialWrap.label;
+  const operatorsRow = document.createElement('div');
+  operatorsRow.style.display = 'flex';
+  operatorsRow.style.marginBottom = '6px';
+  operatorsRow.style.gap = '12px';
 
-  const paramsGrid = document.createElement('div');
-  paramsGrid.style.display = 'grid';
-  paramsGrid.style.gridTemplateColumns = 'repeat(auto-fill, 48px)';
-  paramsGrid.style.gap = '4px';
-  paramsGrid.style.marginTop = '4px';
-  container.appendChild(paramsGrid);
+  // Carrier operator
+  const carSection = document.createElement('div');
+  carSection.style.display = 'flex';
+  carSection.style.flexDirection = 'column';
+  const carLabel = document.createElement('div');
+  carLabel.textContent = 'Car';
+  carLabel.style.fontWeight = 'bold';
+  carLabel.style.marginBottom = '4px';
+  carSection.appendChild(carLabel);
 
-  const params = [
-    { key: 'carrierEnvAttack', label: 'CarAtk', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
-    { key: 'carrierEnvDecay', label: 'CarDec', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
-    { key: 'carrierEnvRelease', label: 'CarRel', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
-    { key: 'modulatorRatio', label: 'Ratio', min: 0.1, max: 10, step: 0.1, format: v => v.toFixed(1) },
-    { key: 'modulatorDepthScale', label: 'Depth', min: 0, max: 10, step: 0.1, format: v => (v * 10).toFixed(1) },
-    { key: 'modulatorEnvAttack', label: 'ModAtk', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2), fallback: 'carrierEnvAttack' },
-    { key: 'modulatorEnvDecay', label: 'ModDec', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2), fallback: 'carrierEnvDecay' },
-    { key: 'modulatorEnvRelease', label: 'ModRel', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2), fallback: 'carrierEnvRelease' },
-    { key: 'filterCutoff', label: 'Cutoff', min: 100, max: 20000, step: 100, format: v => Math.round(v) },
-    { key: 'filterResonance', label: 'Res', min: 0.1, max: 20, step: 0.1, format: v => v.toFixed(1) },
-    { key: 'detune', label: 'Detune', min: -1200, max: 1200, step: 1, format: v => v.toFixed(0) },
-  ];
-
-  let activeParam = null;
-
-  function setActive(def) {
-    activeParam = def;
-    if (dial.off) dial.off('change');
-    const val = node.audioParams[def.key] ?? (def.fallback ? node.audioParams[def.fallback] : def.min);
-    if (dial.min !== undefined) {
-      dial.min = def.min;
-      dial.max = def.max;
-      dial.step = def.step;
-      dial.value = val;
-    } else {
-      dial.setAttribute('min', def.min);
-      dial.setAttribute('max', def.max);
-      dial.setAttribute('step', def.step);
-      dial.value = val;
-    }
-    label.textContent = `${def.label}: ${def.format(val)}`;
-    const handler = v => {
-      const value = typeof v === 'number' ? v : parseFloat(v);
-      node.audioParams[def.key] = value;
-      label.textContent = `${def.label}: ${def.format(value)}`;
-      updateNodeAudioParams(node);
-    };
-    if (dial.on) {
-      dial.on('change', handler);
-    } else {
-      dial.oninput = e => handler(e.target.value);
-    }
-  }
-
-  params.forEach(def => {
-    const btn = document.createElement('button');
-    btn.textContent = def.label;
-    btn.style.fontSize = '10px';
-    btn.addEventListener('click', () => setActive(def));
-    paramsGrid.appendChild(btn);
-  });
+  const carControls = document.createElement('div');
+  carControls.style.display = 'flex';
+  carControls.style.flexWrap = 'wrap';
+  carSection.appendChild(carControls);
 
   const carWaveWrap = document.createElement('div');
   const carWaveLabel = document.createElement('label');
-  carWaveLabel.textContent = 'CarWave';
-  carWaveLabel.style.fontSize = '10px';
+  carWaveLabel.textContent = 'Wave';
   const carWaveSelect = document.createElement('select');
   ['sine', 'square', 'triangle', 'sawtooth'].forEach(wf => {
     const opt = document.createElement('option');
@@ -183,12 +143,51 @@ export async function showToneFmSynthMenu(node) {
   });
   carWaveWrap.appendChild(carWaveLabel);
   carWaveWrap.appendChild(carWaveSelect);
-  paramsGrid.appendChild(carWaveWrap);
+  carWaveWrap.style.marginRight = '4px';
+  carWaveWrap.style.marginBottom = '4px';
+  carControls.appendChild(carWaveWrap);
+
+  const carrierEnvControls = [
+    { key: 'carrierEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01 },
+    { key: 'carrierEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01 },
+    { key: 'carrierEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01 },
+  ];
+  for (const c of carrierEnvControls) {
+    const dialWrap = await createDial(
+      `fm-${c.key}-${node.id}`,
+      c.label,
+      c.min,
+      c.max,
+      c.step,
+      node.audioParams[c.key] ?? 0,
+      v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
+      v => v.toFixed(c.step < 1 ? 2 : 0)
+    );
+    dialWrap.style.marginRight = '4px';
+    dialWrap.style.marginBottom = '4px';
+    carControls.appendChild(dialWrap);
+  }
+
+  operatorsRow.appendChild(carSection);
+
+  // Modulator operator
+  const modSection = document.createElement('div');
+  modSection.style.display = 'flex';
+  modSection.style.flexDirection = 'column';
+  const modLabel = document.createElement('div');
+  modLabel.textContent = 'Mod';
+  modLabel.style.fontWeight = 'bold';
+  modLabel.style.marginBottom = '4px';
+  modSection.appendChild(modLabel);
+
+  const modControls = document.createElement('div');
+  modControls.style.display = 'flex';
+  modControls.style.flexWrap = 'wrap';
+  modSection.appendChild(modControls);
 
   const modWaveWrap = document.createElement('div');
   const modWaveLabel = document.createElement('label');
-  modWaveLabel.textContent = 'ModWave';
-  modWaveLabel.style.fontSize = '10px';
+  modWaveLabel.textContent = 'Wave';
   const modWaveSelect = document.createElement('select');
   ['sine', 'square', 'triangle', 'sawtooth'].forEach(wf => {
     const opt = document.createElement('option');
@@ -203,12 +202,100 @@ export async function showToneFmSynthMenu(node) {
   });
   modWaveWrap.appendChild(modWaveLabel);
   modWaveWrap.appendChild(modWaveSelect);
-  paramsGrid.appendChild(modWaveWrap);
+  modWaveWrap.style.marginRight = '4px';
+  modWaveWrap.style.marginBottom = '4px';
+  modControls.appendChild(modWaveWrap);
+
+  const ratioDial = await createDial(
+    `fm-modulatorRatio-${node.id}`,
+    'Ratio',
+    0.1,
+    10,
+    0.1,
+    node.audioParams.modulatorRatio ?? 1,
+    v => { node.audioParams.modulatorRatio = v; updateNodeAudioParams(node); },
+    v => v.toFixed(1)
+  );
+  ratioDial.style.marginRight = '4px';
+  ratioDial.style.marginBottom = '4px';
+  modControls.appendChild(ratioDial);
+  const ratioDialInstance = ratioDial.dial;
+
+  const depthDial = await createDial(
+    `fm-modDepth-${node.id}`,
+    'Depth',
+    0,
+    10,
+    0.1,
+    node.audioParams.modulatorDepthScale ?? 1,
+    v => { node.audioParams.modulatorDepthScale = v; updateNodeAudioParams(node); },
+    v => (v * 10).toFixed(1)
+  );
+  depthDial.style.marginRight = '4px';
+  depthDial.style.marginBottom = '4px';
+  modControls.appendChild(depthDial);
+  const depthDialInstance = depthDial.dial;
+
+  const modEnvControls = [
+    { key: 'modulatorEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvAttack' },
+    { key: 'modulatorEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvDecay' },
+    { key: 'modulatorEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvRelease' },
+  ];
+  for (const c of modEnvControls) {
+    const val = node.audioParams[c.key] ?? node.audioParams[c.fallback] ?? 0;
+    const dialWrap = await createDial(
+      `fm-${c.key}-${node.id}`,
+      c.label,
+      c.min,
+      c.max,
+      c.step,
+      val,
+      v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
+      v => v.toFixed(c.step < 1 ? 2 : 0)
+    );
+    dialWrap.style.marginRight = '4px';
+    dialWrap.style.marginBottom = '4px';
+    modControls.appendChild(dialWrap);
+  }
+
+  operatorsRow.appendChild(modSection);
+  container.appendChild(operatorsRow);
+
+  const algRow = document.createElement('div');
+  algRow.style.display = 'flex';
+  algRow.style.marginBottom = '6px';
+  fmAlgorithms.forEach((alg, idx) => {
+    const btn = document.createElement('button');
+    btn.textContent = alg.label || `Alg ${idx + 1}`;
+    btn.className = 'waveform-button';
+    btn.style.marginRight = '4px';
+    if (node.audioParams.algorithm === idx) btn.classList.add('selected');
+    btn.addEventListener('click', () => {
+      node.audioParams.algorithm = idx;
+      node.audioParams.modulatorRatio = alg.modulatorRatio;
+      node.audioParams.modulatorDepthScale = alg.modulatorDepthScale;
+      if (ratioDialInstance) {
+        ratioDialInstance.value = alg.modulatorRatio;
+        ratioDialInstance.emit('change', ratioDialInstance.value);
+      }
+      if (depthDialInstance) {
+        depthDialInstance.value = alg.modulatorDepthScale;
+        depthDialInstance.emit('change', depthDialInstance.value);
+      }
+      Array.from(algRow.children).forEach(c => c.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+    algRow.appendChild(btn);
+  });
+  container.appendChild(algRow);
+
+  const filterRow = document.createElement('div');
+  filterRow.style.display = 'flex';
+  filterRow.style.marginTop = '6px';
 
   const filterTypeWrap = document.createElement('div');
   const filterTypeLabel = document.createElement('label');
   filterTypeLabel.textContent = 'Filt';
-  filterTypeLabel.style.fontSize = '10px';
   const filterTypeSelect = document.createElement('select');
   ['lowpass', 'highpass', 'bandpass'].forEach(t => {
     const opt = document.createElement('option');
@@ -223,33 +310,48 @@ export async function showToneFmSynthMenu(node) {
   });
   filterTypeWrap.appendChild(filterTypeLabel);
   filterTypeWrap.appendChild(filterTypeSelect);
-  paramsGrid.appendChild(filterTypeWrap);
+  filterTypeWrap.style.marginRight = '6px';
+  filterRow.appendChild(filterTypeWrap);
 
-  const algRow = document.createElement('div');
-  algRow.style.display = 'flex';
-  algRow.style.marginTop = '4px';
-  fmAlgorithms.forEach((alg, idx) => {
-    const btn = document.createElement('button');
-    btn.textContent = alg.label || `Alg ${idx + 1}`;
-    btn.className = 'waveform-button';
-    btn.style.marginRight = '4px';
-    if (node.audioParams.algorithm === idx) btn.classList.add('selected');
-    btn.addEventListener('click', () => {
-      node.audioParams.algorithm = idx;
-      node.audioParams.modulatorRatio = alg.modulatorRatio;
-      node.audioParams.modulatorDepthScale = alg.modulatorDepthScale;
-      if (activeParam && (activeParam.key === 'modulatorRatio' || activeParam.key === 'modulatorDepthScale')) {
-        setActive(activeParam);
-      }
-      Array.from(algRow.children).forEach(c => c.classList.remove('selected'));
-      btn.classList.add('selected');
-      updateNodeAudioParams(node);
-    });
-    algRow.appendChild(btn);
-  });
-  container.appendChild(algRow);
+  const cutoffDial = await createDial(
+    `fm-filterCutoff-${node.id}`,
+    'Cutoff',
+    100,
+    20000,
+    100,
+    node.audioParams.filterCutoff ?? 20000,
+    v => { node.audioParams.filterCutoff = v; updateNodeAudioParams(node); },
+    v => Math.round(v)
+  );
+  cutoffDial.style.marginRight = '4px';
+  filterRow.appendChild(cutoffDial);
 
-  setActive(params[0]);
+  const resDial = await createDial(
+    `fm-filterResonance-${node.id}`,
+    'Res',
+    0.1,
+    20,
+    0.1,
+    node.audioParams.filterResonance ?? 1,
+    v => { node.audioParams.filterResonance = v; updateNodeAudioParams(node); },
+    v => v.toFixed(1)
+  );
+  resDial.style.marginRight = '4px';
+  filterRow.appendChild(resDial);
+
+  const detuneDial = await createDial(
+    `fm-detune-${node.id}`,
+    'Detune',
+    -1200,
+    1200,
+    1,
+    node.audioParams.detune ?? 0,
+    v => { node.audioParams.detune = v; updateNodeAudioParams(node); },
+    v => v.toFixed(0)
+  );
+  filterRow.appendChild(detuneDial);
+
+  container.appendChild(filterRow);
 
   positionTonePanel(node);
 }
