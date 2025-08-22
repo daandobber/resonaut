@@ -17059,14 +17059,9 @@ function createHexNoteSelectorDOM(
       currentSelectedValue = null;
     }
   } else {
-    if (noteIndexToAdd !== -1) {
-      currentSelectedValue = noteIndexToAdd;
-      isRandomActive = false;
-    } else {
-      currentSelectedValue = null;
-      isRandomActive = true;
-      noteIndexToAdd = -1;
-    }
+    currentSelectedValue = null;
+    isRandomActive = true;
+    noteIndexToAdd = -1;
   }
 
   const randomToggleButton = document.createElement("button");
