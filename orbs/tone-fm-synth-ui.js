@@ -3,6 +3,8 @@ import { updateNodeAudioParams } from '../main.js';
 import { showTonePanel, positionTonePanel, hideToneSynthMenu } from './tone-synth-ui.js';
 import { fmAlgorithms } from './fm-synth-orb.js';
 
+let NexusPromise = typeof window !== 'undefined' ? import('nexusui') : null;
+
 function createSlider(id, labelText, min, max, step, value, onInput, format = v => v.toFixed(step.toString().includes('.') ? step.toString().split('.')[1].length : 0)) {
   const wrap = document.createElement('div');
   const label = document.createElement('label');
@@ -25,7 +27,52 @@ function createSlider(id, labelText, min, max, step, value, onInput, format = v 
   return wrap;
 }
 
-export function showToneFmSynthMenu(node) {
+async function createDial(id, labelText, min, max, step, value, onChange, format = v => v.toFixed(step.toString().includes('.') ? step.toString().split('.')[1].length : 0)) {
+  if (!NexusPromise) {
+    return createSlider(id, labelText, min, max, step, value, onChange, format);
+  }
+
+  const { default: Nexus } = await NexusPromise;
+
+  const wrap = document.createElement('div');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.alignItems = 'center';
+
+  const label = document.createElement('label');
+  label.htmlFor = id;
+  label.textContent = `${labelText} (${format(value)}):`;
+  label.style.marginBottom = '4px';
+
+  const target = document.createElement('div');
+  target.id = id;
+  wrap.appendChild(label);
+  wrap.appendChild(target);
+
+  const dial = new Nexus.Dial(target, {
+    size: [40, 40],
+    interaction: 'radial',
+    mode: 'relative',
+    min,
+    max,
+    step,
+    value,
+  });
+
+  const styles = getComputedStyle(document.body);
+  dial.color = styles.getPropertyValue('--button-active').trim() || '#8860b0';
+  dial.bgColor = styles.getPropertyValue('--button-bg').trim() || '#503070';
+
+  dial.on('change', v => {
+    label.textContent = `${labelText} (${format(v)}):`;
+    if (onChange) onChange(v);
+  });
+
+  wrap.dial = dial;
+  return wrap;
+}
+
+export async function showToneFmSynthMenu(node) {
   hideToneSynthMenu();
   if (!node || node.type !== 'sound' || node.audioParams.engine !== 'tonefm') return;
 
@@ -64,7 +111,7 @@ export function showToneFmSynthMenu(node) {
   });
   container.appendChild(oscRow);
 
-  const ratioSlider = createSlider(
+  const ratioDial = await createDial(
     `fm-modulatorRatio-${node.id}`,
     'Ratio',
     0.1,
@@ -74,10 +121,10 @@ export function showToneFmSynthMenu(node) {
     v => { node.audioParams.modulatorRatio = v; updateNodeAudioParams(node); },
     v => v.toFixed(1)
   );
-  container.appendChild(ratioSlider);
-  const ratioSliderInput = ratioSlider.querySelector('input');
+  container.appendChild(ratioDial);
+  const ratioDialInstance = ratioDial.dial;
 
-  const depthSlider = createSlider(
+  const depthDial = await createDial(
     `fm-modDepth-${node.id}`,
     'Depth',
     0,
@@ -87,8 +134,8 @@ export function showToneFmSynthMenu(node) {
     v => { node.audioParams.modulatorDepthScale = v; updateNodeAudioParams(node); },
     v => (v * 10).toFixed(1)
   );
-  container.appendChild(depthSlider);
-  const depthSliderInput = depthSlider.querySelector('input');
+  container.appendChild(depthDial);
+  const depthDialInstance = depthDial.dial;
 
   const algRow = document.createElement('div');
   algRow.style.display = 'flex';
@@ -103,10 +150,14 @@ export function showToneFmSynthMenu(node) {
       node.audioParams.algorithm = idx;
       node.audioParams.modulatorRatio = alg.modulatorRatio;
       node.audioParams.modulatorDepthScale = alg.modulatorDepthScale;
-      ratioSliderInput.value = alg.modulatorRatio;
-      ratioSliderInput.dispatchEvent(new Event('input'));
-      depthSliderInput.value = alg.modulatorDepthScale;
-      depthSliderInput.dispatchEvent(new Event('input'));
+      if (ratioDialInstance) {
+        ratioDialInstance.value = alg.modulatorRatio;
+        ratioDialInstance.emit('change', ratioDialInstance.value);
+      }
+      if (depthDialInstance) {
+        depthDialInstance.value = alg.modulatorDepthScale;
+        depthDialInstance.emit('change', depthDialInstance.value);
+      }
       Array.from(algRow.children).forEach(c => c.classList.remove('selected'));
       btn.classList.add('selected');
     });
