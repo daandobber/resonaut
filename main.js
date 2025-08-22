@@ -3762,6 +3762,20 @@ export function updateNodeAudioParams(node) {
       node.audioParams &&
       node.audioParams.engine === 'tonefm' &&
       oscillator1 &&
+      oscillator1.detune &&
+      params.detune !== undefined
+    ) {
+      oscillator1.detune.setTargetAtTime(
+        params.detune,
+        now,
+        generalUpdateTimeConstant,
+      );
+    }
+
+    if (
+      node.audioParams &&
+      node.audioParams.engine === 'tonefm' &&
+      oscillator1 &&
       oscillator1.envelope &&
       oscillator1.modulationEnvelope
     ) {
@@ -3790,6 +3804,9 @@ export function updateNodeAudioParams(node) {
     if (node.type === "sound") {
       if (lowPassFilter) {
         if (node.audioParams && (node.audioParams.engine === 'tone' || node.audioParams.engine === 'tonefm')) {
+          if (params.filterType) {
+            lowPassFilter.type = params.filterType;
+          }
           const cutoff = params.filterCutoff ?? MAX_FILTER_FREQ;
           lowPassFilter.frequency.setTargetAtTime(
             cutoff,

@@ -17,6 +17,7 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   filterType: 'lowpass',
   filterCutoff: 20000,
   filterResonance: 1,
+  detune: 0,
   reverbSend: 0.1,
   delaySend: 0.1,
   visualStyle: 'fm_default',
@@ -44,6 +45,8 @@ export function createToneFmSynthOrb(node) {
       release: p.modulatorEnvRelease ?? p.carrierEnvRelease ?? 0.3,
     },
   });
+
+  fm.detune.value = p.detune ?? 0;
 
   const filter = new Tone.Filter(p.filterCutoff ?? 20000, p.filterType ?? 'lowpass');
   filter.Q.value = p.filterResonance ?? 1;
