@@ -56,27 +56,22 @@ async function createDial(id, labelText, min, max, step, value, onChange, format
   const { default: Nexus } = await NexusPromise;
 
   const wrap = document.createElement('div');
-  wrap.style.display = 'grid';
-  wrap.style.gridTemplateRows = 'auto auto auto';
-  wrap.style.justifyItems = 'center';
-  wrap.style.gap = '2px';
-  wrap.style.width = '48px';
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.alignItems = 'center';
 
   const label = document.createElement('label');
   label.htmlFor = id;
-  label.textContent = labelText;
-  label.style.fontSize = '10px';
-  wrap.appendChild(label);
+  label.textContent = `${labelText} (${format(value)}):`;
+  label.style.marginBottom = '4px';
 
   const target = document.createElement('div');
   target.id = id;
+  wrap.appendChild(label);
   wrap.appendChild(target);
 
-  const numberTarget = document.createElement('div');
-  wrap.appendChild(numberTarget);
-
   const dial = new Nexus.Dial(target, {
-    size: [30, 30],
+    size: [40, 40],
     interaction: 'radial',
     mode: 'relative',
     min,
@@ -88,20 +83,8 @@ async function createDial(id, labelText, min, max, step, value, onChange, format
   fmDials.add(dial);
   initThemeObserver();
 
-  const num = new Nexus.Number(numberTarget, {
-    size: [40, 20],
-    min,
-    max,
-    step,
-    value: parseFloat(format(value)),
-  });
-
   dial.on('change', v => {
-    num.value = parseFloat(format(v));
-    if (onChange) onChange(v);
-  });
-  num.on('change', v => {
-    dial.value = v;
+    label.textContent = `${labelText} (${format(v)}):`;
     if (onChange) onChange(v);
   });
 
@@ -124,10 +107,9 @@ export async function showToneFmSynthMenu(node) {
   tonePanelContent.appendChild(container);
 
   const operatorsRow = document.createElement('div');
-  operatorsRow.style.display = 'grid';
-  operatorsRow.style.gridTemplateColumns = 'repeat(2, auto)';
-  operatorsRow.style.marginBottom = '4px';
-  operatorsRow.style.gap = '8px';
+  operatorsRow.style.display = 'flex';
+  operatorsRow.style.marginBottom = '6px';
+  operatorsRow.style.gap = '12px';
 
   // Carrier operator
   const carSection = document.createElement('div');
@@ -136,13 +118,12 @@ export async function showToneFmSynthMenu(node) {
   const carLabel = document.createElement('div');
   carLabel.textContent = 'Car';
   carLabel.style.fontWeight = 'bold';
-  carLabel.style.marginBottom = '2px';
+  carLabel.style.marginBottom = '4px';
   carSection.appendChild(carLabel);
 
   const carControls = document.createElement('div');
-  carControls.style.display = 'grid';
-  carControls.style.gridTemplateColumns = 'repeat(auto-fill, 48px)';
-  carControls.style.gap = '4px';
+  carControls.style.display = 'flex';
+  carControls.style.flexWrap = 'wrap';
   carSection.appendChild(carControls);
 
   const carWaveWrap = document.createElement('div');
@@ -162,6 +143,8 @@ export async function showToneFmSynthMenu(node) {
   });
   carWaveWrap.appendChild(carWaveLabel);
   carWaveWrap.appendChild(carWaveSelect);
+  carWaveWrap.style.marginRight = '4px';
+  carWaveWrap.style.marginBottom = '4px';
   carControls.appendChild(carWaveWrap);
 
   const carrierEnvControls = [
@@ -180,6 +163,8 @@ export async function showToneFmSynthMenu(node) {
       v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
       v => v.toFixed(c.step < 1 ? 2 : 0)
     );
+    dialWrap.style.marginRight = '4px';
+    dialWrap.style.marginBottom = '4px';
     carControls.appendChild(dialWrap);
   }
 
@@ -192,13 +177,12 @@ export async function showToneFmSynthMenu(node) {
   const modLabel = document.createElement('div');
   modLabel.textContent = 'Mod';
   modLabel.style.fontWeight = 'bold';
-  modLabel.style.marginBottom = '2px';
+  modLabel.style.marginBottom = '4px';
   modSection.appendChild(modLabel);
 
   const modControls = document.createElement('div');
-  modControls.style.display = 'grid';
-  modControls.style.gridTemplateColumns = 'repeat(auto-fill, 48px)';
-  modControls.style.gap = '4px';
+  modControls.style.display = 'flex';
+  modControls.style.flexWrap = 'wrap';
   modSection.appendChild(modControls);
 
   const modWaveWrap = document.createElement('div');
@@ -218,6 +202,8 @@ export async function showToneFmSynthMenu(node) {
   });
   modWaveWrap.appendChild(modWaveLabel);
   modWaveWrap.appendChild(modWaveSelect);
+  modWaveWrap.style.marginRight = '4px';
+  modWaveWrap.style.marginBottom = '4px';
   modControls.appendChild(modWaveWrap);
 
   const ratioDial = await createDial(
@@ -230,6 +216,8 @@ export async function showToneFmSynthMenu(node) {
     v => { node.audioParams.modulatorRatio = v; updateNodeAudioParams(node); },
     v => v.toFixed(1)
   );
+  ratioDial.style.marginRight = '4px';
+  ratioDial.style.marginBottom = '4px';
   modControls.appendChild(ratioDial);
   const ratioDialInstance = ratioDial.dial;
 
@@ -243,6 +231,8 @@ export async function showToneFmSynthMenu(node) {
     v => { node.audioParams.modulatorDepthScale = v; updateNodeAudioParams(node); },
     v => (v * 10).toFixed(1)
   );
+  depthDial.style.marginRight = '4px';
+  depthDial.style.marginBottom = '4px';
   modControls.appendChild(depthDial);
   const depthDialInstance = depthDial.dial;
 
@@ -263,6 +253,8 @@ export async function showToneFmSynthMenu(node) {
       v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
       v => v.toFixed(c.step < 1 ? 2 : 0)
     );
+    dialWrap.style.marginRight = '4px';
+    dialWrap.style.marginBottom = '4px';
     modControls.appendChild(dialWrap);
   }
 
@@ -298,10 +290,8 @@ export async function showToneFmSynthMenu(node) {
   container.appendChild(algRow);
 
   const filterRow = document.createElement('div');
-  filterRow.style.display = 'grid';
-  filterRow.style.gridTemplateColumns = 'repeat(auto-fill, 48px)';
-  filterRow.style.marginTop = '4px';
-  filterRow.style.gap = '4px';
+  filterRow.style.display = 'flex';
+  filterRow.style.marginTop = '6px';
 
   const filterTypeWrap = document.createElement('div');
   const filterTypeLabel = document.createElement('label');
@@ -320,6 +310,7 @@ export async function showToneFmSynthMenu(node) {
   });
   filterTypeWrap.appendChild(filterTypeLabel);
   filterTypeWrap.appendChild(filterTypeSelect);
+  filterTypeWrap.style.marginRight = '6px';
   filterRow.appendChild(filterTypeWrap);
 
   const cutoffDial = await createDial(
@@ -332,6 +323,7 @@ export async function showToneFmSynthMenu(node) {
     v => { node.audioParams.filterCutoff = v; updateNodeAudioParams(node); },
     v => Math.round(v)
   );
+  cutoffDial.style.marginRight = '4px';
   filterRow.appendChild(cutoffDial);
 
   const resDial = await createDial(
@@ -344,6 +336,7 @@ export async function showToneFmSynthMenu(node) {
     v => { node.audioParams.filterResonance = v; updateNodeAudioParams(node); },
     v => v.toFixed(1)
   );
+  resDial.style.marginRight = '4px';
   filterRow.appendChild(resDial);
 
   const detuneDial = await createDial(
