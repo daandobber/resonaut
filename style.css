@@ -652,6 +652,16 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 .small-dial-wrapper .dial-container { position: absolute; bottom: -45px;  left: 50%; width: 180px; height: 180px; transform: translateX(-50%) scale(0.5); transform-origin: center center; user-select: none; touch-action: none; z-index: 5; }
 .dial-container .dial-bg, .dial-container .dial-fg { position: absolute; top: 0; left: 0; width: 180px; height: 180px; }
 .dial-container .dial-fg { transform: rotate(-90deg); transform-origin: 50% 50%; }
+.dial-container .display { position: absolute; top: 50%; left: 50%; width: 80px; height: 40px; transform: translate(-50%, -50%); background: #080808; border-radius: 6px; display: flex; justify-content: space-evenly; align-items: center; pointer-events: none; font-size: 0; border: 1px solid #333; box-shadow: inset 0 0 3px rgba(0,0,0,0.5); }
+.dial-container .digit { position: relative; width: 20px; height: 40px; }
+.dial-container .segment { position: absolute; background: var(--mixer-dial-segment-off-color); transition: background 0.05s; border-radius: 1px; }
+.dial-container .seg-a { top: 1px;  left: 3px; width: 14px; height: 4px; }
+.dial-container .seg-g { top: 18px; left: 3px; width: 14px; height: 4px; }
+.dial-container .seg-d { top: 35px; left: 3px; width: 14px; height: 4px; }
+.dial-container .seg-f { top: 3px;  left: 1px;  width: 4px;  height: 14px; }
+.dial-container .seg-b { top: 3px;  right: 1px; width: 4px;  height: 14px; }
+.dial-container .seg-e { top: 21px; left: 1px;  width: 4px;  height: 14px; }
+.dial-container .seg-c { top: 21px; right: 1px; width: 4px;  height: 14px; }
 
 .mixer-volume-fader-alt { -webkit-appearance: slider-vertical !important; appearance: slider-vertical !important; writing-mode: bt-lr !important; width: 22px !important; height: 100px !important; padding: 0 !important; margin: 5px 0 !important; background: var(--button-bg) !important; border: 1px solid var(--button-hover) !important; border-radius: 4px !important; cursor: pointer !important; display: inline-block !important; }
 .mrfa-slider { height: 150px !important; }
@@ -888,6 +898,43 @@ transform: rotate(-90deg);
 transform-origin: 50% 50%;
 }
 
+.mixer-channel-strip .dial-container .display {
+position: absolute;
+top: 50%;
+left: 50%;
+width: 80px; 
+height: 40px;
+transform: translate(-50%, -50%);
+background: #080808;
+border-radius: 6px;
+display: flex;
+justify-content: space-evenly;
+align-items: center;
+pointer-events: none;
+font-size: 0; 
+border: 1px solid #333;
+box-shadow: inset 0 0 3px rgba(0,0,0,0.5);
+}
+
+.mixer-channel-strip .dial-container .digit {
+position: relative;
+width: 20px;
+height: 40px;
+}
+.mixer-channel-strip .dial-container .segment {
+position: absolute;
+background: var(--mixer-dial-segment-off-color);
+transition: background 0.05s;
+border-radius: 1px;
+}
+
+.mixer-channel-strip .dial-container .seg-a { top: 1px;  left: 3px; width: 14px; height: 4px; }
+.mixer-channel-strip .dial-container .seg-g { top: 18px; left: 3px; width: 14px; height: 4px; }
+.mixer-channel-strip .dial-container .seg-d { top: 35px; left: 3px; width: 14px; height: 4px; }
+.mixer-channel-strip .dial-container .seg-f { top: 3px;  left: 1px;  width: 4px;  height: 14px; }
+.mixer-channel-strip .dial-container .seg-b { top: 3px;  right: 1px; width: 4px;  height: 14px; }
+.mixer-channel-strip .dial-container .seg-e { top: 21px; left: 1px;  width: 4px;  height: 14px; }
+.mixer-channel-strip .dial-container .seg-c { top: 21px; right: 1px; width: 4px;  height: 14px; }
 
 .mixer-channel-strip .meter-container {
 position: relative;
