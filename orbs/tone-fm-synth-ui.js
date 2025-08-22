@@ -111,6 +111,62 @@ export function showToneFmSynthMenu(node) {
   });
   container.appendChild(envRow);
 
+  const filterTypeWrap = document.createElement('div');
+  const filterTypeLabel = document.createElement('label');
+  filterTypeLabel.textContent = 'Filt';
+  const filterTypeSelect = document.createElement('select');
+  ['lowpass', 'highpass', 'bandpass'].forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    if (node.audioParams.filterType === t) opt.selected = true;
+    filterTypeSelect.appendChild(opt);
+  });
+  filterTypeSelect.addEventListener('change', e => {
+    node.audioParams.filterType = e.target.value;
+    updateNodeAudioParams(node);
+  });
+  filterTypeWrap.appendChild(filterTypeLabel);
+  filterTypeWrap.appendChild(filterTypeSelect);
+  filterTypeWrap.style.marginTop = '6px';
+  container.appendChild(filterTypeWrap);
+
+  const cutoffSlider = createSlider(
+    `fm-filterCutoff-${node.id}`,
+    'Cutoff',
+    100,
+    20000,
+    100,
+    node.audioParams.filterCutoff ?? 20000,
+    v => { node.audioParams.filterCutoff = v; updateNodeAudioParams(node); },
+    v => Math.round(v)
+  );
+  container.appendChild(cutoffSlider);
+
+  const resSlider = createSlider(
+    `fm-filterResonance-${node.id}`,
+    'Res',
+    0.1,
+    20,
+    0.1,
+    node.audioParams.filterResonance ?? 1,
+    v => { node.audioParams.filterResonance = v; updateNodeAudioParams(node); },
+    v => v.toFixed(1)
+  );
+  container.appendChild(resSlider);
+
+  const detuneSlider = createSlider(
+    `fm-detune-${node.id}`,
+    'Detune',
+    -1200,
+    1200,
+    1,
+    node.audioParams.detune ?? 0,
+    v => { node.audioParams.detune = v; updateNodeAudioParams(node); },
+    v => v.toFixed(0)
+  );
+  container.appendChild(detuneSlider);
+
   positionTonePanel(node);
 }
 
