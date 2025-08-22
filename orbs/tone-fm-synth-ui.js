@@ -87,14 +87,19 @@ export function showToneFmSynthMenu(node) {
   );
   container.appendChild(depthSlider);
 
-  const envRow = document.createElement('div');
-  envRow.style.display = 'flex';
-  const envControls = [
+  const carEnvLabel = document.createElement('div');
+  carEnvLabel.textContent = 'Car Env';
+  carEnvLabel.style.marginTop = '6px';
+  container.appendChild(carEnvLabel);
+
+  const carrierEnvRow = document.createElement('div');
+  carrierEnvRow.style.display = 'flex';
+  const carrierEnvControls = [
     { key: 'carrierEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01 },
     { key: 'carrierEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01 },
     { key: 'carrierEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01 },
   ];
-  envControls.forEach(c => {
+  carrierEnvControls.forEach(c => {
     const slider = createSlider(
       `fm-${c.key}-${node.id}`,
       c.label,
@@ -107,9 +112,39 @@ export function showToneFmSynthMenu(node) {
     );
     slider.style.flex = '1';
     slider.style.marginRight = '4px';
-    envRow.appendChild(slider);
+    carrierEnvRow.appendChild(slider);
   });
-  container.appendChild(envRow);
+  container.appendChild(carrierEnvRow);
+
+  const modEnvLabel = document.createElement('div');
+  modEnvLabel.textContent = 'Mod Env';
+  modEnvLabel.style.marginTop = '6px';
+  container.appendChild(modEnvLabel);
+
+  const modEnvRow = document.createElement('div');
+  modEnvRow.style.display = 'flex';
+  const modEnvControls = [
+    { key: 'modulatorEnvAttack', label: 'Atk', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvAttack' },
+    { key: 'modulatorEnvDecay', label: 'Dec', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvDecay' },
+    { key: 'modulatorEnvRelease', label: 'Rel', min: 0, max: 4, step: 0.01, fallback: 'carrierEnvRelease' },
+  ];
+  modEnvControls.forEach(c => {
+    const val = node.audioParams[c.key] ?? node.audioParams[c.fallback] ?? 0;
+    const slider = createSlider(
+      `fm-${c.key}-${node.id}`,
+      c.label,
+      c.min,
+      c.max,
+      c.step,
+      val,
+      v => { node.audioParams[c.key] = v; updateNodeAudioParams(node); },
+      v => v.toFixed(c.step < 1 ? 2 : 0)
+    );
+    slider.style.flex = '1';
+    slider.style.marginRight = '4px';
+    modEnvRow.appendChild(slider);
+  });
+  container.appendChild(modEnvRow);
 
   const filterTypeWrap = document.createElement('div');
   const filterTypeLabel = document.createElement('label');
