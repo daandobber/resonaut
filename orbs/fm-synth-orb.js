@@ -17,6 +17,8 @@ export const fmSynthPresets = [
       modulatorEnvDecay: 1.0,
       modulatorEnvSustain: 0,
       modulatorEnvRelease: 1.0,
+      filterCutoff: 8000,
+      filterResonance: 1,
     },
   },
   {
@@ -37,6 +39,8 @@ export const fmSynthPresets = [
       modulatorEnvDecay: 0.3,
       modulatorEnvSustain: 0,
       modulatorEnvRelease: 0.3,
+      filterCutoff: 8000,
+      filterResonance: 1,
     },
   },
   {
@@ -57,6 +61,8 @@ export const fmSynthPresets = [
       modulatorEnvDecay: 0.4,
       modulatorEnvSustain: 0,
       modulatorEnvRelease: 0.3,
+      filterCutoff: 8000,
+      filterResonance: 1,
     },
   },
   {
@@ -77,6 +83,8 @@ export const fmSynthPresets = [
       modulatorEnvDecay: 0.3,
       modulatorEnvSustain: 0.3,
       modulatorEnvRelease: 0.6,
+      filterCutoff: 5000,
+      filterResonance: 1,
     },
   },
   {
@@ -97,6 +105,8 @@ export const fmSynthPresets = [
       modulatorEnvDecay: 0.3,
       modulatorEnvSustain: 0.5,
       modulatorEnvRelease: 1.2,
+      filterCutoff: 6000,
+      filterResonance: 1,
     },
   },
 ];
