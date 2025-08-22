@@ -6,6 +6,7 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   modulatorWaveform: 'sine',
   modulatorRatio: 1,
   modulatorDepthScale: 1,
+  algorithm: 0,
   carrierEnvAttack: 0.01,
   carrierEnvDecay: 0.3,
   carrierEnvSustain: 0,
@@ -23,6 +24,13 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   visualStyle: 'fm_default',
   ignoreGlobalSync: false,
 };
+
+export const fmAlgorithms = [
+  { label: 'Alg 1', modulatorRatio: 1, modulatorDepthScale: 1 },
+  { label: 'Alg 2', modulatorRatio: 2, modulatorDepthScale: 1 },
+  { label: 'Alg 3', modulatorRatio: 3, modulatorDepthScale: 2 },
+  { label: 'Alg 4', modulatorRatio: 2, modulatorDepthScale: 4 },
+];
 
 export function createToneFmSynthOrb(node) {
   const p = node.audioParams;
