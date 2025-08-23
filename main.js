@@ -11912,6 +11912,10 @@ function drawNode(node) {
         fill: hslToRgba(0, 0, 20, 0.85),
         border: hslToRgba(0, 0, 10, 0.9),
       },
+      fm_drone_swarm: {
+        fill: hslToRgba(290, 70, 70, 0.8),
+        border: hslToRgba(290, 70, 50, 0.9),
+      },
       arvo_drone_default: {
         fill: hslToRgba(200, 40, 60, baseAlpha),
         border: hslToRgba(200, 40, 45, 0.9),
@@ -11934,13 +11938,53 @@ function drawNode(node) {
       ctx.fillStyle = fillColor;
       ctx.strokeStyle = borderColor;
     }
-    if (visualStyle !== "radio_orb_default") {
+    if (visualStyle !== "radio_orb_default" && visualStyle !== "fm_drone_swarm") {
       ctx.beginPath();
       ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
       ctx.fill();
     }
     if (currentPlanetColors) {
       switch (visualStyle) {
+        case "fm_drone_swarm": {
+          const particleCount = 20;
+          const size = r * 0.15;
+          if (!node.swarmParticles) {
+            node.swarmParticles = Array.from({ length: particleCount }, () => ({
+              angle: Math.random() * Math.PI * 2,
+              radius: r * (0.3 + Math.random() * 0.7),
+              speed: 0.01 + Math.random() * 0.02,
+            }));
+          }
+          node.swarmParticles.forEach((p) => {
+            const rate = node.audioParams?.lfoRate || 0.5;
+            p.angle += p.speed * (0.5 + rate);
+            const px = node.x + Math.cos(p.angle) * p.radius;
+            const py = node.y + Math.sin(p.angle) * p.radius;
+            ctx.beginPath();
+            ctx.arc(px, py, size, 0, Math.PI * 2);
+            ctx.fillStyle = currentPlanetColors.fill;
+            ctx.fill();
+          });
+          nodes.forEach((other) => {
+            if (
+              other !== node &&
+              other.audioParams?.visualStyle === "fm_drone_swarm"
+            ) {
+              const dx = other.x - node.x;
+              const dy = other.y - node.y;
+              const dist = Math.hypot(dx, dy);
+              if (dist < r * 4) {
+                ctx.strokeStyle = currentPlanetColors.border;
+                ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
+                ctx.beginPath();
+                ctx.moveTo(node.x, node.y);
+                ctx.lineTo(other.x, other.y);
+                ctx.stroke();
+              }
+            }
+          });
+          break;
+        }
         case "planet_mercury":
           for (let i = 0; i < 3; i++) {
             const cr = r * (0.1 + Math.random() * 0.15);
