@@ -78,3 +78,4 @@ The file `polyChordExample.js` demonstrates using `Tone.PolySynth` to trigger ch
 - Arvo Drone oscillators now use resonant bandpass filtering for a more string-like timbre.
 - Arvo Drone now features a sitar-style resonator and short comb delay for enhanced string resonance.
 - Arvo Drone gains extra oscillators and a single "Motion" control for evolving textures.
+- Drone voices now include an `oscType` parameter allowing selection of sine, square, triangle or sawtooth waveforms (plus the original string wave).
