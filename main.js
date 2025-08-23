@@ -966,9 +966,19 @@ function makeParameterGroup() {
           const n = findNodeById(id);
           const nodeTarget = g.nodeParamTargets.get(id);
           // Ensure each linked node's parameter object reflects the latest
-          // value so audio updates propagate immediately.
+          // value so audio updates propagate immediately without triggering
+          // recursive proxy writes.
           if (nodeTarget) {
-            nodeTarget[prop] = value;
+            if (Object.prototype.hasOwnProperty.call(nodeTarget, prop)) {
+              nodeTarget[prop] = value;
+            } else {
+              Object.defineProperty(nodeTarget, prop, {
+                value,
+                writable: true,
+                enumerable: true,
+                configurable: true,
+              });
+            }
           }
           if (n) refreshNodeAudio(n);
         });
