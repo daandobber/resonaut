@@ -24,6 +24,7 @@ export const DEFAULT_FM_DRONE_PARAMS = {
   lfoDepth: 200,
   reverbSend: 0.2,
   delaySend: 0.2,
+  oscType: 'sine',
   visualStyle: 'fm_drone_default',
   ignoreGlobalSync: false,
 };
@@ -32,7 +33,7 @@ export function createFmDroneAudioNodes(node) {
   const p = node.audioParams;
   const ctx = globalThis.audioContext;
   const carrier = ctx.createOscillator();
-  carrier.type = 'sine';
+  carrier.type = p.oscType || 'sine';
   carrier.frequency.value = p.baseFreq || 110;
 
   const modOsc = ctx.createOscillator();
@@ -113,6 +114,9 @@ export function updateFmDroneParams(audioNodes) {
   audioNodes.filter.Q.setTargetAtTime(p.filterResonance ?? 1.5, now, 0.1);
   audioNodes.reverbSendGain.gain.setTargetAtTime(p.reverbSend ?? 0.2, now, 0.1);
   audioNodes.delaySendGain.gain.setTargetAtTime(p.delaySend ?? 0.2, now, 0.1);
+  if (p.oscType) {
+    audioNodes.carrier.type = p.oscType;
+  }
 }
 
 export function stopFmDroneAudioNodes(audioNodes) {
@@ -140,6 +144,30 @@ export async function showFmDroneOrbMenu(node) {
   container.dataset.nodeId = node.id;
   tonePanelContent.innerHTML = '';
   tonePanelContent.appendChild(container);
+
+  const waveWrap = document.createElement('div');
+  waveWrap.style.display = 'flex';
+  waveWrap.style.flexDirection = 'column';
+  waveWrap.style.alignItems = 'center';
+  waveWrap.style.marginBottom = '6px';
+  const waveLabel = document.createElement('div');
+  waveLabel.textContent = 'Wave';
+  waveLabel.style.fontSize = '10px';
+  waveWrap.appendChild(waveLabel);
+  const waveSelect = document.createElement('select');
+  ['sine','square','triangle','sawtooth'].forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    if ((node.audioParams.oscType || 'sine') === t) opt.selected = true;
+    waveSelect.appendChild(opt);
+  });
+  waveSelect.addEventListener('change', () => {
+    node.audioParams.oscType = waveSelect.value;
+    updateNodeAudioParams(node);
+  });
+  waveWrap.appendChild(waveSelect);
+  container.appendChild(waveWrap);
 
   const pads = [];
   const padDefs = [

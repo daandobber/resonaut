@@ -13,6 +13,7 @@ export const DEFAULT_ARVO_DRONE_PARAMS = {
   stereoSpread: 0.5,
   filterCutoff: 1500,
   filterResonance: 2.5,
+  oscType: 'string',
   visualStyle: 'arvo_drone_default',
   ignoreGlobalSync: false,
 };
@@ -94,7 +95,11 @@ export function createArvoDroneAudioNodes(node) {
     const spread = p.harmonicSpread ?? 1.25;
     const ratio = def.baseRatio + def.spreadMul * spread;
     const osc = ctx.createOscillator();
-    osc.setPeriodicWave(wave);
+    if (p.oscType && p.oscType !== 'string') {
+      osc.type = p.oscType;
+    } else {
+      osc.setPeriodicWave(wave);
+    }
     osc.frequency.value = (p.pitch || 220) * ratio;
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
@@ -162,6 +167,7 @@ export function createArvoDroneAudioNodes(node) {
     unisonGain,
     reverbSendGain,
     delaySendGain,
+    wave,
     nodeRef: node,
   };
 }
@@ -172,6 +178,7 @@ export function updateArvoDroneParams(audioNodes, pitch) {
   if (audioNodes.oscillators) {
     const spread = audioNodes.nodeRef?.audioParams?.harmonicSpread ?? 1.25;
     const stereo = audioNodes.nodeRef?.audioParams?.stereoSpread ?? 0.5;
+    const waveType = audioNodes.nodeRef?.audioParams?.oscType;
     const half = (audioNodes.oscillators.length - 1) / 2;
     audioNodes.oscillators.forEach((o, idx) => {
       const ratio = o.baseRatio + o.spreadMul * spread;
@@ -183,6 +190,11 @@ export function updateArvoDroneParams(audioNodes, pitch) {
           now,
           0.1,
         );
+      if (waveType && waveType !== 'string') {
+        o.osc.type = waveType;
+      } else if (audioNodes.wave) {
+        o.osc.setPeriodicWave(audioNodes.wave);
+      }
     });
   }
   if (audioNodes.resonator && audioNodes.resonator.bands) {
@@ -296,6 +308,29 @@ export function showArvoDroneOrbMenu(node) {
   container.dataset.nodeId = node.id;
   arvoPanelContent.innerHTML = '';
   arvoPanelContent.appendChild(container);
+
+  const waveItem = document.createElement('div');
+  waveItem.className = 'mixer-control-item';
+  const waveLabel = document.createElement('label');
+  waveLabel.htmlFor = 'arvo-oscType';
+  waveLabel.textContent = 'Wave';
+  const waveSelect = document.createElement('select');
+  waveSelect.id = 'arvo-oscType';
+  ['string','sine','square','triangle','sawtooth'].forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    if ((node.audioParams.oscType || 'string') === t) opt.selected = true;
+    waveSelect.appendChild(opt);
+  });
+  waveSelect.addEventListener('change', () => {
+    node.audioParams.oscType = waveSelect.value;
+    updateNodeAudioParams(node);
+    saveState();
+  });
+  waveItem.appendChild(waveLabel);
+  waveItem.appendChild(waveSelect);
+  container.appendChild(waveItem);
 
   const paramDefs = [
     { id: 'harmonicSpread', min: 0.5, max: 3, step: 0.1, label: 'Spread' },
