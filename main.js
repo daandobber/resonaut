@@ -903,26 +903,7 @@ function makeUserDefinedGroup() {
 
 function refreshNodeAudio(node) {
   if (!node || !node.audioNodes) return;
-  switch (node.type) {
-    case ALIEN_ORB_TYPE:
-      updateAlienNodesParams(
-        node.audioNodes,
-        node.audioParams.engine,
-        node.audioParams.pitch
-      );
-      break;
-    case ARVO_DRONE_TYPE:
-      updateArvoDroneParams(node.audioNodes, node.audioParams.pitch || 220);
-      break;
-    case MOTOR_ORB_TYPE:
-      updateMotorOrb(node, 0);
-      break;
-    case CLOCKWORK_ORB_TYPE:
-      updateClockworkOrb(node, 0);
-      break;
-    default:
-      break;
-  }
+  updateNodeAudioParams(node);
 }
 
 function makeParameterGroup() {
@@ -965,10 +946,20 @@ function makeParameterGroup() {
         g.nodeIds.forEach((id) => {
           const n = findNodeById(id);
           const nodeTarget = g.nodeParamTargets.get(id);
-          // Avoid recursively triggering the proxy by only setting
-          // the property if it already exists on the target object.
-          if (nodeTarget && Object.prototype.hasOwnProperty.call(nodeTarget, prop)) {
-            nodeTarget[prop] = value;
+          // Ensure each linked node's parameter object reflects the latest
+          // value so audio updates propagate immediately without triggering
+          // recursive proxy writes.
+          if (nodeTarget) {
+            if (Object.prototype.hasOwnProperty.call(nodeTarget, prop)) {
+              nodeTarget[prop] = value;
+            } else {
+              Object.defineProperty(nodeTarget, prop, {
+                value,
+                writable: true,
+                enumerable: true,
+                configurable: true,
+              });
+            }
           }
           if (n) refreshNodeAudio(n);
         });
