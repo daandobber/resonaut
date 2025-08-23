@@ -29,6 +29,10 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   modulator3EnvDecay: null,
   modulator3EnvSustain: 1,
   modulator3EnvRelease: null,
+  carrierDetune: 0,
+  modulatorDetune: 0,
+  modulator2Detune: 0,
+  modulator3Detune: 0,
   filterType: 'lowpass',
   filterCutoff: 20000,
   filterResonance: 1,
@@ -115,6 +119,7 @@ export function createToneFmSynthOrb(node) {
       type: sanitizeWaveformType(p[`${prefix}Waveform`]) || 'sine',
       frequency: 440,
     });
+    osc.detune.value = p[`${prefix}Detune`] ?? (prefix === 'carrier' ? p.detune ?? 0 : 0);
     const env = new Tone.Envelope({
       attack: p[`${prefix}EnvAttack`] ?? p[`${envFallback}EnvAttack`] ?? 0.01,
       decay: p[`${prefix}EnvDecay`] ?? p[`${envFallback}EnvDecay`] ?? 0.3,
@@ -213,7 +218,10 @@ export function createToneFmSynthOrb(node) {
     op4.env.triggerRelease(time);
   };
 
-  op1.osc.detune.value = p.detune ?? 0;
+  op1.osc.detune.value = p.carrierDetune ?? p.detune ?? 0;
+  op2.osc.detune.value = p.modulatorDetune ?? 0;
+  op3.osc.detune.value = p.modulator2Detune ?? 0;
+  op4.osc.detune.value = p.modulator3Detune ?? 0;
 
   return {
     oscillator1: op1.osc,

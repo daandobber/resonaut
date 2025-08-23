@@ -3790,9 +3790,33 @@ export function updateNodeAudioParams(node) {
           generalUpdateTimeConstant,
         );
       }
-      if (oscillator1 && oscillator1.detune && params.detune !== undefined) {
-        oscillator1.detune.setTargetAtTime(
-          params.detune,
+      if (oscillator1 && oscillator1.detune) {
+        const det = params.carrierDetune ?? params.detune;
+        if (det !== undefined) {
+          oscillator1.detune.setTargetAtTime(
+            det,
+            now,
+            generalUpdateTimeConstant,
+          );
+        }
+      }
+      if (modulatorOsc1 && modulatorOsc1.detune && params.modulatorDetune !== undefined) {
+        modulatorOsc1.detune.setTargetAtTime(
+          params.modulatorDetune,
+          now,
+          generalUpdateTimeConstant,
+        );
+      }
+      if (modulatorOsc2 && modulatorOsc2.detune && params.modulator2Detune !== undefined) {
+        modulatorOsc2.detune.setTargetAtTime(
+          params.modulator2Detune,
+          now,
+          generalUpdateTimeConstant,
+        );
+      }
+      if (modulatorOsc3 && modulatorOsc3.detune && params.modulator3Detune !== undefined) {
+        modulatorOsc3.detune.setTargetAtTime(
+          params.modulator3Detune,
           now,
           generalUpdateTimeConstant,
         );
