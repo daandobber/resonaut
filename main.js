@@ -846,6 +846,9 @@ let isBrushing = false;
 let lastBrushNode = null;
 let userDefinedGroups = [];
 let userGroupIdCounter = 0;
+let paramGroups = [];
+let paramGroupIdCounter = 0;
+const paramGroupMap = new WeakMap();
 function makeUserDefinedGroup() {
   if (!isAudioReady || !audioContext) {
       alert("Audio context not ready.");
@@ -896,6 +899,117 @@ function makeUserDefinedGroup() {
   identifyAndRouteAllGroups();
   updateMixerGUI();
   saveState();
+}
+
+function refreshNodeAudio(node) {
+  if (!node || !node.audioNodes) return;
+  switch (node.type) {
+    case ALIEN_ORB_TYPE:
+      updateAlienNodesParams(
+        node.audioNodes,
+        node.audioParams.engine,
+        node.audioParams.pitch
+      );
+      break;
+    case ARVO_DRONE_TYPE:
+      updateArvoDroneParams(node.audioNodes, node.audioParams.pitch || 220);
+      break;
+    case MOTOR_ORB_TYPE:
+      updateMotorOrb(node, 0);
+      break;
+    case CLOCKWORK_ORB_TYPE:
+      updateClockworkOrb(node, 0);
+      break;
+    default:
+      break;
+  }
+}
+
+function makeParameterGroup() {
+  const selectedNodeIds = Array.from(selectedElements)
+    .filter((el) => el.type === "node")
+    .map((el) => el.id);
+
+  if (selectedNodeIds.length < 2) {
+    alert("Select at least two nodes to link.");
+    return;
+  }
+
+  paramGroups.forEach((group) => {
+    selectedNodeIds.forEach((id) => group.nodeIds.delete(id));
+  });
+  paramGroups = paramGroups.filter((g) => g.nodeIds.size > 0);
+
+  const firstNode = findNodeById(selectedNodeIds[0]);
+  if (!firstNode || !firstNode.audioParams) {
+    alert("Selected node has no parameters.");
+    return;
+  }
+
+  const baseParams = JSON.parse(JSON.stringify(firstNode.audioParams));
+  delete baseParams.pitch;
+  const group = {
+    id: `paramGroup_${paramGroupIdCounter++}`,
+    nodeIds: new Set(selectedNodeIds),
+    params: null,
+  };
+  const proxy = new Proxy(baseParams, {
+    set(target, prop, value) {
+      if (prop === "pitch") {
+        return true;
+      }
+      target[prop] = value;
+      const g = paramGroupMap.get(proxy);
+      if (g) {
+        g.nodeIds.forEach((id) => {
+          const n = findNodeById(id);
+          if (n) refreshNodeAudio(n);
+        });
+      }
+      return true;
+    },
+  });
+  group.params = proxy;
+  paramGroupMap.set(proxy, group);
+  paramGroups.push(group);
+  group.nodeIds.forEach((id) => {
+    const n = findNodeById(id);
+    if (n) {
+      const nodeParams = { pitch: n.audioParams.pitch };
+      Object.setPrototypeOf(nodeParams, proxy);
+      n.audioParams = new Proxy(nodeParams, {
+        get(target, prop) {
+          if (prop in target) return target[prop];
+          return proxy[prop];
+        },
+        set(target, prop, value) {
+          if (prop === "pitch") {
+            target[prop] = value;
+            refreshNodeAudio(n);
+          } else {
+            proxy[prop] = value;
+          }
+          return true;
+        },
+      });
+      refreshNodeAudio(n);
+    }
+  });
+  saveState();
+}
+
+function removeNodeFromParamGroups(nodeId) {
+  paramGroups.forEach((g) => {
+    if (g.nodeIds.delete(nodeId)) {
+      const n = findNodeById(nodeId);
+      if (n) {
+        const params = { pitch: n.audioParams.pitch, ...g.params };
+        n.audioParams = JSON.parse(JSON.stringify(params));
+        refreshNodeAudio(n);
+      }
+    }
+  });
+  paramGroups = paramGroups.filter((g) => g.nodeIds.size > 0);
 }
 
 let currentScaleKey = "major";
@@ -8329,6 +8443,7 @@ function removeNode(nodeToRemove) {
     );
     currentConstellationGroup.delete(id);
     fluctuatingGroupNodeIDs.delete(id);
+    removeNodeFromParamGroups(id);
   });
   if (stateChanged) {
     updateConstellationGroup();
@@ -10793,6 +10908,7 @@ function updateFluctuatingNodesLFO() {
     }
   });
 }
+
 
 function calculateGridSpacing() {
   if (isGlobalSyncEnabled) {
@@ -13315,6 +13431,29 @@ function drawAddPreview() {
   }
 }
 
+function drawParamGroupLinks() {
+  if (paramGroups.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(180,220,255,0.4)";
+  ctx.lineWidth = 1 / viewScale;
+  paramGroups.forEach((group) => {
+    const ids = Array.from(group.nodeIds);
+    for (let i = 0; i < ids.length; i++) {
+      const nA = findNodeById(ids[i]);
+      if (!nA) continue;
+      for (let j = i + 1; j < ids.length; j++) {
+        const nB = findNodeById(ids[j]);
+        if (!nB) continue;
+        ctx.beginPath();
+        ctx.moveTo(nA.x, nA.y);
+        ctx.lineTo(nB.x, nB.y);
+        ctx.stroke();
+      }
+    }
+  });
+  ctx.restore();
+}
+
 
 function draw() {
     const now = audioContext
@@ -13370,6 +13509,7 @@ function draw() {
 
     updateRopeConnections();
     updateAllConnectionLengths();
+    drawParamGroupLinks();
     connections.forEach(drawConnection);
     nodes.forEach((node) => drawNode(node));
 
@@ -17672,6 +17812,19 @@ function populateEditPanel() {
                 }
             });
             fragment.appendChild(makeGroupButton);
+
+            const linkParamsButton = document.createElement("button");
+            linkParamsButton.textContent = "Link Parameters";
+            linkParamsButton.id = "edit-panel-link-params-btn";
+            linkParamsButton.classList.add("panel-button-like");
+            linkParamsButton.style.marginBottom = "10px";
+            linkParamsButton.style.display = "block";
+            linkParamsButton.style.width = "100%";
+            linkParamsButton.addEventListener("click", () => {
+                makeParameterGroup();
+                populateEditPanel();
+            });
+            fragment.appendChild(linkParamsButton);
 
             const replaceButton = document.createElement("button");
             replaceButton.textContent = "Replace";
