@@ -138,7 +138,7 @@ export async function showToneFmSynthMenu(node) {
   displayWrap.style.marginBottom = '4px';
 
   // Small oscilloscope showing the synth output
-  if (Nexus && node.orb?.gainNode) {
+  if (Nexus) {
     const oscTarget = document.createElement('div');
     oscTarget.style.width = '80px';
     oscTarget.style.height = '30px';
@@ -147,8 +147,14 @@ export async function showToneFmSynthMenu(node) {
     applyDialTheme(oscilloscope);
     fmDials.add(oscilloscope);
     initThemeObserver();
-    const srcNode = node.orb.gainNode._gainNode || node.orb.gainNode;
-    oscilloscope.connect(srcNode);
+    const srcNode =
+      node.audioNodes?.gainNode ||
+      node.audioNodes?.mainGain ||
+      node.audioNodes?.output ||
+      node.audioNodes?.mix;
+    if (srcNode) {
+      oscilloscope.connect(srcNode);
+    }
   }
 
   const displayLabel = document.createElement('div');
