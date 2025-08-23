@@ -947,23 +947,23 @@ function makeParameterGroup() {
   }
 
   const baseParams = JSON.parse(JSON.stringify(firstNode.audioParams));
-  let proxy;
+  delete baseParams.pitch;
   const group = {
     id: `paramGroup_${paramGroupIdCounter++}`,
     nodeIds: new Set(selectedNodeIds),
     params: null,
   };
-  proxy = new Proxy(baseParams, {
+  const proxy = new Proxy(baseParams, {
     set(target, prop, value) {
+      if (prop === "pitch") {
+        return true;
+      }
       target[prop] = value;
       const g = paramGroupMap.get(proxy);
       if (g) {
         g.nodeIds.forEach((id) => {
           const n = findNodeById(id);
-          if (n) {
-            n.audioParams = proxy;
-            refreshNodeAudio(n);
-          }
+          if (n) refreshNodeAudio(n);
         });
       }
       return true;
@@ -975,7 +975,23 @@ function makeParameterGroup() {
   group.nodeIds.forEach((id) => {
     const n = findNodeById(id);
     if (n) {
-      n.audioParams = proxy;
+      const nodeParams = { pitch: n.audioParams.pitch };
+      Object.setPrototypeOf(nodeParams, proxy);
+      n.audioParams = new Proxy(nodeParams, {
+        get(target, prop) {
+          if (prop in target) return target[prop];
+          return proxy[prop];
+        },
+        set(target, prop, value) {
+          if (prop === "pitch") {
+            target[prop] = value;
+            refreshNodeAudio(n);
+          } else {
+            proxy[prop] = value;
+          }
+          return true;
+        },
+      });
       refreshNodeAudio(n);
     }
   });
@@ -983,7 +999,16 @@ function makeParameterGroup() {
 }
 
 function removeNodeFromParamGroups(nodeId) {
-  paramGroups.forEach((g) => g.nodeIds.delete(nodeId));
+  paramGroups.forEach((g) => {
+    if (g.nodeIds.delete(nodeId)) {
+      const n = findNodeById(nodeId);
+      if (n) {
+        const params = { pitch: n.audioParams.pitch, ...g.params };
+        n.audioParams = JSON.parse(JSON.stringify(params));
+        refreshNodeAudio(n);
+      }
+    }
+  });
   paramGroups = paramGroups.filter((g) => g.nodeIds.size > 0);
 }
 
