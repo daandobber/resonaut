@@ -910,7 +910,14 @@ function refreshNodeAudio(node) {
     const selectedNodes = Array.from(selectedElements)
       .filter((el) => el.type === "node")
       .map((el) => findNodeById(el.id))
-      .filter((n) => n && isPlayableNode(n) && n.audioParams);
+      .filter(
+        (n) =>
+          n &&
+          isPlayableNode(n) &&
+          n.audioParams &&
+          n.audioNodes &&
+          n.type !== TIMELINE_GRID_TYPE
+      );
 
     if (selectedNodes.length < 2) {
       alert("Select at least two compatible nodes to link.");
@@ -966,7 +973,7 @@ function refreshNodeAudio(node) {
               });
             }
           }
-          if (n) refreshNodeAudio(n);
+          if (n && n.audioNodes) refreshNodeAudio(n);
         });
       }
       return true;
