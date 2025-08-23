@@ -209,6 +209,9 @@ const {
   groupFluctuateToggle,
   groupFluctuateAmount,
   groupNodeCountSpan,
+  paramPresetSelect,
+  saveParamPresetBtn,
+  applyParamPresetBtn,
   toggleInfoTextBtn,
   transportControlsDiv,
   beatIndicatorElement,
@@ -846,6 +849,7 @@ let isBrushing = false;
 let lastBrushNode = null;
 let userDefinedGroups = [];
 let userGroupIdCounter = 0;
+let sessionParamPresets = {};
 function makeUserDefinedGroup() {
   if (!isAudioReady || !audioContext) {
       alert("Audio context not ready.");
@@ -10793,6 +10797,60 @@ function updateFluctuatingNodesLFO() {
     }
   });
 }
+
+function refreshParamPresetSelect() {
+  if (!paramPresetSelect) return;
+  paramPresetSelect.innerHTML = '';
+  Object.keys(sessionParamPresets).forEach((name) => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    paramPresetSelect.appendChild(opt);
+  });
+}
+
+function saveSelectedParamPreset() {
+  const first = Array.from(selectedElements).find((el) => el.type === 'node');
+  if (!first) {
+    alert('Select a node to save preset from.');
+    return;
+  }
+  const node = findNodeById(first.id);
+  if (!node?.audioParams) {
+    alert('Selected node has no parameters.');
+    return;
+  }
+  const name = prompt('Preset name?');
+  if (!name) return;
+  sessionParamPresets[name] = JSON.parse(JSON.stringify(node.audioParams));
+  refreshParamPresetSelect();
+}
+
+function applyParamPresetToSelection() {
+  const name = paramPresetSelect.value;
+  const preset = sessionParamPresets[name];
+  if (!preset) {
+    alert('No preset selected.');
+    return;
+  }
+  Array.from(selectedElements)
+    .filter((el) => el.type === 'node')
+    .map((el) => findNodeById(el.id))
+    .filter((n) => n && n.audioParams)
+    .forEach((n) => {
+      n.audioParams = JSON.parse(JSON.stringify(preset));
+      if (n.audioNodes) updateNodeAudioParams(n);
+    });
+  saveState();
+}
+
+if (saveParamPresetBtn) {
+  saveParamPresetBtn.addEventListener('click', saveSelectedParamPreset);
+}
+if (applyParamPresetBtn) {
+  applyParamPresetBtn.addEventListener('click', applyParamPresetToSelection);
+}
+refreshParamPresetSelect();
 
 function calculateGridSpacing() {
   if (isGlobalSyncEnabled) {
