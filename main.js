@@ -903,26 +903,7 @@ function makeUserDefinedGroup() {
 
 function refreshNodeAudio(node) {
   if (!node || !node.audioNodes) return;
-  switch (node.type) {
-    case ALIEN_ORB_TYPE:
-      updateAlienNodesParams(
-        node.audioNodes,
-        node.audioParams.engine,
-        node.audioParams.pitch
-      );
-      break;
-    case ARVO_DRONE_TYPE:
-      updateArvoDroneParams(node.audioNodes, node.audioParams.pitch || 220);
-      break;
-    case MOTOR_ORB_TYPE:
-      updateMotorOrb(node, 0);
-      break;
-    case CLOCKWORK_ORB_TYPE:
-      updateClockworkOrb(node, 0);
-      break;
-    default:
-      break;
-  }
+  updateNodeAudioParams(node);
 }
 
 function makeParameterGroup() {
