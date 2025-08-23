@@ -12856,16 +12856,60 @@ function drawNode(node) {
     ctx.stroke();
     ctx.restore();
   } else if (node.type === FM_DRONE_TYPE) {
-    ctx.save();
-    ctx.translate(node.x, node.y);
-    ctx.fillStyle = fillColor;
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = Math.max(0.5 / viewScale, baseLineWidth / viewScale);
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
+    const visualStyle = node.audioParams?.visualStyle;
+    if (visualStyle === "fm_drone_swarm") {
+      const particleCount = 20;
+      const size = r * 0.15;
+      const swarmFill = hslToRgba(290, 70, 70, 0.8);
+      const swarmBorder = hslToRgba(290, 70, 50, 0.9);
+      if (!node.swarmParticles) {
+        node.swarmParticles = Array.from({ length: particleCount }, () => ({
+          angle: Math.random() * Math.PI * 2,
+          radius: r * (0.3 + Math.random() * 0.7),
+          speed: 0.01 + Math.random() * 0.02,
+        }));
+      }
+      node.swarmParticles.forEach((p) => {
+        const rate = node.audioParams?.lfoRate || 0.5;
+        p.angle += p.speed * (0.5 + rate);
+        const px = node.x + Math.cos(p.angle) * p.radius;
+        const py = node.y + Math.sin(p.angle) * p.radius;
+        ctx.beginPath();
+        ctx.arc(px, py, size, 0, Math.PI * 2);
+        ctx.fillStyle = swarmFill;
+        ctx.fill();
+      });
+      nodes.forEach((other) => {
+        if (
+          other !== node &&
+          other.type === FM_DRONE_TYPE &&
+          other.audioParams?.visualStyle === "fm_drone_swarm"
+        ) {
+          const dx = other.x - node.x;
+          const dy = other.y - node.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < r * 4) {
+            ctx.strokeStyle = swarmBorder;
+            ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
+            ctx.beginPath();
+            ctx.moveTo(node.x, node.y);
+            ctx.lineTo(other.x, other.y);
+            ctx.stroke();
+          }
+        }
+      });
+    } else {
+      ctx.save();
+      ctx.translate(node.x, node.y);
+      ctx.fillStyle = fillColor;
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = Math.max(0.5 / viewScale, baseLineWidth / viewScale);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
   } else if (isPulsarType(node.type)) {
     const outerR = r;
     const innerR = outerR * 0.4;
