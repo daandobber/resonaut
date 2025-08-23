@@ -965,9 +965,9 @@ function makeParameterGroup() {
         g.nodeIds.forEach((id) => {
           const n = findNodeById(id);
           const nodeTarget = g.nodeParamTargets.get(id);
-          // Avoid recursively triggering the proxy by only setting
-          // the property if it already exists on the target object.
-          if (nodeTarget && Object.prototype.hasOwnProperty.call(nodeTarget, prop)) {
+          // Ensure each linked node's parameter object reflects the latest
+          // value so audio updates propagate immediately.
+          if (nodeTarget) {
             nodeTarget[prop] = value;
           }
           if (n) refreshNodeAudio(n);
