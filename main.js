@@ -30,6 +30,15 @@ import {
   hideArvoPanel,
   DEFAULT_ARVO_DRONE_PARAMS,
 } from './orbs/arvo-drone-orb.js';
+import {
+  FM_DRONE_TYPE,
+  createFmDroneAudioNodes,
+  updateFmDroneParams,
+  stopFmDroneAudioNodes,
+  showFmDroneOrbMenu,
+  hideFmDroneOrbMenu,
+  DEFAULT_FM_DRONE_PARAMS,
+} from './orbs/fm-drone-orb.js';
 import { MOTOR_ORB_TYPE, DEFAULT_MOTOR_PARAMS, updateMotorOrb, showMotorOrbMenu, hideMotorOrbMenu, hideMotorOrbPanel } from './orbs/motor-orb.js';
 import { CLOCKWORK_ORB_TYPE, DEFAULT_CLOCKWORK_PARAMS, CLOCKWORK_FORCE_DEFAULT, CLOCKWORK_DECAY_DEFAULT, updateClockworkOrb, advanceClockworkOrb, showClockworkOrbMenu, hideClockworkOrbMenu, hideClockworkOrbPanel } from './orbs/clockwork-orb.js';
 import {
@@ -1264,6 +1273,7 @@ function isPlayableNode(node) {
     node.type === ALIEN_ORB_TYPE ||
     node.type === ALIEN_DRONE_TYPE ||
     node.type === ARVO_DRONE_TYPE ||
+    node.type === FM_DRONE_TYPE ||
     node.type === RESONAUTER_TYPE ||
     node.type === RADIO_ORB_TYPE
   );
@@ -1454,7 +1464,7 @@ function findConnectionById(id) {
 function findNearestOrb(x, y, maxDist) {
   let nearest = null;
   let best = maxDist;
-  const orbTypes = ["sound", MIDI_ORB_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE];
+  const orbTypes = ["sound", MIDI_ORB_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE];
   for (const n of nodes) {
     if (!orbTypes.includes(n.type)) continue;
     const d = distance(x, y, n.x, n.y);
@@ -2332,7 +2342,7 @@ export function createAudioNodesForNode(node) {
         return null;
     }
     if (
-        ![PRORB_TYPE, "sound", "nebula", PORTAL_NEBULA_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE].includes(node.type) &&
+        ![PRORB_TYPE, "sound", "nebula", PORTAL_NEBULA_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE].includes(node.type) &&
         !isDrumType(node.type)
     ) {
         return null;
@@ -2830,6 +2840,9 @@ export function createAudioNodesForNode(node) {
             return audioNodes;
         } else if (node.type === ARVO_DRONE_TYPE) {
             const audioNodes = createArvoDroneAudioNodes(node);
+            return audioNodes;
+        } else if (node.type === FM_DRONE_TYPE) {
+            const audioNodes = createFmDroneAudioNodes(node);
             return audioNodes;
         } else if (node.type === RADIO_ORB_TYPE) {
             const audioNodes = { gainNode: audioContext.createGain() };
@@ -4371,6 +4384,8 @@ export function updateNodeAudioParams(node) {
         filterLfo.frequency.setTargetAtTime(params.filterModRate ?? 0.02, now, generalUpdateTimeConstant);
       if (filterLfoGain)
         filterLfoGain.gain.setTargetAtTime(params.filterModDepth ?? 2000, now, generalUpdateTimeConstant);
+    } else if (node.type === FM_DRONE_TYPE) {
+      updateFmDroneParams(node.audioNodes);
     } else if (node.type === RADIO_ORB_TYPE) {
     } else if (isDrumType(node.type)) {
       const {
@@ -5436,6 +5451,19 @@ export function triggerNodeEffect(
     node.isTriggered = true;
     node.animationState = 1;
     updateArvoDroneParams(node.audioNodes, effectivePitch);
+    const g = node.audioNodes.mainGain.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(intensity, now);
+    g.setTargetAtTime(0.0, now + 0.5, 0.2);
+    setTimeout(() => {
+      const stillNode = findNodeById(node.id);
+      if (stillNode) stillNode.isTriggered = false;
+    }, 500);
+  } else if (node.type === FM_DRONE_TYPE) {
+    if (!node.audioNodes) return;
+    node.isTriggered = true;
+    node.animationState = 1;
+    updateFmDroneParams(node.audioNodes);
     const g = node.audioNodes.mainGain.gain;
     g.cancelScheduledValues(now);
     g.setValueAtTime(intensity, now);
@@ -8395,6 +8423,8 @@ export function stopNodeAudio(node) {
       });
     } else if (node.type === ARVO_DRONE_TYPE) {
       stopArvoDroneAudioNodes(node.audioNodes);
+    } else if (node.type === FM_DRONE_TYPE) {
+      stopFmDroneAudioNodes(node.audioNodes);
     } else if (isDrumType(node.type)) {
       node.audioNodes.reverbSendGain?.disconnect();
       node.audioNodes.delaySendGain?.disconnect();
@@ -9371,7 +9401,7 @@ function updateAllPitchesAndUI() {
     nodes.forEach(node => {
         if (
             node.audioParams &&
-            (node.type === "sound" || node.type === "nebula" || node.type === PRORB_TYPE || node.type === MIDI_ORB_TYPE || node.type === ALIEN_ORB_TYPE || node.type === ALIEN_DRONE_TYPE || node.type === ARVO_DRONE_TYPE || node.type === RESONAUTER_TYPE)
+            (node.type === "sound" || node.type === "nebula" || node.type === PRORB_TYPE || node.type === MIDI_ORB_TYPE || node.type === ALIEN_ORB_TYPE || node.type === ALIEN_DRONE_TYPE || node.type === ARVO_DRONE_TYPE || node.type === FM_DRONE_TYPE || node.type === RESONAUTER_TYPE)
         ) {
             if (typeof node.audioParams.scaleIndex === 'number') {
                 node.audioParams.pitch = getFrequency(
@@ -11162,6 +11192,7 @@ function drawNode(node) {
     node.type === ALIEN_ORB_TYPE ||
     node.type === ALIEN_DRONE_TYPE ||
     node.type === ARVO_DRONE_TYPE ||
+    node.type === FM_DRONE_TYPE ||
     node.type === RESONAUTER_TYPE ||
     node.type === "nebula" ||
     node.type === PORTAL_NEBULA_TYPE
@@ -12770,6 +12801,17 @@ function drawNode(node) {
     ctx.fill();
     ctx.restore();
   } else if (node.type === ARVO_DRONE_TYPE) {
+    ctx.save();
+    ctx.translate(node.x, node.y);
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = Math.max(0.5 / viewScale, baseLineWidth / viewScale);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  } else if (node.type === FM_DRONE_TYPE) {
     ctx.save();
     ctx.translate(node.x, node.y);
     ctx.fillStyle = fillColor;
@@ -16832,6 +16874,14 @@ function handleMouseUp(event) {
           hideAlienOrbMenu();
           hideResonauterOrbMenu();
           hideRadioOrbMenu();
+          hideFmDroneOrbMenu();
+      } else if (selectedNode && selectedNode.type === FM_DRONE_TYPE) {
+          showFmDroneOrbMenu(selectedNode);
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideRadioOrbMenu();
+          hideArvoDroneOrbMenu();
+          hideSamplerOrbMenu();
       } else if (selectedNode && (selectedNode.type === RESONAUTER_TYPE)) {
           showResonauterOrbMenu(selectedNode);
           hideAlienOrbMenu();
@@ -16878,6 +16928,7 @@ function handleMouseUp(event) {
         hideAlienOrbMenu();
         hideResonauterOrbMenu();
         hideArvoDroneOrbMenu();
+        hideFmDroneOrbMenu();
         hideRadioOrbMenu();
         hideMotorOrbMenu();
         hideMotorOrbPanel();
@@ -17898,6 +17949,7 @@ function populateEditPanel() {
                 el.type === ALIEN_ORB_TYPE ||
                 el.type === ALIEN_DRONE_TYPE ||
                 el.type === ARVO_DRONE_TYPE ||
+                el.type === FM_DRONE_TYPE ||
                 el.type === RESONAUTER_TYPE ||
                 (elData.type === "connection" && el.type === "string_violin"))
         );
@@ -20495,6 +20547,11 @@ function populateDroneMenu() {
       label: "Arvo Drone",
       handler: () => setupAddTool(null, ARVO_DRONE_TYPE, false),
     },
+    {
+      icon: "♾️",
+      label: "Flux Drone",
+      handler: () => setupAddTool(null, FM_DRONE_TYPE, false),
+    },
   ];
 
   drones.forEach((d) => {
@@ -22740,6 +22797,11 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         pitch: initialPitch,
         scaleIndex: initialScaleIndex,
     });
+  } else if (type === FM_DRONE_TYPE) {
+    newNode.audioParams = Object.assign({}, DEFAULT_FM_DRONE_PARAMS, {
+        pitch: initialPitch,
+        scaleIndex: initialScaleIndex,
+    });
   } else if (type === RESONAUTER_TYPE) {
     newNode.audioParams = Object.assign({}, DEFAULT_RESONAUTER_PARAMS, {
         pitch: initialPitch,
@@ -23607,7 +23669,7 @@ function setupAddTool(
       if (sideToolbar) sideToolbar.classList.remove("narrow");
       sideToolbarContent.innerHTML = "";
       createHexNoteSelectorDOM(sideToolbarContent);
-    } else if (type === RESONAUTER_TYPE || type === ARVO_DRONE_TYPE) {
+    } else if (type === RESONAUTER_TYPE || type === ARVO_DRONE_TYPE || type === FM_DRONE_TYPE) {
       if (sideToolbar) sideToolbar.classList.remove("hidden");
       if (sideToolbar) sideToolbar.classList.remove("narrow");
       sideToolbarContent.innerHTML = "";
