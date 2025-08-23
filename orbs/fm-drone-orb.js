@@ -24,7 +24,7 @@ export const DEFAULT_FM_DRONE_PARAMS = {
   lfoDepth: 200,
   reverbSend: 0.2,
   delaySend: 0.2,
-  visualStyle: 'fm_drone_default',
+  visualStyle: 'fm_drone_swarm',
   ignoreGlobalSync: false,
 };
 
