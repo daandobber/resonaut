@@ -926,36 +926,37 @@ function refreshNodeAudio(node) {
 }
 
 function makeParameterGroup() {
-  const selectedNodeIds = Array.from(selectedElements)
+  const selectedNodes = Array.from(selectedElements)
     .filter((el) => el.type === "node")
-    .map((el) => el.id);
+    .map((el) => findNodeById(el.id))
+    .filter((n) => n && isPlayableNode(n));
 
-  if (selectedNodeIds.length < 2) {
+  if (selectedNodes.length < 2) {
     alert("Select at least two nodes to link.");
     return;
   }
-
-  paramGroups.forEach((group) => {
-    selectedNodeIds.forEach((id) => group.nodeIds.delete(id));
+  paramGroups.forEach((g) => {
+    selectedNodes.forEach((n) => g.nodeIds.delete(n.id));
   });
   paramGroups = paramGroups.filter((g) => g.nodeIds.size > 0);
 
-  const firstNode = findNodeById(selectedNodeIds[0]);
+  const firstNode = selectedNodes[0];
   if (!firstNode || !firstNode.audioParams) {
     alert("Selected node has no parameters.");
     return;
   }
-
   const baseParams = JSON.parse(JSON.stringify(firstNode.audioParams));
   delete baseParams.pitch;
+  delete baseParams.scaleIndex;
   const group = {
     id: `paramGroup_${paramGroupIdCounter++}`,
-    nodeIds: new Set(selectedNodeIds),
+    nodeIds: new Set(selectedNodes.map((n) => n.id)),
     params: null,
+    nodeParamTargets: new Map(),
   };
   const proxy = new Proxy(baseParams, {
     set(target, prop, value) {
-      if (prop === "pitch") {
+      if (prop === "pitch" || prop === "scaleIndex") {
         return true;
       }
       target[prop] = value;
@@ -963,6 +964,8 @@ function makeParameterGroup() {
       if (g) {
         g.nodeIds.forEach((id) => {
           const n = findNodeById(id);
+          const nodeTarget = g.nodeParamTargets.get(id);
+          if (nodeTarget) nodeTarget[prop] = value;
           if (n) refreshNodeAudio(n);
         });
       }
@@ -975,15 +978,15 @@ function makeParameterGroup() {
   group.nodeIds.forEach((id) => {
     const n = findNodeById(id);
     if (n) {
-      const nodeParams = { pitch: n.audioParams.pitch };
+      const nodeParams = { pitch: n.audioParams.pitch, scaleIndex: n.audioParams.scaleIndex };
       Object.setPrototypeOf(nodeParams, proxy);
-      n.audioParams = new Proxy(nodeParams, {
+      const paramProxy = new Proxy(nodeParams, {
         get(target, prop) {
           if (prop in target) return target[prop];
           return proxy[prop];
         },
         set(target, prop, value) {
-          if (prop === "pitch") {
+          if (prop === "pitch" || prop === "scaleIndex") {
             target[prop] = value;
             refreshNodeAudio(n);
           } else {
@@ -992,6 +995,8 @@ function makeParameterGroup() {
           return true;
         },
       });
+      group.nodeParamTargets.set(id, nodeParams);
+      n.audioParams = paramProxy;
       refreshNodeAudio(n);
     }
   });
@@ -1001,10 +1006,15 @@ function makeParameterGroup() {
 function removeNodeFromParamGroups(nodeId) {
   paramGroups.forEach((g) => {
     if (g.nodeIds.delete(nodeId)) {
+      g.nodeParamTargets.delete(nodeId);
       const n = findNodeById(nodeId);
       if (n) {
-        const params = { pitch: n.audioParams.pitch, ...g.params };
-        n.audioParams = JSON.parse(JSON.stringify(params));
+        const params = {
+          ...JSON.parse(JSON.stringify(g.params)),
+          pitch: n.audioParams.pitch,
+          scaleIndex: n.audioParams.scaleIndex,
+        };
+        n.audioParams = params;
         refreshNodeAudio(n);
       }
     }
