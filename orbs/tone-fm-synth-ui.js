@@ -137,6 +137,20 @@ export async function showToneFmSynthMenu(node) {
   displayWrap.style.gap = '4px';
   displayWrap.style.marginBottom = '4px';
 
+  // Small oscilloscope showing the synth output
+  if (Nexus && node.orb?.gainNode) {
+    const oscTarget = document.createElement('div');
+    oscTarget.style.width = '80px';
+    oscTarget.style.height = '30px';
+    displayWrap.appendChild(oscTarget);
+    const oscilloscope = new Nexus.Oscilloscope(oscTarget, { size: [80, 30] });
+    applyDialTheme(oscilloscope);
+    fmDials.add(oscilloscope);
+    initThemeObserver();
+    const srcNode = node.orb.gainNode._gainNode || node.orb.gainNode;
+    oscilloscope.connect(srcNode);
+  }
+
   const displayLabel = document.createElement('div');
   displayLabel.style.fontSize = '10px';
   displayWrap.appendChild(displayLabel);
