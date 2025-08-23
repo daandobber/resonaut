@@ -1,7 +1,7 @@
 import { fmSynthPresets, createToneFmSynthOrb, DEFAULT_TONE_FM_SYNTH_PARAMS } from './orbs/fm-synth-orb.js';
 import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
-import { createAnalogSynthOrb as createToneSynthOrb, DEFAULT_ANALOG_SYNTH_PARAMS } from './orbs/tone-synth-orb.js';
-import { showToneSynthMenu, hideToneSynthMenu, hideTonePanel } from './orbs/tone-synth-ui.js';
+import { createAnalogOrb, DEFAULT_ANALOG_ORB_PARAMS } from './orbs/analog-orb.js';
+import { showAnalogOrbMenu, hideAnalogOrbMenu, hideTonePanel } from './orbs/analog-orb-ui.js';
 import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
 import * as Tone from 'tone';
 import { sanitizeWaveformType } from './utils/oscillatorUtils.js';
@@ -2453,7 +2453,7 @@ export function createAudioNodesForNode(node) {
             if (node.audioParams && node.audioParams.engine === 'tonefm') {
                 return createToneFmSynthOrb(node);
             } else if (node.audioParams && node.audioParams.engine === 'tone') {
-                return createToneSynthOrb(node);
+                return createAnalogOrb(node);
             }
             const audioNodes = {
                 gainNode: audioContext.createGain(),
@@ -16855,7 +16855,7 @@ function handleMouseUp(event) {
           hideResonauterOrbMenu();
           hideArvoDroneOrbMenu();
       } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tone') {
-        showToneSynthMenu(selectedNode);
+        showAnalogOrbMenu(selectedNode);
         hideAlienOrbMenu();
         hideResonauterOrbMenu();
         hideRadioOrbMenu();
@@ -16888,7 +16888,7 @@ function handleMouseUp(event) {
         hideResonauterPanel();
         hideArvoPanel();
         hideTonePanel();
-        hideToneSynthMenu();
+        hideAnalogOrbMenu();
         hideSamplerPanel();
         hideStringPanel();
       }
@@ -16898,7 +16898,7 @@ function handleMouseUp(event) {
           showStringConnectionMenu(selectedConn);
           hideAlienOrbMenu();
           hideResonauterOrbMenu();
-          hideToneSynthMenu();
+          hideAnalogOrbMenu();
           hideSamplerOrbMenu();
           hideRadioOrbMenu();
           hideMotorOrbMenu();
@@ -16910,7 +16910,7 @@ function handleMouseUp(event) {
           hideStringConnectionMenu();
           hideAlienOrbMenu();
           hideResonauterOrbMenu();
-          hideToneSynthMenu();
+          hideAnalogOrbMenu();
           hideSamplerOrbMenu();
           hideRadioOrbMenu();
           hideMotorOrbMenu();
@@ -16921,7 +16921,7 @@ function handleMouseUp(event) {
   } else {
     hideAlienOrbMenu();
     hideResonauterOrbMenu();
-    hideToneSynthMenu();
+    hideAnalogOrbMenu();
     hideSamplerOrbMenu();
     hideRadioOrbMenu();
     hideMotorOrbMenu();
@@ -22846,7 +22846,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
       newNode.audioParams.engine = soundEngineToAdd;
       if (soundEngineToAdd === 'tone') {
         const existing = { ...newNode.audioParams };
-        Object.assign(newNode.audioParams, DEFAULT_ANALOG_SYNTH_PARAMS);
+        Object.assign(newNode.audioParams, DEFAULT_ANALOG_ORB_PARAMS);
         Object.assign(newNode.audioParams, existing);
         if (nodeSubtypeForAudioParams) {
           newNode.audioParams.osc1Waveform = nodeSubtypeForAudioParams;
@@ -23417,7 +23417,7 @@ if (samplerPanelCloseBtn) {
 if (tonePanelCloseBtn) {
   tonePanelCloseBtn.addEventListener('click', () => {
     hideTonePanel();
-    hideToneSynthMenu();
+    hideAnalogOrbMenu();
   });
 }
 if (radioOrbPanelCloseBtn) {

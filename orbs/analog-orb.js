@@ -1,7 +1,7 @@
 import * as Tone from 'tone'
 import { sanitizeWaveformType } from "../utils/oscillatorUtils.js";
 
-export const DEFAULT_ANALOG_SYNTH_PARAMS = {
+export const DEFAULT_ANALOG_ORB_PARAMS = {
   osc1Waveform: 'sawtooth',
   osc1Octave: 0,
   osc1Level: 0.7,
@@ -24,7 +24,7 @@ export const DEFAULT_ANALOG_SYNTH_PARAMS = {
   ignoreGlobalSync: false,
 };
 
-export function createAnalogSynthOrb(node) {
+export function createAnalogOrb(node) {
   const p = node.audioParams;
   const createSource = (wave, detune = 0) => {
     return new Tone.Oscillator({ type: sanitizeWaveformType(wave), detune });

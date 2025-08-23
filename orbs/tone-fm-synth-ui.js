@@ -1,6 +1,6 @@
 import { tonePanelContent } from '../utils/domElements.js';
 import { updateNodeAudioParams } from '../main.js';
-import { showTonePanel, positionTonePanel, hideToneSynthMenu } from './tone-synth-ui.js';
+import { showTonePanel, positionTonePanel, hideAnalogOrbMenu } from './analog-orb-ui.js';
 import { fmAlgorithms } from './fm-synth-orb.js';
 
 let NexusPromise = typeof window !== 'undefined' ? import('nexusui') : null;
@@ -114,7 +114,7 @@ async function createDial(id, labelText, min, max, step, value, onChange, format
 }
 
 export async function showToneFmSynthMenu(node) {
-  hideToneSynthMenu();
+  hideAnalogOrbMenu();
   if (!node || node.type !== 'sound' || node.audioParams.engine !== 'tonefm') return;
 
   showTonePanel(node);
