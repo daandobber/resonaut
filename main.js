@@ -5,6 +5,7 @@ import { showAnalogOrbMenu, hideAnalogOrbMenu, hideTonePanel } from './orbs/anal
 import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
 import * as Tone from 'tone';
 import { sanitizeWaveformType } from './utils/oscillatorUtils.js';
+import { morphShape } from './utils/fmShapeMorph.js';
 import { DEFAULT_RESONAUTER_PARAMS, resonauterGranParams, createResonauterOrbAudioNodes, playResonauterSound } from './orbs/resonauter-orb.js';
 import { NOTE_NAMES, MIN_SCALE_INDEX, MAX_SCALE_INDEX } from './utils/musicConstants.js';
 import {
@@ -38,7 +39,6 @@ import {
   showFmDroneOrbMenu,
   hideFmDroneOrbMenu,
   DEFAULT_FM_DRONE_PARAMS,
-  getWaveMorphWeights,
 } from './orbs/fm-drone-orb.js';
 import { MOTOR_ORB_TYPE, DEFAULT_MOTOR_PARAMS, updateMotorOrb, showMotorOrbMenu, hideMotorOrbMenu, hideMotorOrbPanel } from './orbs/motor-orb.js';
 import { CLOCKWORK_ORB_TYPE, DEFAULT_CLOCKWORK_PARAMS, CLOCKWORK_FORCE_DEFAULT, CLOCKWORK_DECAY_DEFAULT, updateClockworkOrb, advanceClockworkOrb, showClockworkOrbMenu, hideClockworkOrbMenu, hideClockworkOrbPanel } from './orbs/clockwork-orb.js';
@@ -11022,8 +11022,28 @@ function drawGrid() {
   }
 }
 
-
-
+const SWARM_SHAPES = [
+  Array.from({ length: 16 }, (_, i) => {
+    const a = (i / 16) * Math.PI * 2;
+    return { x: Math.cos(a), y: Math.sin(a) };
+  }),
+  [
+    { x: 0, y: -1 },
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+  ],
+  [
+    { x: -1, y: -1 },
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+  ],
+  [
+    { x: -1, y: -1 },
+    { x: 1, y: -1 },
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+  ],
+];
 
 function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
   const rate = node.audioParams?.lfoRate || 0.5;
@@ -11066,9 +11086,6 @@ function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
   const neighborRadius = r * (0.4 + modIndex * 0.02);
   const separationDist =
     r * (0.1 + (node.audioParams?.filterResonance || 0) * 0.05);
-  const shapeWeights = getWaveMorphWeights(
-    node.audioParams?.waveMorph || 0
-  );
   node.swarmParticles.forEach((p) => {
     let ax = (node.x - p.x) * attractionStrength;
     let ay = (node.y - p.y) * attractionStrength;
@@ -11130,41 +11147,22 @@ function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.fillStyle = color.fill;
-    const drawShapes = [
-      () => {
-        ctx.beginPath();
-        ctx.arc(0, 0, size, 0, Math.PI * 2);
-        ctx.fill();
-      },
-      () => {
-        ctx.beginPath();
-        ctx.moveTo(-size, size);
-        ctx.lineTo(0, -size);
-        ctx.lineTo(size, size);
-        ctx.closePath();
-        ctx.fill();
-      },
-      () => {
-        ctx.beginPath();
-        ctx.moveTo(-size, size);
-        ctx.lineTo(size, size);
-        ctx.lineTo(-size, -size);
-        ctx.closePath();
-        ctx.fill();
-      },
-      () => {
-        ctx.beginPath();
-        ctx.rect(-size, -size, size * 2, size * 2);
-        ctx.fill();
-      },
-    ];
-    drawShapes.forEach((fn, i) => {
-      const w = shapeWeights[i];
-      if (w > 0) {
-        ctx.globalAlpha = w;
-        fn();
-      }
+    const waveMorph = node.audioParams?.waveMorph || 0;
+    const seg = waveMorph * (SWARM_SHAPES.length - 1);
+    const idx = Math.floor(seg);
+    const t = seg - idx;
+    const base = SWARM_SHAPES[idx];
+    const target = SWARM_SHAPES[idx + 1] || base;
+    const pts = morphShape(base, target, t);
+    ctx.beginPath();
+    pts.forEach((pt, i) => {
+      const px = pt.x * size;
+      const py = pt.y * size;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
     });
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   });
 }

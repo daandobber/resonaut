@@ -7,17 +7,49 @@ import { lerp } from '../mathUtils.js';
  * @param {number} amount - value between 0 and 1
  * @returns {Array<{x:number,y:number}>}
  */
+function resample(shape, count) {
+  const points = [];
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < shape.length; i++) {
+    const a = shape[i];
+    const b = shape[(i + 1) % shape.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    lengths.push(len);
+    total += len;
+  }
+  if (total === 0) {
+    return Array.from({ length: count }, () => ({ ...shape[0] }));
+  }
+  for (let i = 0; i < count; i++) {
+    const dist = (i / count) * total;
+    let acc = 0;
+    for (let j = 0; j < shape.length; j++) {
+      const len = lengths[j];
+      if (acc + len >= dist) {
+        const t = (dist - acc) / len;
+        const a = shape[j];
+        const b = shape[(j + 1) % shape.length];
+        points.push({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
+        break;
+      }
+      acc += len;
+    }
+  }
+  return points;
+}
+
 export function morphShape(baseShape, targetShape, amount) {
   if (!Array.isArray(baseShape) || !Array.isArray(targetShape)) {
     throw new TypeError('Shapes must be arrays');
   }
-  if (baseShape.length !== targetShape.length) {
-    throw new Error('Shapes must have the same number of points');
-  }
   const t = Math.max(0, Math.min(1, amount));
-  return baseShape.map((p, i) => ({
-    x: lerp(p.x, targetShape[i].x, t),
-    y: lerp(p.y, targetShape[i].y, t),
+  const pointCount = Math.max(baseShape.length, targetShape.length);
+  const a = resample(baseShape, pointCount);
+  const b = resample(targetShape, pointCount);
+  return a.map((p, i) => ({
+    x: lerp(p.x, b[i].x, t),
+    y: lerp(p.y, b[i].y, t),
   }));
 }
 
