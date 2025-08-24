@@ -16,6 +16,10 @@
   --switch-node-border: rgba(230, 180, 210, 0.8);
   --nebula-color: rgba(180, 220, 255, 0.5);
   --nebula-border: rgba(210, 230, 255, 0.8);
+  --canvas-orb-send-color: rgba(200, 180, 255, 0.6);
+  --canvas-orb-send-border: rgba(220, 200, 255, 0.9);
+  --canvas-orb-receive-color: rgba(180, 220, 255, 0.6);
+  --canvas-orb-receive-border: rgba(200, 240, 255, 0.9);
   --start-node-color: rgba(255, 255, 200, 0.9);
   --start-node-border: rgba(255, 255, 230, 1);
   --start-node-disabled-color: rgba(160, 160, 120, 0.5);
@@ -283,6 +287,26 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 .app-menu-bar-beat-indicator.active { opacity: 1; transition: opacity 0.01s ease-in; }
 .app-menu-spacer { flex-grow: 1; }
 
+#canvasSwitcher {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+#canvasSwitcher button {
+  background: var(--button-bg, #304070);
+  color: var(--text-color, #ddeeff);
+  border: 1px solid var(--button-hover, #405088);
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+#canvasSwitcher button.active {
+  background: var(--button-active, #5060a0);
+  color: #fff;
+}
 #mainCanvas {
   position: fixed;
   top: calc(var(--app-menu-bar-height) + var(--header-height));
@@ -569,6 +593,7 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 #transportControls select { min-width: 100px; }
 .transport-divider { width: 1px; height: 20px; background-color: var(--button-bg); margin: 0 5px; align-self: center; }
 #pianoRollContainer { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; margin-left: 5px; }
+#pianoRollContainer #canvasSwitcher { margin-bottom: 4px; }
 #transportControls #pianoRollCanvas { display: block; width: 250px; height: 80px; background-color: rgba(0,0,0,0.1); border-radius: 4px; cursor: pointer; flex-shrink: 0; }
 
 #mixerToggleBtn { position: fixed; top: calc(var(--app-menu-bar-height) + var(--header-height) + 20px); right: 0px; transform: translateY(0); z-index: 11; background-color: var(--button-bg); color: var(--text-color); padding: 15px 8px; border: 1px solid var(--button-hover); border-right: none; border-radius: 8px 0 0 8px; cursor: pointer; writing-mode: vertical-rl; text-orientation: mixed; font-weight: bold; box-shadow: -2px 0px 8px rgba(0,0,0,0.2); width: var(--mixer-button-width, 30px); box-sizing: border-box; transition: right 0.3s ease-out, background-color 0.2s ease; }
@@ -1451,6 +1476,48 @@ margin-top: 6px;
 .performance-block { flex: 1; margin: 0 10px; padding-bottom: 10px; border-right: 1px solid var(--button-bg); }
 .performance-block:last-child { border-right: none; }
 
+#canvasTimelineView {
+  position: absolute;
+  top: var(--app-menu-bar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--panel-bg, #101020);
+  color: var(--text-color, #ddeeff);
+  z-index: 900;
+  overflow-y: auto;
+  padding: 8px;
+}
+#canvasTimelineView.hidden { display: none; }
+.canvas-timeline-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.canvas-timeline-controls button {
+  background: var(--button-bg, #304070);
+  color: var(--text-color, #ddeeff);
+  border: 1px solid var(--button-hover, #405088);
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.canvas-timeline-controls button:hover {
+  background: var(--button-hover, #405088);
+}
+.canvas-timeline-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 4px;
+  background: var(--flat-bg-color, #181828);
+  border: 1px solid var(--button-hover, #405088);
+  border-radius: 3px;
+}
+.canvas-timeline-item.active {
+  outline: 2px solid #0af;
+}
 
 
 

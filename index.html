@@ -140,6 +140,15 @@
                     <option value="flat">Flat Color Theme</option>
                     <option value="starfield" selected>Parallax Starfield</option>
                 </select>
+                <label><input type="checkbox" id="canvasSwitcherToggle"> Canvas Switcher</label>
+            </div>
+        </div>
+        <div class="app-menu-dropdown">
+            <button class="app-menu-button">Canvas</button>
+            <div class="app-menu-content">
+                <a href="#" id="app-menu-add-canvas">Add Canvas</a>
+                <a href="#" id="app-menu-next-canvas">Next Canvas</a>
+                <a href="#" id="app-menu-prev-canvas">Previous Canvas</a>
             </div>
         </div>
 
@@ -162,15 +171,26 @@
         <button id="app-menu-record-btn" class="app-menu-bar-button" title="Record Session">🔴 Record</button>
         <button id="app-menu-toggle-tape-looper-btn" class="app-menu-bar-button" title="Toggle Tape Looper">📼 Tape</button>
         <button id="app-menu-performance-btn" class="app-menu-bar-button" title="Performance View">🎛 Perf</button>
+        <button id="app-menu-canvas-timeline-btn" class="app-menu-bar-button" title="Toggle Canvas Timeline">🖼️ Canvases</button>
         <div class="app-menu-spacer"></div>
         <button id="app-menu-help-btn" class="app-menu-bar-button" title="Help">?</button>
     </div>
     <div id="canvasContainer">
-          <canvas id="mainCanvas" class="song-canvas"></canvas>
+        <canvas id="mainCanvas" class="song-canvas"></canvas>
+        <canvas id="canvas2" class="song-canvas hidden"></canvas>
+        <canvas id="canvas3" class="song-canvas hidden"></canvas>
     </div>
     <div id="mistLayer"></div>
     <div id="crushLayer"></div>
     <div id="cursorLayer"></div>
+
+    <div id="canvasTimelineView" class="hidden">
+        <div class="canvas-timeline-controls">
+            <button id="closeCanvasTimelineBtn">Back</button>
+            <button id="addCanvasTimelineBtn">Add Canvas</button>
+        </div>
+        <div id="canvasTimelineList"></div>
+    </div>
 
     <div id="toolbar">
         <div id="toolbar-column-left">
@@ -244,6 +264,11 @@
             </select>
         <div class="transport-divider"></div>
         <div id="pianoRollContainer">
+            <div id="canvasSwitcher" class="hidden">
+                <button id="canvasPrevBtn">◀</button>
+                <div id="canvasNumberContainer"></div>
+                <button id="canvasNextBtn">▶</button>
+            </div>
             <canvas id="pianoRollCanvas"></canvas>
         </div>
     </div>
@@ -544,6 +569,10 @@
     </div>
     <div id="loadingIndicator" style="display:none;">Loading Samples... 0%</div>
     <script type="module" src="samplers.js"></script>
+    <script type="module" src="canvasManager.js"></script>
+    <script type="module" src="canvasSwitcher.js"></script>
+    <script type="module" src="canvasTimeline.js"></script>
+    <script type="module" src="canvas-orb.js"></script>
     <script type="module" src="pulsar.js"></script>
     <script type="module" src="main.js"></script>
 </body>
