@@ -15,7 +15,8 @@
   "type": "module",
   "devDependencies": {
     "vite": "^7.0.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "jsdom": "^26.1.0"
   },
   "dependencies": {
     "nexusui": "^2.1.6",

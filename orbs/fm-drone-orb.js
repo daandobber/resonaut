@@ -178,6 +178,9 @@ export function stopFmDroneAudioNodes(audioNodes) {
 export async function showFmDroneOrbMenu(node) {
   hideFmDroneOrbMenu();
   if (!node || node.type !== FM_DRONE_TYPE) return;
+  if (node.swarmParticles) {
+    node.swarmParticles.length = 0;
+  }
   showTonePanel(node);
   if (!tonePanelContent) return;
 
