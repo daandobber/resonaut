@@ -22647,6 +22647,35 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
     visualStyle = "alien_drone_default";
     nodeSubtypeForAudioParams = null;
+  } else if (type === FM_DRONE_TYPE) {
+    initialScaleIndex =
+      noteIndexToAdd !== -1 && noteIndexToAdd !== null
+        ? noteIndexToAdd
+        : Math.floor(Math.random() * currentScale.notes.length * 3)
+          - currentScale.notes.length;
+    initialScaleIndex = Math.max(
+      MIN_SCALE_INDEX,
+      Math.min(MAX_SCALE_INDEX, initialScaleIndex),
+    );
+    initialPitch = getFrequency(
+      currentScale,
+      initialScaleIndex,
+      0,
+      currentRootNote,
+      globalTransposeOffset,
+    );
+    if (isNaN(initialPitch) || initialPitch <= 0) {
+      initialScaleIndex = 0;
+      initialPitch = getFrequency(
+        currentScale,
+        0,
+        0,
+        currentRootNote,
+        globalTransposeOffset,
+      );
+    }
+    visualStyle = DEFAULT_FM_DRONE_PARAMS.visualStyle || "fm_drone_swarm";
+    nodeSubtypeForAudioParams = null;
   } else if (type === RESONAUTER_TYPE) {
     initialScaleIndex =
       noteIndexToAdd !== -1 && noteIndexToAdd !== null
