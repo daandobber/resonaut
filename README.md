@@ -22,17 +22,6 @@ for a more unified look.
    `public/config.json` on startup so the client connects to the right
    WebSocket endpoint.
 
-## Radio Sampler
-
-Use the **Radio** button in the top menu bar to open the sampler panel. Tune stations with the slider — you will hear static that gently fades in and out when not locked onto a channel, and it falls silent when the radio stops or locks to a stream. Each pad in the 3×3 grid has its own **Rec** button underneath for capturing a snippet directly from the radio. The dot next to it shows whether the pad will trigger on the currently selected step and can be clicked to toggle that step. Trim recordings with the waveform editor.
-
-Program patterns by clicking the 16-step bar below the pads. Each step toggles the selected pad on or off for that position. The sequence loops automatically and a highlight shows the current playhead. You can still record pads live with **Record Sequence** if you want. A metronome toggle in the menu bar plays a short click on every beat.
-
-Several built‑in streams are available including Dutch public radio and a few SomaFM channels such as Groove Salad, Lush, Drone Zone and Secret Agent.
-
-Pads now respond immediately using WebAudio buffers and light up while they play. Drag the start and end markers directly on the waveform to quickly set loop points.
-FX pad movements can be recorded from the Effects tab and will loop automatically over 16 steps. Use Delete FX to clear a recording.
-
 ## Radar
 
 Use the **Radar** button in the toolbar to add a circular radar. It behaves like a radial timeline grid: a sweep line starts at the top (12 o'clock) and rotates clockwise, triggering any orb it crosses. Internal divisions can be displayed to help line up orbs on the radar.

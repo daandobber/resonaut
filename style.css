@@ -1464,8 +1464,6 @@ margin-top: 6px;
   margin-top: 2px;
   color: var(--text-color);
 }
-#radioSamplerPanel.radio-panel { position: fixed; bottom: 20px; left: -320px; width: 300px; padding: 15px; background-color: #3c3c4c; border: 2px solid #2a2a3a; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); z-index: 1050; transition: left 0.4s ease-in-out; color: #ddd; font-family: 'Courier New', Courier, monospace; }
-#radioSamplerPanel.radio-panel:not(.hidden) { left: 20px; }
 #performance-panel { top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.95); width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 #performance-panel:not(.hidden) { transform: translate(-50%, -50%) scale(1); }
 .open-performance-btn { margin-top: 10px; padding: 6px 10px; cursor: pointer; background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); border-radius: 4px; }
@@ -1477,100 +1475,6 @@ margin-top: 6px;
 .mrfa-bar span { font-size: 0.8em; }
 .performance-block { flex: 1; margin: 0 10px; padding-bottom: 10px; border-right: 1px solid var(--button-bg); }
 .performance-block:last-child { border-right: none; }
-#radioSamplerPanel h3 { margin-top: 0; text-align: center; font-size: 1em; }
-#radioSamplerGrid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0;
-}
-#radioSamplerGrid .radio-pad {
-  flex: 0 0 calc(33.333% - 6px);
-  background-color: #444;
-  color: #fff;
-  border-radius: 4px;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: pointer;
-}
-#radioSamplerGrid .radio-pad.playing {
-  background-color: var(--button-active, #8860b0);
-  box-shadow: 0 0 6px var(--button-active, #8860b0);
-}
-#radioSamplerGrid canvas {
-  width: 100%;
-  height: 50px;
-  background-color: #222;
-  display: block;
-}
-#radioSamplerGrid .pad-controls {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  padding: 2px;
-  box-sizing: border-box;
-}
-#radioSamplerGrid .pad-rec-btn,
-#radioSamplerGrid .pad-step-toggle {
-  flex: 1;
-  font-size: 0.7em;
-  margin: 0 1px;
-  border-radius: 3px;
-}
-#radioSamplerGrid .pad-rec-btn {
-  background-color: #800;
-  color: #fff;
-  border: none;
-}
-#radioSamplerGrid .pad-rec-btn.recording {
-  background-color: #f00;
-}
-#radioSamplerGrid .pad-step-toggle {
-  background-color: #222;
-  color: #fff;
-  border: 1px solid #555;
-}
-#radioSamplerGrid .pad-step-toggle.on {
-  background-color: #6c6 !important;
-  border-color: #8f8 !important;
-}
-#radioPadEditor { margin-top: 8px; }
-#radioWaveformCanvas { width: 100%; height: 60px; background-color: #222; border: 1px solid #111; border-radius: 3px; }
-.radio-edit-fields { display: flex; justify-content: space-between; margin-top: 4px; }
-.radio-edit-fields label { font-size: 0.8em; color: #ccc; }
-.radio-edit-fields input { width: 60px; background-color: rgba(20,20,30,0.5); color: #fff; border: 1px solid #666; border-radius: 3px; padding: 2px; }
-.radio-slider-wrapper { flex: 1; display: flex; flex-direction: column; align-items: center; }
-.radio-slider-wrapper label { font-size: 0.75em; margin-bottom: 2px; color: #ccc; }
-.radio-extra-fields { display: flex; justify-content: space-between; margin-top: 4px; }
-.radio-extra-fields label { font-size: 0.8em; color: #ccc; display: flex; flex-direction: column; align-items: center; }
-.radio-extra-fields input[type=range] { width: 80px; }
-#radioSamplerControls { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
-#radioSamplerControls select,
-#radioSamplerControls button { flex: 1; font-size: 0.8em; padding: 4px; background-color: #444; color: #fff; border: none; border-radius: 4px; }
-#radioSamplerControls button.active { background-color: #663; }
-#radioStationSlider { flex: 1; }
-#radioVolumeSlider { flex: 1; }
-#radioSeqSteps.radio-step-grid { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; margin-bottom: 6px; }
-.radio-step { height: 8px; background-color: #333; }
-.radio-step.active { background-color: #8af; }
-.radio-step.selected { background-color: #f66; }
-
-.radio-sampler-tabs { display:flex; gap:4px; margin-bottom:6px; }
-.radio-sampler-tabs .radio-tab { flex:1; font-size:0.8em; padding:4px; background-color:#444; color:#fff; border:none; border-radius:4px; cursor:pointer; }
-.radio-sampler-tabs .radio-tab.active { background-color:#663; }
-.radio-tab-content.hidden { display:none; }
-#radioFxPad { width:100%; height:150px; background:#222; border:1px solid #111; border-radius:3px; margin:6px 0; touch-action:none; }
-.radio-fx-assign { display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; }
-.radio-fx-axis { display:flex; align-items:center; gap:4px; flex:1; }
-.radio-fx-axis span { font-size:0.8em; color:#ccc; }
-.radio-fx-axis select { flex:1; }
-
-#radioFxControls { display:flex; gap:4px; margin-top:6px; }
-#radioFxControls button { flex:1; font-size:0.8em; padding:4px; background-color:#444; color:#fff; border:none; border-radius:4px; }
-#radioFxControls button.active { background-color:#663; }
 
 #canvasTimelineView {
   position: absolute;

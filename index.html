@@ -96,168 +96,6 @@
         <button id="tapeLoopResetSpeedBtn" title="Reset Speed">Reset</button>
     </div>
 </div>
-  <div id="radioSamplerPanel" class="floating-panel radio-panel hidden">
-    <button class="close-panel-button" id="closeRadioSamplerPanelBtn">&times;</button>
-    <h3>Radio Sampler</h3>
-    <div class="radio-sampler-tabs">
-      <button class="radio-tab active" data-tab="pads">Pads</button>
-      <button class="radio-tab" data-tab="effects">Effects</button>
-    </div>
-    <audio id="radioStream" crossorigin="anonymous" src="https://icecast.omroep.nl/radio1-bb-mp3"></audio>
-    <div id="radioSamplerTabPads" class="radio-tab-content">
-      <div id="radioSamplerControls">
-        <div class="radio-slider-wrapper">
-          <label for="radioStationSlider">Frequency</label>
-          <input id="radioStationSlider" type="range" min="0" max="6" step="0.01">
-        </div>
-        <div class="radio-slider-wrapper">
-          <label for="radioVolumeSlider">Volume</label>
-          <input id="radioVolumeSlider" type="range" min="0" max="1" step="0.01" value="1">
-        </div>
-        <button id="radioPlayBtn">Play Radio</button>
-        <button id="radioRecordSeqBtn">Record Sequence</button>
-      </div>
-    <div id="radioSeqSteps" class="radio-step-grid">
-      <div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div>
-      <div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div>
-      <div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div>
-      <div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div><div class="radio-step"></div>
-    </div>
-    <div id="radioSamplerGrid">
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-      <div class="radio-pad">
-        <canvas width="70" height="40"></canvas>
-        <div class="pad-controls">
-          <button class="pad-rec-btn" title="Record">Smpl</button>
-          <button class="pad-step-toggle" title="Toggle step">Step</button>
-        </div>
-      </div>
-  </div>
-    <div id="radioPadEditor" class="hidden">
-      <canvas id="radioWaveformCanvas" width="260" height="60"></canvas>
-      <div class="radio-edit-fields">
-        <label>Start <input type="number" id="radioPadStart" min="0" step="0.01"></label>
-        <label>End <input type="number" id="radioPadEnd" min="0" step="0.01"></label>
-      </div>
-      <div class="radio-extra-fields">
-        <label>Pitch <input type="range" id="radioPadPitch" min="0.5" max="2" step="0.01" value="1"></label>
-        <label>Vol <input type="range" id="radioPadVolume" min="0" max="1" step="0.01" value="1"></label>
-        <label><input type="checkbox" id="radioPadReverse"> Reverse</label>
-      </div>
-    </div>
-  </div>
-  <div id="radioSamplerTabEffects" class="radio-tab-content hidden">
-    <div class="radio-fx-assign">
-      <div class="radio-fx-axis">
-        <span>X:</span>
-        <select id="radioFxSelectX1" class="radioFxSelectX">
-          <option value="none">None</option>
-          <option value="delay">Delay</option>
-          <option value="filter">Filter</option>
-          <option value="distortion">Distortion</option>
-          <option value="pitch">Pitch</option>
-        </select>
-        <select id="radioFxSelectX2" class="radioFxSelectX">
-          <option value="none">None</option>
-          <option value="delay">Delay</option>
-          <option value="filter">Filter</option>
-          <option value="distortion">Distortion</option>
-          <option value="pitch">Pitch</option>
-        </select>
-        <select id="radioFxSelectX3" class="radioFxSelectX">
-          <option value="none">None</option>
-          <option value="delay">Delay</option>
-          <option value="filter">Filter</option>
-          <option value="distortion">Distortion</option>
-          <option value="pitch">Pitch</option>
-        </select>
-      </div>
-      <div class="radio-fx-axis">
-        <span>Y:</span>
-        <select id="radioFxSelectY1" class="radioFxSelectY">
-          <option value="none">None</option>
-          <option value="delay">Delay</option>
-          <option value="filter">Filter</option>
-          <option value="distortion">Distortion</option>
-          <option value="pitch">Pitch</option>
-        </select>
-        <select id="radioFxSelectY2" class="radioFxSelectY">
-          <option value="none">None</option>
-          <option value="delay">Delay</option>
-          <option value="filter">Filter</option>
-          <option value="distortion">Distortion</option>
-          <option value="pitch">Pitch</option>
-        </select>
-        <select id="radioFxSelectY3" class="radioFxSelectY">
-          <option value="none">None</option>
-          <option value="delay">Delay</option>
-          <option value="filter">Filter</option>
-          <option value="distortion">Distortion</option>
-          <option value="pitch">Pitch</option>
-        </select>
-      </div>
-    </div>
-    <canvas id="radioFxPad" width="200" height="150"></canvas>
-      <div id="radioFxControls">
-        <button id="radioFxRecordBtn">Record FX</button>
-        <button id="radioFxDeleteBtn" disabled>Delete FX</button>
-      </div>
-  </div>
 </div>
     <div id="app-menu-bar">
         <div class="app-menu-dropdown">
@@ -332,7 +170,6 @@
         <button id="toggleInfoTextBtn" class="app-menu-bar-button" title="Toggle Node Info Text (I)">Info</button>
         <button id="app-menu-record-btn" class="app-menu-bar-button" title="Record Session">🔴 Record</button>
         <button id="app-menu-toggle-tape-looper-btn" class="app-menu-bar-button" title="Toggle Tape Looper">📼 Tape</button>
-        <button id="app-menu-radio-sampler-btn" class="app-menu-bar-button" title="Toggle Radio Sampler">📻 Radio</button>
         <button id="app-menu-performance-btn" class="app-menu-bar-button" title="Performance View">🎛 Perf</button>
         <button id="app-menu-canvas-timeline-btn" class="app-menu-bar-button" title="Toggle Canvas Timeline">🖼️ Canvases</button>
         <div class="app-menu-spacer"></div>
@@ -578,13 +415,6 @@
         <div id="tone-panel-content"></div>
     </div>
 
-    <div id="radio-orb-panel" class="panel prorb-panel hidden">
-        <div id="radio-orb-panel-header">
-            <h3>Radio Orb Settings</h3>
-            <button id="radio-orb-panel-close-btn" class="close-panel-button">&times;</button>
-        </div>
-        <div id="radio-orb-panel-content"></div>
-    </div>
 
     <div id="motor-orb-panel" class="panel prorb-panel hidden">
         <div id="motor-orb-panel-header">
@@ -739,7 +569,6 @@
     </div>
     <div id="loadingIndicator" style="display:none;">Loading Samples... 0%</div>
     <script type="module" src="samplers.js"></script>
-    <script type="module" src="radioSampler.js"></script>
     <script type="module" src="canvasManager.js"></script>
     <script type="module" src="canvasSwitcher.js"></script>
     <script type="module" src="canvasTimeline.js"></script>

@@ -149,7 +149,6 @@ export const stringPanelCloseBtn = safeGetById("string-panel-close-btn");
 
 export const appMenuRecordBtn = safeGetById("app-menu-record-btn");
 export const appMenuToggleTapeLooperBtn = safeGetById("app-menu-toggle-tape-looper-btn");
-export const appMenuRadioSamplerBtn = safeGetById("app-menu-radio-sampler-btn");
 export const appMenuPerformanceBtn = safeGetById("app-menu-performance-btn");
 
 export const tapeLooperPanel = safeGetById("tapeLooperPanel");
@@ -176,8 +175,6 @@ export const tapeLoopSpeedValue = safeGetById("tapeLoopSpeedValue");
 export const tapeLoopResetSpeedBtn = safeGetById("tapeLoopResetSpeedBtn");
 export const tapeLoopStatusLabel = safeGetById("tapeLoopStatusLabel");
 export const tapeLoopTimer = safeGetById("tapeLoopTimer");
-export const radioSamplerPanel = safeGetById("radioSamplerPanel");
-export const closeRadioSamplerPanelBtn = safeGetById("closeRadioSamplerPanelBtn");
 export const perfResoSlider = safeGetById("perfResoSlider");
 export const perfResoValue = safeGetById("perfResoValue");
 export const perfResoToggle = safeGetById("perfResoToggle");

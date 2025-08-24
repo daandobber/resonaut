@@ -287,7 +287,6 @@ const {
   stringPanelCloseBtn,
   appMenuRecordBtn,
   appMenuToggleTapeLooperBtn,
-  appMenuRadioSamplerBtn,
   appMenuPerformanceBtn,
   tapeLooperPanel,
   closeTapeLooperPanelBtn,
@@ -310,7 +309,6 @@ const {
   tapeLoopResetSpeedBtn,
   tapeLoopStatusLabel,
   tapeLoopTimer,
-  radioSamplerPanel,
   performancePanel,
   performancePanelCloseBtn,
   openPerformancePanelBtn,
@@ -561,13 +559,6 @@ let scriptNodeForTapeLoop = null;
 let tapeLoopSourceNodeStartTime = 0;
 let tapeLoopSourceNodeStartOffsetInLoop = 0;
 
-let radioGainNode = null;
-let radioAnalyserNode = null;
-let radioPannerNode = null;
-let radioDelaySendGainNode = null;
-let radioReverbSendGainNode = null;
-let radioMuteState = false;
-let radioSoloState = false;
 let tapeLoopWritePosition = 0;
 let tapeLoopEffectivelyRecordedDuration = 0;
 let tapeLoopRecordedAtBPM = 0;
@@ -1721,26 +1712,6 @@ export async function setupAudio() {
       tapeTrackAnalyserNodes[i] = analyser;
     }
 
-    if (window.radioGainNode && window.radioAnalyserNode) {
-      try { window.radioGainNode.disconnect(); } catch (e) {}
-      try { window.radioAnalyserNode.disconnect(); } catch (e) {}
-
-      radioPannerNode = audioContext.createStereoPanner();
-      radioPannerNode.pan.value = 0;
-
-      radioDelaySendGainNode = audioContext.createGain();
-      radioDelaySendGainNode.gain.value = DEFAULT_DELAY_SEND;
-
-      radioReverbSendGainNode = audioContext.createGain();
-      radioReverbSendGainNode.gain.value = DEFAULT_REVERB_SEND;
-
-      window.radioGainNode.connect(radioPannerNode);
-      radioPannerNode.connect(window.radioAnalyserNode);
-      window.radioAnalyserNode.connect(masterGain);
-
-      radioGainNode = window.radioGainNode;
-      radioAnalyserNode = window.radioAnalyserNode;
-    }
 
     portalGroupGain = audioContext.createGain();
     portalGroupGain.gain.value = 0.7;
@@ -1803,18 +1774,6 @@ export async function setupAudio() {
 
     isDelayReady = true;
 
-    if (window.radioGainNode) {
-      try { window.radioGainNode.disconnect(radioDelaySendGainNode); } catch(e) {}
-      try { window.radioGainNode.disconnect(radioReverbSendGainNode); } catch(e) {}
-      if (radioDelaySendGainNode && masterDelaySendGain) {
-        window.radioGainNode.connect(radioDelaySendGainNode);
-        radioDelaySendGainNode.connect(masterDelaySendGain);
-      }
-      if (radioReverbSendGainNode && reverbPreDelayNode) {
-        window.radioGainNode.connect(radioReverbSendGainNode);
-        radioReverbSendGainNode.connect(reverbPreDelayNode);
-      }
-    }
 
     mistEffectInput = audioContext.createGain();
     mistDelay = audioContext.createDelay();
@@ -3489,26 +3448,6 @@ function updateMixerGUI() {
                 applySoloMuteToAllGroupsAudio();
                 updateMixerGUI();
             });
-        } else if (id === 'radio') {
-            soloBtn.addEventListener('click', () => {
-                radioSoloState = !radioSoloState;
-                if (radioSoloState) {
-                    tapeTrackSoloStates.forEach((_, i) => tapeTrackSoloStates[i] = false);
-                    identifiedGroups.forEach(g => g.soloState = false);
-                    radioMuteState = false;
-                }
-                applySoloMuteToAllGroupsAudio();
-                updateMixerGUI();
-            });
-            muteBtn.addEventListener('click', () => {
-                radioMuteState = !radioMuteState;
-                if (radioMuteState && radioSoloState) radioSoloState = false;
-                if (radioMuteState && radioGainNode && radioGainNode._originalGainBeforeMute === undefined) {
-                    radioGainNode._originalGainBeforeMute = radioGainNode.gain.value;
-                }
-                applySoloMuteToAllGroupsAudio();
-                updateMixerGUI();
-            });
         } else {
             soloBtn.style.display = 'none';
             muteBtn.addEventListener('click', () => {
@@ -3664,24 +3603,6 @@ function updateMixerGUI() {
         mixerPanControls.appendChild(createPanRow(group.id, name, group.pannerNode, group));
     });
 
-    if (window.radioSamplerInfo && (window.radioSamplerInfo.isPlaying || window.radioSamplerInfo.hasRecording)) {
-        mixerVolumeControls.appendChild(
-            createVolumeRow(
-                'radio',
-                'Radio',
-                window.radioSamplerInfo.gainNode,
-                window.radioSamplerInfo.analyserNode,
-                window.radioSamplerInfo.soloState,
-                window.radioSamplerInfo.muteState,
-                null
-            )
-        );
-        mixerSendControls.appendChild(
-            createSendRow('radio', 'Radio', { delaySendGainNode: radioDelaySendGainNode, reverbSendGainNode: radioReverbSendGainNode })
-        );
-        mixerPanControls.appendChild(createPanRow('radio', 'Radio', radioPannerNode, null));
-    }
-
     if ((isTapeLoopPlaying || isTapeLoopRecording)) {
         tapeTracks.forEach((track, idx) => {
             const hasAudio = track.buffer || (isTapeLoopRecording && idx === currentTapeTrack);
@@ -3719,8 +3640,7 @@ function applySoloMuteToAllGroupsAudio() {
   const anyGroupSoloActive = identifiedGroups.some(g => g.soloState);
   const anyFxSoloActive = (delayReturnGain && delayReturnGain.isSoloed) || (reverbWetGain && reverbWetGain.isSoloed);
   const anyTapeSoloActive = tapeTrackSoloStates.some(s => s);
-  const anyRadioSoloActive = radioSoloState;
-  const anySoloOverall = anyGroupSoloActive || anyFxSoloActive || anyTapeSoloActive || anyRadioSoloActive;
+  const anySoloOverall = anyGroupSoloActive || anyFxSoloActive || anyTapeSoloActive;
 
   identifiedGroups.forEach(group => {
       if (!group.gainNode) return;
@@ -3774,23 +3694,6 @@ function applySoloMuteToAllGroupsAudio() {
           targetReverbReturnGain = intendedGain;
       }
       reverbWetGain.gain.setTargetAtTime(targetReverbReturnGain, audioContext.currentTime, timeConstant);
-  }
-
-  if (radioGainNode) {
-      let intended = radioGainNode._originalGainBeforeMute !== undefined ? radioGainNode._originalGainBeforeMute : 1.0;
-      let target;
-      if (radioMuteState) {
-          target = 0;
-      } else if (anySoloOverall) {
-          if (radioSoloState) {
-              target = intended;
-          } else {
-              target = 0;
-          }
-      } else {
-          target = intended;
-      }
-      radioGainNode.gain.setTargetAtTime(target, audioContext.currentTime, timeConstant);
   }
 
   tapeTrackGainNodes.forEach((gainNode, idx) => {
@@ -5568,10 +5471,6 @@ export function triggerNodeEffect(
   } else if (node.type === RADIO_ORB_TYPE) {
     node.isTriggered = true;
     node.animationState = 1;
-    if (typeof window.radioSamplerPlayPad === 'function') {
-      const idx = node.audioParams.sampleIndex ?? 0;
-      window.radioSamplerPlayPad(idx);
-    }
     setTimeout(() => {
       const stillNode = findNodeById(node.id);
       if (stillNode) stillNode.isTriggered = false;
@@ -10165,14 +10064,6 @@ function animationLoop() {
     updateMeterVisual(reverbReturnAnalyser, reverbReturnMeterFillElement);
   }
 
-  const radioMeterFillElement = document.getElementById('meterFill-radio');
-  if (radioMeterFillElement && radioAnalyserNode) {
-    updateMeterVisual(radioAnalyserNode, radioMeterFillElement);
-  }
-  const radioSendMeterFillElement = document.getElementById('meterFill-radio-send');
-  if (radioSendMeterFillElement && radioAnalyserNode) {
-    updateMeterVisual(radioAnalyserNode, radioSendMeterFillElement);
-  }
   
   identifiedGroups.forEach(group => {
       if (group.analyserNode) {
@@ -20438,7 +20329,6 @@ function populateReplacePresetMenu(contentType, title) {
   else if (contentType === 'fmSynths') presets = fmSynthPresets;
   else if (contentType === 'samplers') presets = samplerWaveformTypes;
   else if (contentType === 'drumElements') presets = drumElementTypes;
-  else if (contentType === 'radio') presets = Array.from({length:8}, (_,i)=>({type:`radio_pad_${i}`,label:`Pad ${i+1}`}));
 
   presets.forEach(p => {
     const btn = document.createElement('button');
@@ -20470,12 +20360,6 @@ function applyReplacement(presetType, contentType) {
       if (!node.audioParams) node.audioParams = {};
       const def = DRUM_ELEMENT_DEFAULTS[presetType] || {};
       Object.assign(node.audioParams, def);
-    } else if (contentType === 'radio') {
-      node.type = RADIO_ORB_TYPE;
-      if (!node.audioParams) node.audioParams = {};
-      const idx = parseInt(presetType.replace('radio_pad_','')) || 0;
-      node.audioParams.sampleIndex = idx;
-      node.audioParams.visualStyle = 'radio_orb_default';
     } else {
       node.type = 'sound';
       if (!node.audioParams) node.audioParams = {};
