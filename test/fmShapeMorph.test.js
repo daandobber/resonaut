@@ -16,6 +16,22 @@ describe('morphShape', () => {
     const result = morphShape(a, b, 2);
     expect(result[0]).toEqual({ x: 2, y: 2 });
   });
+
+  it('handles shapes with different point counts', () => {
+    const tri = [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+      { x: 1, y: 2 },
+    ];
+    const square = [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+      { x: 2, y: 2 },
+      { x: 0, y: 2 },
+    ];
+    const result = morphShape(tri, square, 0.5);
+    expect(result).toHaveLength(4);
+  });
 });
 
 describe('fmMorphAmount', () => {
