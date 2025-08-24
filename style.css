@@ -1293,6 +1293,7 @@ margin-top: 6px;
 .prorb-bar-row {
   display: flex;
   justify-content: space-between;
+}
 .prorb-hbar-row {
   display: flex;
   justify-content: space-between;
