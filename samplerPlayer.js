@@ -12,17 +12,18 @@ export function playWithToneSampler(
   source.buffer = buffer;
   source.playbackRate.value = freq / baseFreq;
 
+  const dest = destination ?? audioContext.destination;
   const gain = audioContext.createGain();
-  gain.gain.setValueAtTime(0, startTime);
-  gain.gain.linearRampToValueAtTime(velocity, startTime + attack);
-  gain.gain.setTargetAtTime(0, startTime + attack + buffer.duration, release / 4);
+  const actualStart = Math.max(audioContext.currentTime, startTime);
+  gain.gain.setValueAtTime(0, actualStart);
+  gain.gain.linearRampToValueAtTime(velocity, actualStart + attack);
+  gain.gain.setTargetAtTime(0, actualStart + attack + buffer.duration, release / 4);
 
   source.connect(gain);
-  const dest = destination ?? audioContext.destination;
   gain.connect(dest);
 
-  source.start(startTime, 0, buffer.duration);
-  const stopTime = startTime + buffer.duration + release;
+  source.start(actualStart, 0, buffer.duration);
+  const stopTime = actualStart + buffer.duration + release;
   source.stop(stopTime);
 
   setTimeout(() => {
