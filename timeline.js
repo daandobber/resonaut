@@ -1,5 +1,9 @@
 const PIXELS_PER_SECOND = 100;
 
+function getAudioContext() {
+  return window.audioContext || null;
+}
+
 let timelineTracksData = [];
 let trackIdCounter = 0;
 let activeResize = null;
@@ -138,7 +142,8 @@ function startRecordingVisualizer(track) {
 
   const draw = () => {
     if (!track.recorder || track.recorder.state !== 'recording') return;
-    const elapsed = (audioContext ? audioContext.currentTime : 0) - track.recordingStartTime;
+    const ac = getAudioContext();
+    const elapsed = (ac ? ac.currentTime : 0) - track.recordingStartTime;
     const x = Math.floor(elapsed * PIXELS_PER_SECOND);
     while (track.recordingSegment.drawX <= x && track.recordingSegment.drawX < canvas.width) {
       track.analyser.getByteTimeDomainData(data);
@@ -255,8 +260,9 @@ function createTrack() {
     <div class="track-body"></div>
   `;
   tracksContainer.appendChild(trackEl);
-  const gainNode = audioContext ? audioContext.createGain() : null;
-  const panNode = audioContext ? audioContext.createStereoPanner() : null;
+  const ac = getAudioContext();
+  const gainNode = ac ? ac.createGain() : null;
+  const panNode = ac ? ac.createStereoPanner() : null;
   const master = window.masterGain;
   if (gainNode && panNode && master) {
     gainNode.connect(panNode);
@@ -353,14 +359,16 @@ function startTrackRecording(track) {
   if (bodyEl) bodyEl.appendChild(recSeg.el);
   if (recBtn) recBtn.classList.add('recording');
 
-  track.analyser = audioContext ? audioContext.createAnalyser() : null;
+  const ac = getAudioContext();
+  track.analyser = ac ? ac.createAnalyser() : null;
   track.analyserSource = null;
-  track.recordingStartTime = audioContext ? audioContext.currentTime : 0;
+  track.recordingStartTime = ac ? ac.currentTime : 0;
 
   const setupAnalyserForStream = (stream) => {
-    if (!audioContext || !track.analyser) return;
+    const ac = getAudioContext();
+    if (!ac || !track.analyser) return;
     try {
-      const src = audioContext.createMediaStreamSource(stream);
+      const src = ac.createMediaStreamSource(stream);
       src.connect(track.analyser);
       track.analyserSource = src;
     } catch (e) {}
@@ -410,14 +418,15 @@ function startTrackRecording(track) {
       setupAnalyserForStream(stream);
     });
   } else {
-    if (!audioContext || !window.masterGain) {
+    const ac = getAudioContext();
+    if (!ac || !window.masterGain) {
       console.warn('Audio engine not ready for recording');
       return;
     }
-    if (audioContext.state === 'suspended') {
-      audioContext.resume().catch(() => {});
+    if (ac.state === 'suspended') {
+      ac.resume().catch(() => {});
     }
-    const tapNode = audioContext.createMediaStreamDestination();
+    const tapNode = ac.createMediaStreamDestination();
     let sourceNode = window.masterGain;
     if (track.source !== 'master') {
       const g =
@@ -597,24 +606,27 @@ function onDocumentMouseUp() {
 }
 
 function decodeSegment(blob) {
+  const ac = getAudioContext();
+  if (!ac) return Promise.reject(new Error('No audio context'));
   return blob
     .arrayBuffer()
-    .then((buf) => audioContext.decodeAudioData(buf))
+    .then((buf) => ac.decodeAudioData(buf))
     .then((audioBuffer) => buildSegment(audioBuffer));
 }
 
 function schedulePlayback(start, end) {
-  if (!audioContext) return;
+  const ac = getAudioContext();
+  if (!ac) return;
   stopTimeline();
   playingSources = [];
-  const now = audioContext.currentTime;
+  const now = ac.currentTime;
   playheadDuration = end - start;
   timelineTracksData.forEach((track) => {
     track.segments.forEach((seg) => {
       const segStart = seg.start;
       const segEnd = seg.start + (seg.trimEnd - seg.trimStart);
       if (segEnd <= start || segStart >= end) return;
-      const source = audioContext.createBufferSource();
+      const source = ac.createBufferSource();
       source.buffer = seg.buffer;
       if (track.gainNode) {
         source.connect(track.gainNode);
@@ -697,7 +709,8 @@ function snapToNearestBoundary(time) {
 
 function updatePlayhead() {
   if (!playheadAnimating || !playheadEl) return;
-  const elapsed = audioContext.currentTime - playheadStartTime;
+  const ac = getAudioContext();
+  const elapsed = (ac ? ac.currentTime : 0) - playheadStartTime;
   playheadEl.style.left = `${playheadOffsetPx + elapsed * PIXELS_PER_SECOND}px`;
   if (elapsed >= playheadDuration) {
     playheadAnimating = false;
