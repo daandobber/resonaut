@@ -1,6 +1,9 @@
 function resolveSamplePath(path) {
     if (typeof window !== "undefined" && window.location.protocol !== "file:") {
-        return path;
+        const base =
+            window.location.origin +
+            window.location.pathname.replace(/\/[^\/]*$/, "/");
+        return new URL(path, base).href;
     }
     return new URL(`./public/${path}`, import.meta.url).href;
 }
