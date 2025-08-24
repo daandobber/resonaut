@@ -742,7 +742,7 @@ function switchTapeTrack(index) {
   });
 }
 
-let nodes = [];
+export let nodes = [];
 if (typeof window !== 'undefined') {
   window.nodes = nodes;
 }
