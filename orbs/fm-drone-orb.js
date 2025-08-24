@@ -5,6 +5,7 @@ import { showTonePanel, hideAnalogOrbMenu } from './analog-orb-ui.js';
 
 let NexusPromise = typeof window !== 'undefined' ? import('nexusui') : null;
 let NexusLib = null;
+const autoDriftIntervals = new Map();
 async function getNexus() {
   if (!NexusPromise) return null;
   if (!NexusLib) {
@@ -335,10 +336,12 @@ export async function showFmDroneOrbMenu(node) {
   const btn = document.createElement('button');
   btn.textContent = 'Auto Drift';
   container.appendChild(btn);
-  let autoInterval = null;
+  let autoInterval = autoDriftIntervals.get(node.id) || null;
+  if (autoInterval) btn.classList.add('active');
   btn.addEventListener('click', () => {
     if (autoInterval) {
       clearInterval(autoInterval);
+      autoDriftIntervals.delete(node.id);
       autoInterval = null;
       btn.classList.remove('active');
     } else {
@@ -350,13 +353,21 @@ export async function showFmDroneOrbMenu(node) {
           setPadPosition(p, x, y);
         });
       }, 2000);
+      autoDriftIntervals.set(node.id, autoInterval);
     }
   });
 }
 
 export function hideFmDroneOrbMenu() {
   const existing = document.getElementById('fm-drone-container');
-  if (existing) existing.remove();
+  if (existing) {
+    const nodeId = existing.dataset.nodeId;
+    if (nodeId && autoDriftIntervals.has(nodeId)) {
+      clearInterval(autoDriftIntervals.get(nodeId));
+      autoDriftIntervals.delete(nodeId);
+    }
+    existing.remove();
+  }
   if (tonePanelContent) tonePanelContent.innerHTML = '';
   hideAnalogOrbMenu();
 }
