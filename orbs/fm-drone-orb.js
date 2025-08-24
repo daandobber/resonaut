@@ -5,6 +5,7 @@ import { showTonePanel, hideAnalogOrbMenu } from './analog-orb-ui.js';
 
 let NexusPromise = typeof window !== 'undefined' ? import('nexusui') : null;
 let NexusLib = null;
+const autoDriftIntervals = new Map();
 async function getNexus() {
   if (!NexusPromise) return null;
   if (!NexusLib) {
