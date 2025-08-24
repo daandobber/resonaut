@@ -20394,8 +20394,18 @@ function populateInstrumentMenu() {
 
   const instruments = [
     {
+      icon: "🎵",
+      label: "Simple",
+      nodeType: "sound",
+      handler: () => {
+        soundEngineToAdd = null;
+        setupAddTool(null, "sound");
+      },
+    },
+    {
       icon: "🔔",
       label: "FM Synth",
+      nodeType: "sound",
       handler: () => {
         soundEngineToAdd = "tonefm";
         setupAddTool(null, "sound", true, "fmSynths", "FM Synths");
@@ -20403,15 +20413,17 @@ function populateInstrumentMenu() {
     },
     {
       icon: "🎶",
-      label: "Tone Synth",
+      label: "Analog Synth",
+      nodeType: "sound",
       handler: () => {
         soundEngineToAdd = "tone";
-        setupAddTool(null, "sound", true, "analogWaveforms", "Tone Synths");
+        setupAddTool(null, "sound", true, "analogWaveforms", "Analog Synths");
       },
     },
     {
       icon: "🛰️",
       label: "Sampler",
+      nodeType: "sound",
       handler: () => {
         soundEngineToAdd = null;
         setupAddTool(null, "sound", true, "samplers", "Samplers");
@@ -20461,20 +20473,23 @@ function populateInstrumentMenu() {
   instruments.forEach((inst) => {
     const btn = document.createElement("button");
     btn.classList.add("type-button");
-    btn.innerHTML = `<span class="type-icon">${inst.icon}</span> <span>${inst.label}</span>`;
+    btn.innerHTML = `<span class=\"type-icon\">${inst.icon}</span> <span>${inst.label}</span>`;
     btn.addEventListener("click", () => {
       inst.handler();
       if (
         helpWizard &&
         !helpWizard.classList.contains("hidden") &&
         currentHelpStep === 3 &&
-        inst.label === "Tone Synth"
+        inst.label === "Analog Synth"
       ) {
         nextHelpStep();
       }
     });
-    if (inst.label === "Tone Synth") {
-      toneSynthBtn = btn;
+    if (inst.nodeType) {
+      btn.dataset.nodeType = inst.nodeType;
+    }
+    if (inst.label === "Analog Synth") {
+      analogSynthBtn = btn;
       helpSteps[3].target = btn;
     }
     groupDiv.appendChild(btn);
@@ -21662,7 +21677,7 @@ function toggleHelpPopup() {
   }
 }
 
-let toneSynthBtn = null;
+let analogSynthBtn = null;
 let squareWaveBtn = null;
 const helpSteps = [
   {
@@ -21678,7 +21693,7 @@ const helpSteps = [
     target: instrumentsMenuBtn,
   },
   {
-    text: "Choose Tone Synth",
+    text: "Choose Analog Synth",
     target: null,
   },
   {
@@ -23872,7 +23887,7 @@ if (addAnalogSynthBtn) {
       "sound",
       true,
       "analogWaveforms",
-      "Tone Synths",
+      "Analog Synths",
     );
   });
 }
