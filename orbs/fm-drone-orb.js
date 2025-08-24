@@ -15,6 +15,8 @@ async function getNexus() {
 }
 
 export const DEFAULT_FM_DRONE_PARAMS = {
+  pitch: 110,
+  scaleIndex: 0,
   baseFreq: 110,
   harmonicity: 1.5,
   modulationIndex: 10,
@@ -31,13 +33,14 @@ export const DEFAULT_FM_DRONE_PARAMS = {
 export function createFmDroneAudioNodes(node) {
   const p = node.audioParams;
   const ctx = globalThis.audioContext;
+  const baseFreq = p.pitch || p.baseFreq || 110;
   const carrier = ctx.createOscillator();
   carrier.type = p.oscType || 'sine';
-  carrier.frequency.value = p.baseFreq || 110;
+  carrier.frequency.value = baseFreq;
 
   const modOsc = ctx.createOscillator();
   modOsc.type = 'sine';
-  modOsc.frequency.value = (p.baseFreq || 110) * (p.harmonicity || 1.5);
+  modOsc.frequency.value = baseFreq * (p.harmonicity || 1.5);
 
   const modGain = ctx.createGain();
   modGain.gain.value = p.modulationIndex || 10;
@@ -104,8 +107,9 @@ export function updateFmDroneParams(audioNodes) {
   if (!p) return;
   const ctx = globalThis.audioContext;
   const now = ctx.currentTime;
-  audioNodes.carrier.frequency.setTargetAtTime(p.baseFreq ?? 110, now, 0.1);
-  audioNodes.modOsc.frequency.setTargetAtTime((p.baseFreq ?? 110) * (p.harmonicity ?? 1.5), now, 0.1);
+  const baseFreq = p.pitch ?? p.baseFreq ?? 110;
+  audioNodes.carrier.frequency.setTargetAtTime(baseFreq, now, 0.1);
+  audioNodes.modOsc.frequency.setTargetAtTime(baseFreq * (p.harmonicity ?? 1.5), now, 0.1);
   audioNodes.modGain.gain.setTargetAtTime(p.modulationIndex ?? 10, now, 0.1);
   audioNodes.lfo.frequency.setTargetAtTime(p.lfoRate ?? 0.05, now, 0.1);
   audioNodes.lfoGain.gain.setTargetAtTime(p.lfoDepth ?? 200, now, 0.1);

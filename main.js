@@ -11994,8 +11994,8 @@ function drawNode(node) {
         border: hslToRgba(0, 0, 10, 0.9),
       },
       fm_drone_swarm: {
-        fill: hslToRgba(290, 70, 70, 0.8),
-        border: hslToRgba(290, 70, 50, 0.9),
+        fill: fillColor,
+        border: borderColor,
       },
       arvo_drone_default: {
         fill: hslToRgba(200, 40, 60, baseAlpha),
@@ -12909,11 +12909,9 @@ function drawNode(node) {
   } else if (node.type === FM_DRONE_TYPE) {
     const visualStyle = node.audioParams?.visualStyle;
     if (visualStyle === "fm_drone_swarm") {
-      const swarmFill = hslToRgba(290, 70, 70, 0.8);
-      const swarmBorder = hslToRgba(290, 70, 50, 0.9);
       updateAndDrawFmDroneSwarm(node, nodes, ctx, r, {
-        fill: swarmFill,
-        border: swarmBorder,
+        fill: fillColor,
+        border: borderColor,
       });
     } else {
       ctx.save();
@@ -22963,6 +22961,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   } else if (type === FM_DRONE_TYPE) {
     newNode.audioParams = Object.assign({}, DEFAULT_FM_DRONE_PARAMS, {
         pitch: initialPitch,
+        baseFreq: initialPitch,
         scaleIndex: initialScaleIndex,
     });
   } else if (type === RESONAUTER_TYPE) {
