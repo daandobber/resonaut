@@ -22963,6 +22963,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   } else if (type === FM_DRONE_TYPE) {
     newNode.audioParams = Object.assign({}, DEFAULT_FM_DRONE_PARAMS, {
         pitch: initialPitch,
+        baseFreq: initialPitch,
         scaleIndex: initialScaleIndex,
     });
   } else if (type === RESONAUTER_TYPE) {
