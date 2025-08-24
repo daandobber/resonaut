@@ -1478,43 +1478,60 @@ margin-top: 6px;
 .performance-block { flex: 1; margin: 0 10px; padding-bottom: 10px; border-right: 1px solid var(--button-bg); }
 .performance-block:last-child { border-right: none; }
 #radioSamplerPanel h3 { margin-top: 0; text-align: center; font-size: 1em; }
-#radioSamplerGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 10px 0; }
+#radioSamplerGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
 #radioSamplerGrid .radio-pad {
-  width: 100%;
+  flex: 0 0 calc(33.333% - 6px);
   background-color: #444;
   color: #fff;
-  border: none;
   border-radius: 4px;
   position: relative;
+  overflow: hidden;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
   cursor: pointer;
-  padding-bottom: 22px;
 }
-#radioSamplerGrid .radio-pad.playing { background-color: var(--button-active, #8860b0); box-shadow: 0 0 6px var(--button-active, #8860b0); }
-#radioSamplerGrid canvas { width: 100%; height: 40px; display: block; }
-#radioSamplerGrid .pad-controls {
-  position: absolute;
-  bottom: 2px;
-  left: 0;
+#radioSamplerGrid .radio-pad.playing {
+  background-color: var(--button-active, #8860b0);
+  box-shadow: 0 0 6px var(--button-active, #8860b0);
+}
+#radioSamplerGrid canvas {
   width: 100%;
+  height: 50px;
+  background-color: #222;
+  display: block;
+}
+#radioSamplerGrid .pad-controls {
   display: flex;
+  width: 100%;
   justify-content: space-between;
-  align-items: center;
   padding: 2px;
   box-sizing: border-box;
 }
-#radioSamplerGrid .pad-rec-btn { font-size: 0.7em; padding: 2px 4px; background-color: #800; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
-#radioSamplerGrid .pad-rec-btn.recording { background-color: #f00; }
+#radioSamplerGrid .pad-rec-btn,
 #radioSamplerGrid .pad-step-toggle {
+  flex: 1;
   font-size: 0.7em;
-  padding: 2px 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+}
+#radioSamplerGrid .pad-rec-btn {
+  background-color: #800;
+  color: #fff;
+  border: none;
+}
+#radioSamplerGrid .pad-rec-btn.recording {
+  background-color: #f00;
+}
+#radioSamplerGrid .pad-step-toggle {
   background-color: #222;
   color: #fff;
   border: 1px solid #555;
-  border-radius: 3px;
-  cursor: pointer;
 }
 #radioSamplerGrid .pad-step-toggle.on {
   background-color: #6c6;
