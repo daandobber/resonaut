@@ -11025,21 +11025,40 @@ function drawGrid() {
 
 
 function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
-  const particleCount = 20;
-  const size = r * 0.15;
   const rate = node.audioParams?.lfoRate || 0.5;
+  const swarmIntensity = node.audioParams?.swarmCount || 0;
+  const targetCount = Math.max(1, Math.floor(swarmIntensity * 40) + 1);
+  const size =
+    r * (0.05 + (node.audioParams?.filterResonance || 0) * 0.05);
+
   if (!node.swarmParticles || node.swarmParticles[0]?.vx === undefined) {
-    node.swarmParticles = Array.from({ length: particleCount }, () => ({
+    node.swarmParticles = [
+      {
+        x: node.x,
+        y: node.y,
+        vx: (Math.random() - 0.5) * rate,
+        vy: (Math.random() - 0.5) * rate,
+      },
+    ];
+  }
+  while (node.swarmParticles.length < targetCount) {
+    node.swarmParticles.push({
       x: node.x + (Math.random() - 0.5) * r,
       y: node.y + (Math.random() - 0.5) * r,
       vx: (Math.random() - 0.5) * rate,
       vy: (Math.random() - 0.5) * rate,
-    }));
+    });
   }
-  const maxSpeed = 0.5 + rate * 2;
-  const attractionStrength = 0.0005 * (0.5 + rate);
-  const neighborRadius = r * 0.8;
-  const separationDist = r * 0.2;
+  while (node.swarmParticles.length > targetCount) {
+    node.swarmParticles.pop();
+  }
+  const modIndex = node.audioParams?.modulationIndex || 0;
+  const maxSpeed = 0.5 + rate * 2 + swarmIntensity * 2;
+  const attractionStrength =
+    0.0005 * (0.5 + rate) * (1 + modIndex / 10);
+  const neighborRadius = r * (0.4 + modIndex * 0.02);
+  const separationDist =
+    r * (0.1 + (node.audioParams?.filterResonance || 0) * 0.05);
   node.swarmParticles.forEach((p) => {
     let ax = (node.x - p.x) * attractionStrength;
     let ay = (node.y - p.y) * attractionStrength;
