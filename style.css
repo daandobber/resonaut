@@ -122,7 +122,7 @@
   --meter-fill-mid: rgba(0,191,255,0.9);
   --meter-fill-end: rgba(138,43,226,0.9);
   --meter-gain-indicator-color: rgba(255, 255, 255, 0.7);
-  --timeline-pixels-per-second: 100;
+  --timeline-pixels-per-second: 100px;
   --timeline-loop-bar-height: 20px;
   --timeline-track-header-height: 32px;
 }
