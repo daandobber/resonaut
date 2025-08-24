@@ -58,8 +58,6 @@ make changes. Reloading the page will automatically restore the last session.
 Choose **New** from the menu if you want to clear the saved data.
 
 
-## PolySynth Orbitone Example
-The file `polyChordExample.js` demonstrates using `Tone.PolySynth` to trigger chords for orbitone effects. Run it to hear a repeating progression where each chord is played as a polyphonic voice.
 - Arvo Drone updated with a richer wavetable and adjustable filter resonance.
 - Arvo Drone oscillators now use resonant bandpass filtering for a more string-like timbre.
 - Arvo Drone now features a sitar-style resonator and short comb delay for enhanced string resonance.
