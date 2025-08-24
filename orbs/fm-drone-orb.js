@@ -167,7 +167,8 @@ export function stopFmDroneAudioNodes(audioNodes) {
   } catch (e) {}
   const node = audioNodes.nodeRef;
   if (node?.autoDriftInterval) {
-    clearInterval(node.autoDriftInterval);
+    const cancelAnim = globalThis.cancelAnimationFrame || clearTimeout;
+    cancelAnim(node.autoDriftInterval);
     node.autoDriftInterval = null;
   }
   Object.values(audioNodes).forEach(n => {
@@ -290,24 +291,82 @@ export async function showFmDroneOrbMenu(node) {
     },
   ];
 
-  padDefs.forEach((def, idx) => {
+  function applyPadTheme(component) {
+    const styles = getComputedStyle(document.body);
+    const accent = styles.getPropertyValue('--button-active').trim() || '#8860b0';
+    const fill = styles.getPropertyValue('--button-bg').trim() || '#503070';
+    if (component && component.colorize) {
+      component.colorize('accent', accent);
+      component.colorize('fill', fill);
+    }
+  }
+
+  padDefs.forEach((def) => {
     const wrap = document.createElement('div');
     wrap.style.display = 'flex';
     wrap.style.flexDirection = 'column';
     wrap.style.alignItems = 'center';
     wrap.style.marginBottom = '6px';
+
     const label = document.createElement('div');
     label.textContent = def.label;
     label.style.fontSize = '10px';
     wrap.appendChild(label);
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '4px';
+    wrap.appendChild(row);
+
+    const leftTarget = document.createElement('div');
+    leftTarget.style.width = '40px';
+    leftTarget.style.height = '40px';
+    row.appendChild(leftTarget);
+
     const target = document.createElement('div');
     target.style.width = '80px';
     target.style.height = '80px';
-    wrap.appendChild(target);
+    row.appendChild(target);
+
+    const rightTarget = document.createElement('div');
+    rightTarget.style.width = '40px';
+    rightTarget.style.height = '40px';
+    row.appendChild(rightTarget);
+
     let pad;
     if (Nexus) {
       pad = new Nexus.Position(target, { size: [80, 80] });
+      applyPadTheme(pad);
+      const leftDial = new Nexus.Dial(leftTarget, { size: [30, 30], min: 0, max: 1, value: 0 });
+      const rightDial = new Nexus.Dial(rightTarget, { size: [30, 30], min: 0, max: 1, value: 0 });
+      applyPadTheme(leftDial);
+      applyPadTheme(rightDial);
+      pad.basePos = { x: 0.5, y: 0.5 };
+      pad.autoAmounts = { x: 0, y: 0 };
+      pad.autoPhases = { x: Math.random() * Math.PI * 2, y: Math.random() * Math.PI * 2 };
+      const updateAuto = () => {
+        const clamp = (val) => Math.min(1, Math.max(0, val));
+        const x = clamp(
+          (pad.basePos?.x || 0.5) + pad.autoAmounts.x * 0.5 * Math.sin(pad.autoPhases.x)
+        );
+        const y = clamp(
+          (pad.basePos?.y || 0.5) + pad.autoAmounts.y * 0.5 * Math.sin(pad.autoPhases.y)
+        );
+        setPadPosition(pad, x, y);
+        if (pad.def) pad.def.map({ x, y });
+        updateNodeAudioParams(node);
+      };
+      leftDial.on('change', (v) => {
+        pad.autoAmounts.x = v;
+        updateAuto();
+      });
+      rightDial.on('change', (v) => {
+        pad.autoAmounts.y = v;
+        updateAuto();
+      });
       pad.on('change', v => {
+        pad.basePos = { x: v.x, y: v.y };
         def.map(v);
         updateNodeAudioParams(node);
       });
@@ -325,44 +384,49 @@ export async function showFmDroneOrbMenu(node) {
       };
       inputX.addEventListener('input', onChange);
       inputY.addEventListener('input', onChange);
-      wrap.appendChild(inputX);
-      wrap.appendChild(inputY);
+      row.appendChild(inputX);
+      row.appendChild(inputY);
       pad = {
         set: ({ x, y }) => {
           inputX.value = x;
           inputY.value = y;
           onChange();
-        }
+        },
+        basePos: { x: 0.5, y: 0.5 },
+        autoAmounts: { x: 0, y: 0 },
+        autoPhases: { x: Math.random() * Math.PI * 2, y: Math.random() * Math.PI * 2 },
       };
     }
+    pad.def = def;
     if (def.init) def.init(pad);
+    if (pad.basePos && pad.x !== undefined && pad.y !== undefined) {
+      pad.basePos = { x: pad.x, y: pad.y };
+    }
     container.appendChild(wrap);
     pads.push(pad);
   });
-
-  const btn = document.createElement('button');
-  btn.textContent = 'Auto Drift';
-  container.appendChild(btn);
-  let autoInterval = node.autoDriftInterval || null;
-  if (autoInterval) btn.classList.add('active');
-  btn.addEventListener('click', () => {
-    if (autoInterval) {
-      clearInterval(autoInterval);
-      node.autoDriftInterval = null;
-      autoInterval = null;
-      btn.classList.remove('active');
-    } else {
-      btn.classList.add('active');
-      autoInterval = setInterval(() => {
-        pads.forEach(p => {
-          const x = Math.random();
-          const y = Math.random();
-          setPadPosition(p, x, y);
-        });
-      }, 2000);
-      node.autoDriftInterval = autoInterval;
-    }
-  });
+  const reqAnim = globalThis.requestAnimationFrame || ((cb) => setTimeout(cb, 16));
+  const cancelAnim = globalThis.cancelAnimationFrame || clearTimeout;
+  if (node.autoDriftInterval) cancelAnim(node.autoDriftInterval);
+  const step = () => {
+    pads.forEach((p) => {
+      if (!p.autoAmounts) return;
+      p.autoPhases.x += 0.01 + p.autoAmounts.x * 0.01;
+      p.autoPhases.y += 0.013 + p.autoAmounts.y * 0.01;
+      const clamp = (v) => Math.min(1, Math.max(0, v));
+      const x = clamp(
+        (p.basePos?.x || 0.5) + p.autoAmounts.x * 0.5 * Math.sin(p.autoPhases.x)
+      );
+      const y = clamp(
+        (p.basePos?.y || 0.5) + p.autoAmounts.y * 0.5 * Math.sin(p.autoPhases.y)
+      );
+      setPadPosition(p, x, y);
+      if (p.def) p.def.map({ x, y });
+    });
+    updateNodeAudioParams(node);
+    node.autoDriftInterval = reqAnim(step);
+  };
+  step();
 }
 
 export function hideFmDroneOrbMenu() {
@@ -372,7 +436,8 @@ export function hideFmDroneOrbMenu() {
     if (nodeId) {
       const n = nodes.find((x) => String(x.id) === nodeId);
       if (n && n.autoDriftInterval) {
-        clearInterval(n.autoDriftInterval);
+        const cancelAnim = globalThis.cancelAnimationFrame || clearTimeout;
+        cancelAnim(n.autoDriftInterval);
         n.autoDriftInterval = null;
       }
     }
