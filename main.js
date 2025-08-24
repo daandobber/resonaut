@@ -81,7 +81,6 @@ if (typeof document === 'undefined' || !document.getElementById) {
 import { rgbaToHex, hexToRgba, hexToRgbForGradient, hslToRgba, rgbaToHsl } from "./utils/colorUtils.js";
 import { startMeteorShower, updateAndDrawMeteorShowers, createCollisionImpactVisual, METEOR_SHOWER_DEFAULT_MAX_RADIUS, METEOR_SHOWER_DEFAULT_GROWTH_RATE, MAX_METEOR_SHOWER_GENERATIONS, PAIR_INTERACTION_COOLDOWN_SECONDS, COLLISION_SPAWN_COOLDOWN_SECONDS } from './utils/meteor.js';
 import { startRecording, stopRecording } from "./recordingUtils.js";
-import { canvases, switchTo, canvasStates, getCurrentIndex as getCurrentCanvasIndex } from './canvasManager.js';
 import { base64ToArrayBuffer } from './utils/audioBufferUtils.js';
 import {
   patchState,
@@ -334,8 +333,6 @@ const {
   perfReverbDecayValue,
   perfReverbDampSlider,
   perfReverbDampValue,
-  canvasSwitcherEl,
-  canvasSwitcherToggle,
   helpWizard,
   wizardArrow,
   wizardHighlight,
@@ -395,8 +392,6 @@ const MIDI_ORB_TYPE = "midi_orb";
 const RESONAUTER_TYPE = "resonauter";
 const RADIO_ORB_TYPE = "radio_orb";
 const ALIEN_DRONE_TYPE = "alien_drone";
-const CANVAS_SEND_ORB_TYPE = "canvas_orb_send";
-const CANVAS_RECEIVE_ORB_TYPE = "canvas_orb_receive";
 const TIMELINE_GRID_DEFAULT_WIDTH = 250;
 const TIMELINE_GRID_DEFAULT_HEIGHT = 400;
 const TIMELINE_GRID_DEFAULT_SPEED = 4.0;
@@ -2294,8 +2289,6 @@ export function createAudioNodesForNode(node) {
         node.type === GRID_SEQUENCER_TYPE ||
         node.type === SPACERADAR_TYPE ||
         node.type === CRANK_RADAR_TYPE ||
-        node.type === CANVAS_SEND_ORB_TYPE ||
-        node.type === CANVAS_RECEIVE_ORB_TYPE ||
         node.type === CLOCKWORK_ORB_TYPE
     ) {
         return null;
@@ -6183,31 +6176,6 @@ function propagateTrigger(
           canPropagateOriginalPulseFurther = true;
         }
       }
-    } else if (currentNode.type === CANVAS_SEND_ORB_TYPE) {
-      playPrimaryAudioEffect = false;
-      canPropagateOriginalPulseFurther = false;
-      currentNode.animationState = 1;
-      if (typeof currentNode.targetCanvasIndex === "number") {
-        switchTo(currentNode.targetCanvasIndex);
-      }
-      if (currentNode.receiverId) {
-        const recv = findNodeById(currentNode.receiverId);
-        if (recv) {
-          propagateTrigger(
-            recv,
-            0,
-            pulseId + Math.random(),
-            currentNode.id,
-            hopsRemaining - 1,
-            { type: "trigger", data: pulseDataForNextPropagation },
-            null,
-          );
-        }
-      }
-    } else if (currentNode.type === CANVAS_RECEIVE_ORB_TYPE) {
-      playPrimaryAudioEffect = false;
-      canPropagateOriginalPulseFurther = true;
-      currentNode.animationState = 1;
     } else if (currentNode.type === "global_key_setter") {
         playPrimaryAudioEffect = false;
         canPropagateOriginalPulseFurther = true;
@@ -11218,14 +11186,6 @@ function drawNode(node) {
   } else if (node.type === "switch") {
     fillColor = styles.getPropertyValue("--switch-node-color").trim();
     borderColor = styles.getPropertyValue("--switch-node-border").trim();
-    glowColor = borderColor;
-  } else if (node.type === CANVAS_SEND_ORB_TYPE) {
-    fillColor = styles.getPropertyValue("--canvas-orb-send-color").trim();
-    borderColor = styles.getPropertyValue("--canvas-orb-send-border").trim();
-    glowColor = borderColor;
-  } else if (node.type === CANVAS_RECEIVE_ORB_TYPE) {
-    fillColor = styles.getPropertyValue("--canvas-orb-receive-color").trim();
-    borderColor = styles.getPropertyValue("--canvas-orb-receive-border").trim();
     glowColor = borderColor;
   } else if (node.type === PRORB_TYPE) {
     const nodeBaseHue =
@@ -19142,82 +19102,6 @@ function populateEditPanel() {
                 }
                 fragment.appendChild(keySetterSection);
 
-            } else if (node && node.type === CANVAS_SEND_ORB_TYPE) {
-                const section = document.createElement('div');
-                section.classList.add('panel-section');
-
-                const targetLabel = document.createElement('label');
-                targetLabel.textContent = 'Target Canvas: ';
-                targetLabel.htmlFor = `edit-canvas-target-${node.id}`;
-                section.appendChild(targetLabel);
-
-                const targetSelect = document.createElement('select');
-                targetSelect.id = `edit-canvas-target-${node.id}`;
-                canvases.forEach((c, idx) => {
-                    const opt = document.createElement('option');
-                    opt.value = idx;
-                    opt.textContent = `Canvas ${idx + 1}`;
-                    if (idx === (node.targetCanvasIndex || 0)) opt.selected = true;
-                    targetSelect.appendChild(opt);
-                });
-                targetSelect.addEventListener('change', (e) => {
-                    const newIndex = parseInt(e.target.value, 10);
-                    selectedArray.forEach(elData => {
-                        const n = findNodeById(elData.id);
-                        if (n && n.type === CANVAS_SEND_ORB_TYPE) n.targetCanvasIndex = newIndex;
-                    });
-                    saveState();
-                });
-                section.appendChild(targetSelect);
-
-                const receiverLabel = document.createElement('label');
-                receiverLabel.textContent = ' Receiver:';
-                receiverLabel.htmlFor = `edit-canvas-receiver-${node.id}`;
-                receiverLabel.style.marginLeft = '10px';
-                section.appendChild(receiverLabel);
-
-                const receiverSelect = document.createElement('select');
-                receiverSelect.id = `edit-canvas-receiver-${node.id}`;
-                const noneOpt = document.createElement('option');
-                noneOpt.value = '';
-                noneOpt.textContent = 'None';
-                if (!node.receiverId) noneOpt.selected = true;
-                receiverSelect.appendChild(noneOpt);
-
-                const allReceivers = [];
-                nodes.forEach(nd => {
-                    if (nd.type === CANVAS_RECEIVE_ORB_TYPE) {
-                        allReceivers.push({ node: nd, canvas: getCurrentCanvasIndex ? getCurrentCanvasIndex() : 0 });
-                    }
-                });
-                canvasStates.forEach((state, idx) => {
-                    if (!state || !state.nodes) return;
-                    state.nodes.forEach(nd => {
-                        if (nd.type === CANVAS_RECEIVE_ORB_TYPE) {
-                            allReceivers.push({ node: nd, canvas: idx });
-                        }
-                    });
-                });
-
-                allReceivers.forEach(r => {
-                    const opt = document.createElement('option');
-                    opt.value = r.node.id;
-                    opt.textContent = `Canvas ${r.canvas + 1} - Receive #${r.node.id}`;
-                    if (r.node.id === node.receiverId) opt.selected = true;
-                    receiverSelect.appendChild(opt);
-                });
-                receiverSelect.addEventListener('change', (e) => {
-                    const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
-                    selectedArray.forEach(elData => {
-                        const n = findNodeById(elData.id);
-                        if (n && n.type === CANVAS_SEND_ORB_TYPE) n.receiverId = val;
-                    });
-                    saveState();
-                });
-                section.appendChild(receiverSelect);
-
-                fragment.appendChild(section);
-
             } else if (node && node.audioParams) {
                 let sectionCreatedForThisType = false;
                 let currentSection;
@@ -20521,16 +20405,6 @@ function populateToolMenu() {
       icon: "🔑",
       label: "Key Setter",
       handler: () => setupAddTool(null, "global_key_setter"),
-    },
-    {
-      icon: "⚡",
-      label: "Send Canvas Orb",
-      handler: () => setupAddTool(null, CANVAS_SEND_ORB_TYPE, false),
-    },
-    {
-      icon: "🎯",
-      label: "Receive Canvas Orb",
-      handler: () => setupAddTool(null, CANVAS_RECEIVE_ORB_TYPE, false),
     },
   ];
 
@@ -22819,15 +22693,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
      newNode.isStartNode = false;
   }
 
-  if (type === CANVAS_SEND_ORB_TYPE) {
-     newNode.targetCanvasIndex = 0;
-     newNode.receiverId = null;
-     newNode.audioParams = null;
-     visualStyle = "canvas_orb_send";
-  } else if (type === CANVAS_RECEIVE_ORB_TYPE) {
-     newNode.audioParams = null;
-     visualStyle = "canvas_orb_receive";
-  } else if (type === PRORB_TYPE) {
+  if (type === PRORB_TYPE) {
     newNode.audioParams = {
         pitch: initialPitch,
         scaleIndex: initialScaleIndex,
@@ -23439,10 +23305,6 @@ if (midiSyncOutCheckbox)
     }
   });
 
-if (canvasSwitcherToggle && canvasSwitcherEl)
-  canvasSwitcherToggle.addEventListener("change", (e) => {
-    canvasSwitcherEl.classList.toggle("hidden", !e.target.checked);
-  });
 
 if (groupVolumeSlider) {
   groupVolumeSlider.addEventListener("input", (e) => {
