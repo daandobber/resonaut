@@ -228,6 +228,8 @@ export async function showToneFmSynthMenu(node) {
     { suffix: 'EnvRelease', short: 'R', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
     { suffix: 'Ratio', short: 'Rat', min: 0.1, max: 10, step: 0.1, format: v => v.toFixed(1) },
     { suffix: 'DepthScale', short: 'Dep', min: 0, max: 10, step: 0.1, format: v => (v * 10).toFixed(1) },
+    { suffix: 'LfoRate', short: 'LR', min: 0, max: 10, step: 0.01, format: v => v.toFixed(2) },
+    { suffix: 'LfoDepth', short: 'LD', min: 0, max: 10, step: 0.1, format: v => (v * 10).toFixed(1) },
     { suffix: 'Detune', short: 'Det', min: -1200, max: 1200, step: 1, format: v => v.toFixed(0) },
     { suffix: 'Waveform', short: 'W', type: 'select', options: ['sine', 'square', 'triangle', 'sawtooth'] },
   ];
