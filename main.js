@@ -4,6 +4,7 @@ import { createAnalogOrb, DEFAULT_ANALOG_ORB_PARAMS } from './orbs/analog-orb.js
 import { showAnalogOrbMenu, hideAnalogOrbMenu, hideTonePanel } from './orbs/analog-orb-ui.js';
 import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
 import * as Tone from 'tone';
+import { playWithToneSampler } from './samplerPlayer.js';
 import { sanitizeWaveformType } from './utils/oscillatorUtils.js';
 import { morphShape } from './utils/fmShapeMorph.js';
 import { DEFAULT_RESONAUTER_PARAMS, resonauterGranParams, createResonauterOrbAudioNodes, playResonauterSound } from './orbs/resonauter-orb.js';
@@ -8834,34 +8835,7 @@ function getReversedBuffer(definition) {
   return reversed;
 }
 
-function playWithToneSampler(
-  buffer,
-  baseFreq,
-  freq,
-  startTime,
-  attack,
-  release,
-  velocity,
-  destination,
-) {
-  const rootNote = Tone.Frequency(baseFreq).toNote();
-  const note = Tone.Frequency(freq).toNote();
-  const sampler = new Tone.Sampler();
-  sampler.add(rootNote, buffer);
-  sampler.attack = attack;
-  sampler.release = release;
-  sampler.connect(destination);
-  sampler.triggerAttackRelease(note, buffer.duration, startTime, velocity);
-  const disposeTime =
-    (startTime - audioContext.currentTime + buffer.duration + release + 0.5) *
-    1000;
-  setTimeout(() => {
-    try {
-      sampler.disconnect();
-      sampler.dispose();
-    } catch (e) {}
-  }, disposeTime);
-}
+// playWithToneSampler moved to samplerPlayer.js
 
 function animateSamplerPlayhead(node, startFrac, endFrac, duration, attack = 0, release = 0) {
   if (attack + release > duration) {
