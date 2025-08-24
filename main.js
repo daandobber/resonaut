@@ -11037,16 +11037,15 @@ function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
   const size =
     r * (0.05 + (node.audioParams?.filterResonance || 0) * 0.05);
 
-  if (!node.swarmParticles) {
-    node.swarmParticles = [];
-  }
-  if (node.swarmParticles.length === 0) {
-    node.swarmParticles.push({
-      x: node.x,
-      y: node.y,
-      vx: (Math.random() - 0.5) * rate,
-      vy: (Math.random() - 0.5) * rate,
-    });
+  if (!node.swarmParticles || node.swarmParticles[0]?.vx === undefined) {
+    node.swarmParticles = [
+      {
+        x: node.x,
+        y: node.y,
+        vx: (Math.random() - 0.5) * rate,
+        vy: (Math.random() - 0.5) * rate,
+      },
+    ];
   }
   while (node.swarmParticles.length < targetCount) {
     node.swarmParticles.push({
