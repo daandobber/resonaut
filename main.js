@@ -11024,6 +11024,87 @@ function drawGrid() {
 
 
 
+function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
+  const particleCount = 20;
+  const size = r * 0.15;
+  const rate = node.audioParams?.lfoRate || 0.5;
+  if (!node.swarmParticles || node.swarmParticles[0]?.vx === undefined) {
+    node.swarmParticles = Array.from({ length: particleCount }, () => ({
+      x: node.x + (Math.random() - 0.5) * r,
+      y: node.y + (Math.random() - 0.5) * r,
+      vx: (Math.random() - 0.5) * rate,
+      vy: (Math.random() - 0.5) * rate,
+    }));
+  }
+  const maxSpeed = 0.5 + rate * 2;
+  const attractionStrength = 0.0005 * (0.5 + rate);
+  const neighborRadius = r * 0.8;
+  const separationDist = r * 0.2;
+  node.swarmParticles.forEach((p) => {
+    let ax = (node.x - p.x) * attractionStrength;
+    let ay = (node.y - p.y) * attractionStrength;
+    let neighbors = 0;
+    let avgVx = 0,
+      avgVy = 0,
+      avgX = 0,
+      avgY = 0;
+    node.swarmParticles.forEach((o) => {
+      if (o === p) return;
+      const dx = o.x - p.x;
+      const dy = o.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < neighborRadius) {
+        neighbors++;
+        avgVx += o.vx;
+        avgVy += o.vy;
+        avgX += o.x;
+        avgY += o.y;
+        if (dist < separationDist) {
+          ax -= dx * 0.01;
+          ay -= dy * 0.01;
+        }
+      }
+    });
+    if (neighbors > 0) {
+      avgVx /= neighbors;
+      avgVy /= neighbors;
+      avgX /= neighbors;
+      avgY /= neighbors;
+      ax += (avgVx - p.vx) * 0.05;
+      ay += (avgVy - p.vy) * 0.05;
+      ax += (avgX - p.x) * 0.0005;
+      ay += (avgY - p.y) * 0.0005;
+    }
+    nodes.forEach((other) => {
+      if (
+        other !== node &&
+        other.audioParams?.visualStyle === "fm_drone_swarm"
+      ) {
+        const dx = other.x - p.x;
+        const dy = other.y - p.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < r * 6) {
+          ax += dx * 0.0002;
+          ay += dy * 0.0002;
+        }
+      }
+    });
+    p.vx += ax;
+    p.vy += ay;
+    const speed = Math.hypot(p.vx, p.vy);
+    if (speed > maxSpeed) {
+      p.vx = (p.vx / speed) * maxSpeed;
+      p.vy = (p.vy / speed) * maxSpeed;
+    }
+    p.x += p.vx;
+    p.y += p.vy;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+    ctx.fillStyle = color.fill;
+    ctx.fill();
+  });
+}
+
 function drawNode(node) {
   if (node.type === "nebula" && nebulaIdsToHide.has(node.id)) return;
   ctx.shadowBlur = 0;
@@ -11946,43 +12027,13 @@ function drawNode(node) {
     if (currentPlanetColors) {
       switch (visualStyle) {
         case "fm_drone_swarm": {
-          const particleCount = 20;
-          const size = r * 0.15;
-          if (!node.swarmParticles) {
-            node.swarmParticles = Array.from({ length: particleCount }, () => ({
-              angle: Math.random() * Math.PI * 2,
-              radius: r * (0.3 + Math.random() * 0.7),
-              speed: 0.01 + Math.random() * 0.02,
-            }));
-          }
-          node.swarmParticles.forEach((p) => {
-            const rate = node.audioParams?.lfoRate || 0.5;
-            p.angle += p.speed * (0.5 + rate);
-            const px = node.x + Math.cos(p.angle) * p.radius;
-            const py = node.y + Math.sin(p.angle) * p.radius;
-            ctx.beginPath();
-            ctx.arc(px, py, size, 0, Math.PI * 2);
-            ctx.fillStyle = currentPlanetColors.fill;
-            ctx.fill();
-          });
-          nodes.forEach((other) => {
-            if (
-              other !== node &&
-              other.audioParams?.visualStyle === "fm_drone_swarm"
-            ) {
-              const dx = other.x - node.x;
-              const dy = other.y - node.y;
-              const dist = Math.hypot(dx, dy);
-              if (dist < r * 4) {
-                ctx.strokeStyle = currentPlanetColors.border;
-                ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
-                ctx.beginPath();
-                ctx.moveTo(node.x, node.y);
-                ctx.lineTo(other.x, other.y);
-                ctx.stroke();
-              }
-            }
-          });
+          updateAndDrawFmDroneSwarm(
+            node,
+            nodes,
+            ctx,
+            r,
+            currentPlanetColors
+          );
           break;
         }
         case "planet_mercury":
@@ -12858,45 +12909,11 @@ function drawNode(node) {
   } else if (node.type === FM_DRONE_TYPE) {
     const visualStyle = node.audioParams?.visualStyle;
     if (visualStyle === "fm_drone_swarm") {
-      const particleCount = 20;
-      const size = r * 0.15;
       const swarmFill = hslToRgba(290, 70, 70, 0.8);
       const swarmBorder = hslToRgba(290, 70, 50, 0.9);
-      if (!node.swarmParticles) {
-        node.swarmParticles = Array.from({ length: particleCount }, () => ({
-          angle: Math.random() * Math.PI * 2,
-          radius: r * (0.3 + Math.random() * 0.7),
-          speed: 0.01 + Math.random() * 0.02,
-        }));
-      }
-      node.swarmParticles.forEach((p) => {
-        const rate = node.audioParams?.lfoRate || 0.5;
-        p.angle += p.speed * (0.5 + rate);
-        const px = node.x + Math.cos(p.angle) * p.radius;
-        const py = node.y + Math.sin(p.angle) * p.radius;
-        ctx.beginPath();
-        ctx.arc(px, py, size, 0, Math.PI * 2);
-        ctx.fillStyle = swarmFill;
-        ctx.fill();
-      });
-      nodes.forEach((other) => {
-        if (
-          other !== node &&
-          other.type === FM_DRONE_TYPE &&
-          other.audioParams?.visualStyle === "fm_drone_swarm"
-        ) {
-          const dx = other.x - node.x;
-          const dy = other.y - node.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist < r * 4) {
-            ctx.strokeStyle = swarmBorder;
-            ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
-            ctx.beginPath();
-            ctx.moveTo(node.x, node.y);
-            ctx.lineTo(other.x, other.y);
-            ctx.stroke();
-          }
-        }
+      updateAndDrawFmDroneSwarm(node, nodes, ctx, r, {
+        fill: swarmFill,
+        border: swarmBorder,
       });
     } else {
       ctx.save();
