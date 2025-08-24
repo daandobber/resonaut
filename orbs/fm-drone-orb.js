@@ -26,17 +26,38 @@ export const DEFAULT_FM_DRONE_PARAMS = {
   lfoDepth: 200,
   reverbSend: 0.2,
   delaySend: 0.2,
+  waveMorph: 0,
   visualStyle: 'fm_drone_swarm',
   ignoreGlobalSync: false,
 };
+
+export function getWaveMorphWeights(morph = 0) {
+  const seg = morph * 3;
+  const weights = [0, 0, 0, 0];
+  if (seg <= 1) {
+    weights[0] = 1 - seg;
+    weights[1] = seg;
+  } else if (seg <= 2) {
+    weights[1] = 2 - seg;
+    weights[2] = seg - 1;
+  } else {
+    weights[2] = 3 - seg;
+    weights[3] = seg - 2;
+  }
+  return weights;
+}
 
 export function createFmDroneAudioNodes(node) {
   const p = node.audioParams;
   const ctx = globalThis.audioContext;
   const baseFreq = p.pitch || p.baseFreq || 110;
-  const carrier = ctx.createOscillator();
-  carrier.type = p.oscType || 'sine';
-  carrier.frequency.value = baseFreq;
+  const carrierTypes = ['sine', 'triangle', 'sawtooth', 'square'];
+  const carriers = carrierTypes.map((type) => {
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.value = baseFreq;
+    return osc;
+  });
 
   const modOsc = ctx.createOscillator();
   modOsc.type = 'sine';
@@ -45,7 +66,7 @@ export function createFmDroneAudioNodes(node) {
   const modGain = ctx.createGain();
   modGain.gain.value = p.modulationIndex || 10;
   modOsc.connect(modGain);
-  modGain.connect(carrier.frequency);
+  carriers.forEach((osc) => modGain.connect(osc.frequency));
 
   const lfo = ctx.createOscillator();
   lfo.type = 'sine';
@@ -60,7 +81,15 @@ export function createFmDroneAudioNodes(node) {
   filter.frequency.value = p.filterCutoff || 1200;
   filter.Q.value = p.filterResonance || 1.5;
 
-  carrier.connect(filter);
+  const carrierGains = carriers.map(() => ctx.createGain());
+  const weights = getWaveMorphWeights(p.waveMorph || 0);
+  carriers.forEach((osc, i) => {
+    carrierGains[i].gain.value = weights[i];
+    osc.connect(carrierGains[i]);
+  });
+  const carrierSum = ctx.createGain();
+  carrierGains.forEach((g) => g.connect(carrierSum));
+  carrierSum.connect(filter);
 
   const reverbSendGain = ctx.createGain();
   reverbSendGain.gain.value = p.reverbSend ?? 0.2;
@@ -84,12 +113,13 @@ export function createFmDroneAudioNodes(node) {
     delaySendGain.connect(globalThis.masterDelaySendGain);
 
   const now = ctx.currentTime;
-  carrier.start(now);
+  carriers.forEach((osc) => osc.start(now));
   modOsc.start(now);
   lfo.start(now);
 
   return {
-    carrier,
+    carriers,
+    carrierGains,
     modOsc,
     modGain,
     lfo,
@@ -108,8 +138,14 @@ export function updateFmDroneParams(audioNodes) {
   const ctx = globalThis.audioContext;
   const now = ctx.currentTime;
   const baseFreq = p.pitch ?? p.baseFreq ?? 110;
-  audioNodes.carrier.frequency.setTargetAtTime(baseFreq, now, 0.1);
-  audioNodes.modOsc.frequency.setTargetAtTime(baseFreq * (p.harmonicity ?? 1.5), now, 0.1);
+  audioNodes.carriers.forEach((osc) =>
+    osc.frequency.setTargetAtTime(baseFreq, now, 0.1)
+  );
+  audioNodes.modOsc.frequency.setTargetAtTime(
+    baseFreq * (p.harmonicity ?? 1.5),
+    now,
+    0.1
+  );
   audioNodes.modGain.gain.setTargetAtTime(p.modulationIndex ?? 10, now, 0.1);
   audioNodes.lfo.frequency.setTargetAtTime(p.lfoRate ?? 0.05, now, 0.1);
   audioNodes.lfoGain.gain.setTargetAtTime(p.lfoDepth ?? 200, now, 0.1);
@@ -117,14 +153,15 @@ export function updateFmDroneParams(audioNodes) {
   audioNodes.filter.Q.setTargetAtTime(p.filterResonance ?? 1.5, now, 0.1);
   audioNodes.reverbSendGain.gain.setTargetAtTime(p.reverbSend ?? 0.2, now, 0.1);
   audioNodes.delaySendGain.gain.setTargetAtTime(p.delaySend ?? 0.2, now, 0.1);
-  if (p.oscType) {
-    audioNodes.carrier.type = p.oscType;
-  }
+  const weights = getWaveMorphWeights(p.waveMorph || 0);
+  audioNodes.carrierGains.forEach((g, i) =>
+    g.gain.setTargetAtTime(weights[i], now, 0.1)
+  );
 }
 
 export function stopFmDroneAudioNodes(audioNodes) {
   try {
-    audioNodes.carrier?.stop();
+    audioNodes.carriers?.forEach((osc) => osc.stop());
     audioNodes.modOsc?.stop();
     audioNodes.lfo?.stop();
   } catch (e) {}
@@ -148,30 +185,6 @@ export async function showFmDroneOrbMenu(node) {
   tonePanelContent.innerHTML = '';
   tonePanelContent.appendChild(container);
 
-  const waveWrap = document.createElement('div');
-  waveWrap.style.display = 'flex';
-  waveWrap.style.flexDirection = 'column';
-  waveWrap.style.alignItems = 'center';
-  waveWrap.style.marginBottom = '6px';
-  const waveLabel = document.createElement('div');
-  waveLabel.textContent = 'Wave';
-  waveLabel.style.fontSize = '10px';
-  waveWrap.appendChild(waveLabel);
-  const waveSelect = document.createElement('select');
-  ['sine','square','triangle','sawtooth'].forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
-    if ((node.audioParams.oscType || 'sine') === t) opt.selected = true;
-    waveSelect.appendChild(opt);
-  });
-  waveSelect.addEventListener('change', () => {
-    node.audioParams.oscType = waveSelect.value;
-    updateNodeAudioParams(node);
-  });
-  waveWrap.appendChild(waveSelect);
-  container.appendChild(waveWrap);
-
   const pads = [];
   const setPadPosition = (pad, x, y) => {
     if (!pad) return;
@@ -183,6 +196,17 @@ export async function showFmDroneOrbMenu(node) {
     }
   };
   const padDefs = [
+    {
+      label: 'Wave Morph',
+      map: (v) => {
+        node.audioParams.waveMorph = v.x;
+      },
+      init: (pad) => {
+        const clamp = (val) => Math.min(1, Math.max(0, val));
+        const x = clamp(node.audioParams.waveMorph ?? DEFAULT_FM_DRONE_PARAMS.waveMorph);
+        setPadPosition(pad, x, 0.5);
+      },
+    },
     {
       label: 'Galactic Drift',
       map: (v) => {
