@@ -1,6 +1,6 @@
 export const FM_DRONE_TYPE = 'fm_drone';
 import { tonePanelContent } from '../utils/domElements.js';
-import { updateNodeAudioParams, nodes } from '../main.js';
+import { updateNodeAudioParams } from '../main.js';
 import { showTonePanel, hideAnalogOrbMenu } from './analog-orb-ui.js';
 
 let NexusPromise = typeof window !== 'undefined' ? import('nexusui') : null;
@@ -336,12 +336,12 @@ export async function showFmDroneOrbMenu(node) {
   const btn = document.createElement('button');
   btn.textContent = 'Auto Drift';
   container.appendChild(btn);
-  let autoInterval = node.autoDriftInterval || null;
+  let autoInterval = autoDriftIntervals.get(node.id) || null;
   if (autoInterval) btn.classList.add('active');
   btn.addEventListener('click', () => {
     if (autoInterval) {
       clearInterval(autoInterval);
-      node.autoDriftInterval = null;
+      autoDriftIntervals.delete(node.id);
       autoInterval = null;
       btn.classList.remove('active');
     } else {
@@ -353,7 +353,7 @@ export async function showFmDroneOrbMenu(node) {
           setPadPosition(p, x, y);
         });
       }, 2000);
-      node.autoDriftInterval = autoInterval;
+      autoDriftIntervals.set(node.id, autoInterval);
     }
   });
 }
@@ -362,12 +362,9 @@ export function hideFmDroneOrbMenu() {
   const existing = document.getElementById('fm-drone-container');
   if (existing) {
     const nodeId = existing.dataset.nodeId;
-    if (nodeId) {
-      const n = nodes.find((x) => String(x.id) === nodeId);
-      if (n && n.autoDriftInterval) {
-        clearInterval(n.autoDriftInterval);
-        n.autoDriftInterval = null;
-      }
+    if (nodeId && autoDriftIntervals.has(nodeId)) {
+      clearInterval(autoDriftIntervals.get(nodeId));
+      autoDriftIntervals.delete(nodeId);
     }
     existing.remove();
   }
