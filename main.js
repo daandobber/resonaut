@@ -11026,7 +11026,12 @@ function drawGrid() {
 
 function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
   const rate = node.audioParams?.lfoRate || 0.5;
-  const swarmIntensity = node.audioParams?.swarmCount || 0;
+  const modIndex = node.audioParams?.modulationIndex || 0;
+  const harmonicity = node.audioParams?.harmonicity || 1;
+  const swarmIntensity = Math.min(
+    1,
+    modIndex / 20 + harmonicity / 6
+  );
   const targetCount = Math.max(1, Math.floor(swarmIntensity * 40) + 1);
   const size =
     r * (0.05 + (node.audioParams?.filterResonance || 0) * 0.05);
@@ -11052,7 +11057,6 @@ function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
   while (node.swarmParticles.length > targetCount) {
     node.swarmParticles.pop();
   }
-  const modIndex = node.audioParams?.modulationIndex || 0;
   const maxSpeed = 0.5 + rate * 2 + swarmIntensity * 2;
   const attractionStrength =
     0.0005 * (0.5 + rate) * (1 + modIndex / 10);
