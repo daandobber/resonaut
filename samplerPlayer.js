@@ -18,7 +18,8 @@ export function playWithToneSampler(
   gain.gain.setTargetAtTime(0, startTime + attack + buffer.duration, release / 4);
 
   source.connect(gain);
-  gain.connect(destination);
+  const dest = destination ?? audioContext.destination;
+  gain.connect(dest);
 
   source.start(startTime, 0, buffer.duration);
   const stopTime = startTime + buffer.duration + release;
