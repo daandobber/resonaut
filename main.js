@@ -38,6 +38,7 @@ import {
   showFmDroneOrbMenu,
   hideFmDroneOrbMenu,
   DEFAULT_FM_DRONE_PARAMS,
+  getWaveMorphWeights,
 } from './orbs/fm-drone-orb.js';
 import { MOTOR_ORB_TYPE, DEFAULT_MOTOR_PARAMS, updateMotorOrb, showMotorOrbMenu, hideMotorOrbMenu, hideMotorOrbPanel } from './orbs/motor-orb.js';
 import { CLOCKWORK_ORB_TYPE, DEFAULT_CLOCKWORK_PARAMS, CLOCKWORK_FORCE_DEFAULT, CLOCKWORK_DECAY_DEFAULT, updateClockworkOrb, advanceClockworkOrb, showClockworkOrbMenu, hideClockworkOrbMenu, hideClockworkOrbPanel } from './orbs/clockwork-orb.js';
@@ -11065,6 +11066,9 @@ function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
   const neighborRadius = r * (0.4 + modIndex * 0.02);
   const separationDist =
     r * (0.1 + (node.audioParams?.filterResonance || 0) * 0.05);
+  const shapeWeights = getWaveMorphWeights(
+    node.audioParams?.waveMorph || 0
+  );
   node.swarmParticles.forEach((p) => {
     let ax = (node.x - p.x) * attractionStrength;
     let ay = (node.y - p.y) * attractionStrength;
@@ -11123,10 +11127,45 @@ function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
     }
     p.x += p.vx;
     p.y += p.vy;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+    ctx.save();
+    ctx.translate(p.x, p.y);
     ctx.fillStyle = color.fill;
-    ctx.fill();
+    const drawShapes = [
+      () => {
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, Math.PI * 2);
+        ctx.fill();
+      },
+      () => {
+        ctx.beginPath();
+        ctx.moveTo(-size, size);
+        ctx.lineTo(0, -size);
+        ctx.lineTo(size, size);
+        ctx.closePath();
+        ctx.fill();
+      },
+      () => {
+        ctx.beginPath();
+        ctx.moveTo(-size, size);
+        ctx.lineTo(size, size);
+        ctx.lineTo(-size, -size);
+        ctx.closePath();
+        ctx.fill();
+      },
+      () => {
+        ctx.beginPath();
+        ctx.rect(-size, -size, size * 2, size * 2);
+        ctx.fill();
+      },
+    ];
+    drawShapes.forEach((fn, i) => {
+      const w = shapeWeights[i];
+      if (w > 0) {
+        ctx.globalAlpha = w;
+        fn();
+      }
+    });
+    ctx.restore();
   });
 }
 
