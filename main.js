@@ -4662,7 +4662,8 @@ export function triggerNodeEffect(
             scheduledStartTime + samplerAttack,
           );
           source.connect(perNoteSamplerGain);
-          perNoteSamplerGain.connect(lowPassFilter);
+          const filterInput = lowPassFilter && lowPassFilter.input ? lowPassFilter.input : lowPassFilter;
+          perNoteSamplerGain.connect(filterInput);
           const startPos = isReverse ? audioBuffer.duration - endOffset : startOffset;
           source.start(scheduledStartTime, startPos, playDur);
           if (currentSamplerNode === node && isMainNote) {
@@ -4738,7 +4739,8 @@ export function triggerNodeEffect(
           } catch (e) {}
         }
         oscillator1.connect(currentOsc1GainNode);
-        currentOsc1GainNode.connect(lowPassFilter);
+        const filterInput2 = lowPassFilter && lowPassFilter.input ? lowPassFilter.input : lowPassFilter;
+        currentOsc1GainNode.connect(filterInput2);
       }
 
       let osc1TargetGainLevel = intensity;
@@ -6274,7 +6276,8 @@ function playSingleRetrigger(
         }
 
         source.playbackRate.setValueAtTime(targetRate, scheduledPlayTime);
-        source.connect(audioNodes.lowPassFilter);
+        const filterInput3 = audioNodes.lowPassFilter && audioNodes.lowPassFilter.input ? audioNodes.lowPassFilter.input : audioNodes.lowPassFilter;
+        source.connect(filterInput3);
 
         const mainNodeGain = audioNodes.gainNode;
         mainNodeGain.gain.cancelScheduledValues(scheduledPlayTime);
