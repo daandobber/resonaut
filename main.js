@@ -3835,6 +3835,9 @@ export function updateNodeAudioParams(node) {
     modulatorGain2,
     modulatorOsc3,
     modulatorGain3,
+    modulatorLfo1,
+    modulatorLfo2,
+    modulatorLfo3,
     carrierEnv,
     modulatorEnv1,
     modulatorEnv2,
@@ -3931,6 +3934,39 @@ export function updateNodeAudioParams(node) {
       if (modulatorGain3 && params.modulator3DepthScale !== undefined) {
         modulatorGain3.gain.setTargetAtTime(
           params.modulator3DepthScale * 10,
+          now,
+          generalUpdateTimeConstant,
+        );
+      }
+      if (modulatorLfo1) {
+        const base = (params.modulatorDepthScale ?? 0) * 10;
+        const depth = (params.modulatorLfoDepth ?? 0) * 10;
+        modulatorLfo1.min = base - depth;
+        modulatorLfo1.max = base + depth;
+        modulatorLfo1.frequency.setTargetAtTime(
+          params.modulatorLfoRate ?? 0,
+          now,
+          generalUpdateTimeConstant,
+        );
+      }
+      if (modulatorLfo2) {
+        const base = (params.modulator2DepthScale ?? 0) * 10;
+        const depth = (params.modulator2LfoDepth ?? 0) * 10;
+        modulatorLfo2.min = base - depth;
+        modulatorLfo2.max = base + depth;
+        modulatorLfo2.frequency.setTargetAtTime(
+          params.modulator2LfoRate ?? 0,
+          now,
+          generalUpdateTimeConstant,
+        );
+      }
+      if (modulatorLfo3) {
+        const base = (params.modulator3DepthScale ?? 0) * 10;
+        const depth = (params.modulator3LfoDepth ?? 0) * 10;
+        modulatorLfo3.min = base - depth;
+        modulatorLfo3.max = base + depth;
+        modulatorLfo3.frequency.setTargetAtTime(
+          params.modulator3LfoRate ?? 0,
           now,
           generalUpdateTimeConstant,
         );

@@ -6,12 +6,18 @@ export const DEFAULT_TONE_FM_SYNTH_PARAMS = {
   modulatorWaveform: 'sine',
   modulatorRatio: 1,
   modulatorDepthScale: 0,
+  modulatorLfoRate: 0,
+  modulatorLfoDepth: 0,
   modulator2Waveform: 'sine',
   modulator2Ratio: 1,
   modulator2DepthScale: 0,
+  modulator2LfoRate: 0,
+  modulator2LfoDepth: 0,
   modulator3Waveform: 'sine',
   modulator3Ratio: 1,
   modulator3DepthScale: 0,
+  modulator3LfoRate: 0,
+  modulator3LfoDepth: 0,
   algorithm: 0,
   carrierEnvAttack: 0.01,
   carrierEnvDecay: 0.3,
@@ -129,11 +135,20 @@ export function createToneFmSynthOrb(node) {
     const envGain = new Tone.Gain(0);
     env.connect(envGain.gain);
     osc.connect(envGain);
-    const modGain = new Tone.Gain((p[`${prefix}DepthScale`] ?? 0) * 10);
+    const depthBase = (p[`${prefix}DepthScale`] ?? 0) * 10;
+    const modGain = new Tone.Gain(depthBase);
     envGain.connect(modGain);
+    const lfo = new Tone.LFO({
+      frequency: p[`${prefix}LfoRate`] ?? 0,
+      min: depthBase - (p[`${prefix}LfoDepth`] ?? 0) * 10,
+      max: depthBase + (p[`${prefix}LfoDepth`] ?? 0) * 10,
+      phase: 90,
+    });
+    lfo.connect(modGain.gain);
+    lfo.start();
     const outGain = new Tone.Gain(1);
     envGain.connect(outGain);
-    return { osc, env, modGain, outGain };
+    return { osc, env, modGain, outGain, lfo };
   }
 
   const op1 = createOperator('carrier', 'carrier');
@@ -229,12 +244,15 @@ export function createToneFmSynthOrb(node) {
     modulatorOsc1: op2.osc,
     modulatorGain1: op2.modGain,
     modulatorEnv1: op2.env,
+    modulatorLfo1: op2.lfo,
     modulatorOsc2: op3.osc,
     modulatorGain2: op3.modGain,
     modulatorEnv2: op3.env,
+    modulatorLfo2: op3.lfo,
     modulatorOsc3: op4.osc,
     modulatorGain3: op4.modGain,
     modulatorEnv3: op4.env,
+    modulatorLfo3: op4.lfo,
     lowPassFilter: filter,
     gainNode,
     reverbSendGain,
