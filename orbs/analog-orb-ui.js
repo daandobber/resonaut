@@ -144,6 +144,7 @@ export function hideAnalogOrbMenu() {
 
 export function hideTonePanel() {
   if (tonePanel) tonePanel.classList.add('hidden');
+  import('./fm-drone-orb.js').then((m) => m.hideFmDroneOrbMenu?.());
 }
 
 export function positionTonePanel(node) {
