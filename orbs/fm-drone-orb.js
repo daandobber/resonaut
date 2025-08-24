@@ -26,7 +26,6 @@ export const DEFAULT_FM_DRONE_PARAMS = {
   lfoDepth: 200,
   reverbSend: 0.2,
   delaySend: 0.2,
-  swarmCount: 0,
   visualStyle: 'fm_drone_swarm',
   ignoreGlobalSync: false,
 };
@@ -181,12 +180,41 @@ export async function showFmDroneOrbMenu(node) {
         node.audioParams.harmonicity = 0.5 + v.x * 4.5;
         node.audioParams.modulationIndex = v.y * 20;
       },
+      init: (pad) => {
+        const clamp = (val) => Math.min(1, Math.max(0, val));
+        const x = clamp(
+          ((node.audioParams.harmonicity ?? DEFAULT_FM_DRONE_PARAMS.harmonicity) - 0.5) /
+            4.5
+        );
+        const y = clamp(
+          (node.audioParams.modulationIndex ?? DEFAULT_FM_DRONE_PARAMS.modulationIndex) /
+            20
+        );
+        if (pad.set) pad.set({ x, y });
+        if (pad.position) pad.set({ x, y });
+      },
     },
     {
       label: 'Shimmer Veil',
       map: (v) => {
         node.audioParams.filterCutoff = 200 + v.x * 4800;
         node.audioParams.filterResonance = 0.1 + v.y * 9.9;
+      },
+      init: (pad) => {
+        const clamp = (val) => Math.min(1, Math.max(0, val));
+        const x = clamp(
+          ((node.audioParams.filterCutoff ?? DEFAULT_FM_DRONE_PARAMS.filterCutoff) - 200) /
+            4800
+        );
+        const y = clamp(
+          ((
+            node.audioParams.filterResonance ??
+            DEFAULT_FM_DRONE_PARAMS.filterResonance
+          ) - 0.1) /
+            9.9
+        );
+        if (pad.set) pad.set({ x, y });
+        if (pad.position) pad.set({ x, y });
       },
     },
     {
@@ -195,12 +223,32 @@ export async function showFmDroneOrbMenu(node) {
         node.audioParams.lfoRate = v.x;
         node.audioParams.lfoDepth = v.y * 400;
       },
+      init: (pad) => {
+        const clamp = (val) => Math.min(1, Math.max(0, val));
+        const x = clamp(node.audioParams.lfoRate ?? DEFAULT_FM_DRONE_PARAMS.lfoRate);
+        const y = clamp(
+          (node.audioParams.lfoDepth ?? DEFAULT_FM_DRONE_PARAMS.lfoDepth) / 400
+        );
+        if (pad.set) pad.set({ x, y });
+        if (pad.position) pad.set({ x, y });
+      },
     },
     {
       label: 'Echo Bloom',
       map: (v) => {
         node.audioParams.reverbSend = v.x;
         node.audioParams.delaySend = v.y;
+      },
+      init: (pad) => {
+        const clamp = (val) => Math.min(1, Math.max(0, val));
+        const x = clamp(
+          node.audioParams.reverbSend ?? DEFAULT_FM_DRONE_PARAMS.reverbSend
+        );
+        const y = clamp(
+          node.audioParams.delaySend ?? DEFAULT_FM_DRONE_PARAMS.delaySend
+        );
+        if (pad.set) pad.set({ x, y });
+        if (pad.position) pad.set({ x, y });
       },
     },
   ];
@@ -250,31 +298,10 @@ export async function showFmDroneOrbMenu(node) {
         }
       };
     }
+    if (def.init) def.init(pad);
     container.appendChild(wrap);
     pads.push(pad);
   });
-
-  const swarmWrap = document.createElement('div');
-  swarmWrap.style.display = 'flex';
-  swarmWrap.style.flexDirection = 'column';
-  swarmWrap.style.alignItems = 'center';
-  swarmWrap.style.marginBottom = '6px';
-  const swarmLabel = document.createElement('div');
-  swarmLabel.textContent = 'Beestjes';
-  swarmLabel.style.fontSize = '10px';
-  swarmWrap.appendChild(swarmLabel);
-  const swarmSlider = document.createElement('input');
-  swarmSlider.type = 'range';
-  swarmSlider.min = 0;
-  swarmSlider.max = 1;
-  swarmSlider.step = 0.01;
-  swarmSlider.value = node.audioParams.swarmCount || 0;
-  swarmSlider.addEventListener('input', () => {
-    node.audioParams.swarmCount = parseFloat(swarmSlider.value);
-    updateNodeAudioParams(node);
-  });
-  swarmWrap.appendChild(swarmSlider);
-  container.appendChild(swarmWrap);
 
   const btn = document.createElement('button');
   btn.textContent = 'Auto Drift';
