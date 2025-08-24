@@ -64,6 +64,7 @@ Canvas Orbs to the scene.
 Reusable helper functions live in separate modules. `audioUtils.js` handles note
 and scale calculations. `mathUtils.js` provides general math helpers such as
 `clamp()`, `lerp()` and random number generators.
+`fmShapeMorph.js` offers simple FM-based shape morphing utilities for visual experiments.
 
 ## Autosave
 
