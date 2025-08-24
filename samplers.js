@@ -34,3 +34,9 @@ export const SAMPLER_DEFINITIONS = [
     createSampler("kalim", "audio/Yamaha-TG500-FI-Kalim-C5.wav", 523.25, "Kalim", "✨"),
     createSampler("violin", "audio/violin_c4.mp3", 261.63, "Violin", "🎻"),
 ];
+
+// Expose sampler definitions globally for compatibility with modules that
+// access them via the `window` object.
+if (typeof window !== "undefined") {
+    window.SAMPLER_DEFINITIONS = SAMPLER_DEFINITIONS;
+}
