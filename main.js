@@ -4604,117 +4604,74 @@ export function triggerNodeEffect(
           highlightOrbitoneBar(node.id, idx, offMs);
         });
 
-        allOutputFrequencies.forEach((freq, index) => {
-          if (isNaN(freq) || freq <= 0) {
-            return;
-          }
-          const isMainNote = index === 0;
-          const timingOffsetMs = isMainNote
-            ? 0
-            : params.orbitoneTimingOffsets &&
+          allOutputFrequencies.forEach((freq, index) => {
+            if (isNaN(freq) || freq <= 0) return;
+            const isMainNote = index === 0;
+            const timingOffsetMs = isMainNote
+              ? 0
+              : params.orbitoneTimingOffsets &&
                 params.orbitoneTimingOffsets[index - 1] !== undefined
               ? params.orbitoneTimingOffsets[index - 1]
               : 0;
-          const scheduledStartTime = now + timingOffsetMs / 1000.0;
-          const isReverse = params.sampleReverse ?? false;
-          const source = audioContext.createBufferSource();
-          const audioBuffer = isReverse ? getReversedBuffer(definition) : definition.buffer;
-          source.buffer = audioBuffer;
-          let targetRate = 1;
-          if (definition.baseFreq > 0) {
-            targetRate = Math.max(0.1, Math.min(8, freq / definition.baseFreq));
-          }
-          const playbackRate = targetRate;
-          source.playbackRate.setValueAtTime(playbackRate, scheduledStartTime);
-          const startFrac = params.sampleStart ?? 0;
-          const endFrac = params.sampleEnd ?? 1;
-          const startOffset = Math.max(0, Math.min(definition.buffer.duration, startFrac * definition.buffer.duration));
-          const endOffset = Math.max(startOffset + 0.001, Math.min(definition.buffer.duration, endFrac * definition.buffer.duration));
-          const playDur = endOffset - startOffset;
-          const perNoteSamplerGain = audioContext.createGain();
-          let noteVolumeFactor;
-          const orbitoneBaseMixLevel =
-            params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
-          if (!params.orbitonesEnabled || params.orbitoneCount === 0) {
-            noteVolumeFactor = isMainNote ? 1.0 : 0;
-          } else {
-            const mainNoteVolWhenMixedOut =
-              orbitoneBaseMixLevel >= 0.99 ? 0.0 : 1.0 - orbitoneBaseMixLevel;
-            noteVolumeFactor = isMainNote
-              ? mainNoteVolWhenMixedOut
-              : orbitoneBaseMixLevel / Math.max(1, params.orbitoneCount);
-          }
-          let targetSamplerIndividualPeak = noteVolumeFactor * (params.sampleGain ?? 1.0);
-          targetSamplerIndividualPeak = Math.min(
-            1.0,
-            Math.max(0.001, targetSamplerIndividualPeak),
-          );
-          if (targetSamplerIndividualPeak < 0.001 && noteVolumeFactor > 0) {
-            return;
-          }
-          if (noteVolumeFactor === 0) return;
-          const actualDur = playDur / Math.abs(playbackRate);
-          let samplerAttack = params.sampleAttack ?? 0.005;
-          let samplerRelease = params.sampleRelease ?? 0.2;
-          perNoteSamplerGain.gain.setValueAtTime(0, scheduledStartTime);
-          perNoteSamplerGain.gain.linearRampToValueAtTime(
-            targetSamplerIndividualPeak,
-            scheduledStartTime + samplerAttack,
-          );
-          source.connect(perNoteSamplerGain);
-          const filterInput = lowPassFilter && lowPassFilter.input ? lowPassFilter.input : lowPassFilter;
-          perNoteSamplerGain.connect(filterInput);
-          const startPos = isReverse ? audioBuffer.duration - endOffset : startOffset;
-          source.start(scheduledStartTime, startPos, playDur);
-          if (currentSamplerNode === node && isMainNote) {
-            const delayMs = Math.max(0, (scheduledStartTime - now) * 1000);
-            setTimeout(
-              () =>
-                animateSamplerPlayhead(
-                  node,
-                  isReverse ? endFrac : startFrac,
-                  isReverse ? startFrac : endFrac,
-                  actualDur,
-                  samplerAttack,
-                  samplerRelease,
-                ),
-              delayMs,
+            const scheduledStartTime = now + timingOffsetMs / 1000.0;
+            const bufferToUse = params.sampleReverse
+              ? getReversedBuffer(definition)
+              : definition.buffer;
+            const startFrac = params.sampleStart ?? 0;
+            const endFrac = params.sampleEnd ?? 1;
+            let noteVolumeFactor;
+            const orbitoneBaseMixLevel =
+              params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+            if (!params.orbitonesEnabled || params.orbitoneCount === 0) {
+              noteVolumeFactor = isMainNote ? 1.0 : 0;
+            } else {
+              const mainNoteVolWhenMixedOut =
+                orbitoneBaseMixLevel >= 0.99 ? 0.0 : 1.0 - orbitoneBaseMixLevel;
+              noteVolumeFactor = isMainNote
+                ? mainNoteVolWhenMixedOut
+                : orbitoneBaseMixLevel / Math.max(1, params.orbitoneCount);
+            }
+            let targetSamplerIndividualPeak =
+              noteVolumeFactor * (params.sampleGain ?? 1.0);
+            targetSamplerIndividualPeak = Math.min(
+              1.0,
+              Math.max(0.001, targetSamplerIndividualPeak),
             );
-          }
-          const samplerIntrinsicAttack = samplerAttack;
-          const samplerIntrinsicDecay =
-            params.samplerDecayFactor !== undefined
-              ? params.samplerDecayFactor * 0.15
-              : 0.15;
-          const samplerIntrinsicRelease = samplerRelease;
-          const samplerIntrinsicSustainLevel = targetSamplerIndividualPeak;
-          const naturalStopTime = scheduledStartTime + actualDur;
-          const releaseStartTime = Math.max(
-            scheduledStartTime,
-            naturalStopTime - samplerIntrinsicRelease,
-          );
-
-          perNoteSamplerGain.gain.setValueAtTime(0, scheduledStartTime);
-          perNoteSamplerGain.gain.linearRampToValueAtTime(
-            samplerIntrinsicSustainLevel,
-            scheduledStartTime + samplerIntrinsicAttack,
-          );
-          perNoteSamplerGain.gain.setValueAtTime(
-            samplerIntrinsicSustainLevel,
-            releaseStartTime,
-          );
-          perNoteSamplerGain.gain.linearRampToValueAtTime(
-            0.0001,
-            naturalStopTime,
-          );
-          source.stop(naturalStopTime);
-          source.onended = () => {
-            try {
-              perNoteSamplerGain.disconnect();
-              source.disconnect();
-            } catch (e) {}
-          };
-        });
+            if (targetSamplerIndividualPeak < 0.001 || noteVolumeFactor === 0) {
+              return;
+            }
+            const samplerAttack = params.sampleAttack ?? 0.005;
+            const samplerRelease = params.sampleRelease ?? 0.2;
+            const filterInput =
+              lowPassFilter && lowPassFilter.input
+                ? lowPassFilter.input
+                : lowPassFilter;
+            playWithToneSampler(
+              bufferToUse,
+              definition.baseFreq,
+              freq,
+              scheduledStartTime,
+              samplerAttack,
+              samplerRelease,
+              targetSamplerIndividualPeak,
+              filterInput,
+            );
+            if (currentSamplerNode === node && isMainNote) {
+              const delayMs = Math.max(0, (scheduledStartTime - now) * 1000);
+              setTimeout(
+                () =>
+                  animateSamplerPlayhead(
+                    node,
+                    params.sampleReverse ? endFrac : startFrac,
+                    params.sampleReverse ? startFrac : endFrac,
+                    bufferToUse.duration,
+                    samplerAttack,
+                    samplerRelease,
+                  ),
+                delayMs,
+              );
+            }
+          });
       } else {
         if (oscillator1 && oscillator1.frequency) {
           const fallbackFreq =
@@ -8875,6 +8832,35 @@ function getReversedBuffer(definition) {
   }
   definition.reversedBuffer = reversed;
   return reversed;
+}
+
+function playWithToneSampler(
+  buffer,
+  baseFreq,
+  freq,
+  startTime,
+  attack,
+  release,
+  velocity,
+  destination,
+) {
+  const rootNote = Tone.Frequency(baseFreq).toNote();
+  const note = Tone.Frequency(freq).toNote();
+  const sampler = new Tone.Sampler();
+  sampler.add(rootNote, buffer);
+  sampler.attack = attack;
+  sampler.release = release;
+  sampler.connect(destination);
+  sampler.triggerAttackRelease(note, buffer.duration, startTime, velocity);
+  const disposeTime =
+    (startTime - audioContext.currentTime + buffer.duration + release + 0.5) *
+    1000;
+  setTimeout(() => {
+    try {
+      sampler.disconnect();
+      sampler.dispose();
+    } catch (e) {}
+  }, disposeTime);
 }
 
 function animateSamplerPlayhead(node, startFrac, endFrac, duration, attack = 0, release = 0) {
