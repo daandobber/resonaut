@@ -334,7 +334,6 @@
         <button id="app-menu-toggle-tape-looper-btn" class="app-menu-bar-button" title="Toggle Tape Looper">📼 Tape</button>
         <button id="app-menu-radio-sampler-btn" class="app-menu-bar-button" title="Toggle Radio Sampler">📻 Radio</button>
         <button id="app-menu-performance-btn" class="app-menu-bar-button" title="Performance View">🎛 Perf</button>
-        <button id="app-menu-toggle-timeline-btn" class="app-menu-bar-button" title="Toggle Timeline">🕒 Timeline</button>
         <button id="app-menu-canvas-timeline-btn" class="app-menu-bar-button" title="Toggle Canvas Timeline">🖼️ Canvases</button>
         <div class="app-menu-spacer"></div>
         <button id="app-menu-help-btn" class="app-menu-bar-button" title="Help">?</button>
@@ -347,22 +346,6 @@
     <div id="mistLayer"></div>
     <div id="crushLayer"></div>
     <div id="cursorLayer"></div>
-
-    <div id="timelineView" class="hidden">
-        <div class="timeline-controls">
-            <button id="closeTimelineBtn">Back</button>
-            <button id="addTrackBtn">Add Track</button>
-            <button id="playTimelineBtn">Play</button>
-            <button id="stopTimelineBtn" disabled>Stop</button>
-            <label class="loop-toggle"><input type="checkbox" id="timelineLoopToggle"> Loop</label>
-        </div>
-        <div id="timelineScroll">
-            <div id="timelineLoopBar"></div>
-            <div id="timelineTracks"></div>
-            <div id="timelineLoopRegion" class="hidden"></div>
-            <div id="timelinePlayhead" class="hidden"></div>
-        </div>
-    </div>
 
     <div id="canvasTimelineView" class="hidden">
         <div class="canvas-timeline-controls">
@@ -757,7 +740,6 @@
     <div id="loadingIndicator" style="display:none;">Loading Samples... 0%</div>
     <script type="module" src="samplers.js"></script>
     <script type="module" src="radioSampler.js"></script>
-    <script type="module" src="timeline.js"></script>
     <script type="module" src="canvasManager.js"></script>
     <script type="module" src="canvasSwitcher.js"></script>
     <script type="module" src="canvasTimeline.js"></script>

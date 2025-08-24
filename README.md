@@ -33,10 +33,6 @@ Several built‑in streams are available including Dutch public radio and a few 
 Pads now respond immediately using WebAudio buffers and light up while they play. Drag the start and end markers directly on the waveform to quickly set loop points.
 FX pad movements can be recorded from the Effects tab and will loop automatically over 16 steps. Use Delete FX to clear a recording.
 
-## Timeline
-
-Open the timeline from the menu bar to arrange audio clips on multiple tracks. Click **Add Track** to create a new one. Segments can be dragged and trimmed. Press the **Delete** key or use the ✖ button on a segment to remove it. Tracks include a ✖ button in the header to delete the entire track.
-
 ## Radar
 
 Use the **Radar** button in the toolbar to add a circular radar. It behaves like a radial timeline grid: a sweep line starts at the top (12 o'clock) and rotates clockwise, triggering any orb it crosses. Internal divisions can be displayed to help line up orbs on the radar.
