@@ -1534,8 +1534,8 @@ margin-top: 6px;
   border: 1px solid #555;
 }
 #radioSamplerGrid .pad-step-toggle.on {
-  background-color: #6c6;
-  border-color: #8f8;
+  background-color: #6c6 !important;
+  border-color: #8f8 !important;
 }
 #radioPadEditor { margin-top: 8px; }
 #radioWaveformCanvas { width: 100%; height: 60px; background-color: #222; border: 1px solid #111; border-radius: 3px; }
