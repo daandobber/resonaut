@@ -289,7 +289,6 @@ const {
   appMenuToggleTapeLooperBtn,
   appMenuRadioSamplerBtn,
   appMenuPerformanceBtn,
-  appMenuToggleTimelineBtn,
   tapeLooperPanel,
   closeTapeLooperPanelBtn,
   tapeWaveformCanvas,

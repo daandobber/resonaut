@@ -151,7 +151,6 @@ export const appMenuRecordBtn = safeGetById("app-menu-record-btn");
 export const appMenuToggleTapeLooperBtn = safeGetById("app-menu-toggle-tape-looper-btn");
 export const appMenuRadioSamplerBtn = safeGetById("app-menu-radio-sampler-btn");
 export const appMenuPerformanceBtn = safeGetById("app-menu-performance-btn");
-export const appMenuToggleTimelineBtn = safeGetById("app-menu-toggle-timeline-btn");
 
 export const tapeLooperPanel = safeGetById("tapeLooperPanel");
 export const closeTapeLooperPanelBtn = safeGetById("closeTapeLooperPanelBtn");
