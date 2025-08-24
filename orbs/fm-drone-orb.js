@@ -26,6 +26,7 @@ export const DEFAULT_FM_DRONE_PARAMS = {
   lfoDepth: 200,
   reverbSend: 0.2,
   delaySend: 0.2,
+  swarmCount: 0,
   visualStyle: 'fm_drone_swarm',
   ignoreGlobalSync: false,
 };
@@ -252,6 +253,28 @@ export async function showFmDroneOrbMenu(node) {
     container.appendChild(wrap);
     pads.push(pad);
   });
+
+  const swarmWrap = document.createElement('div');
+  swarmWrap.style.display = 'flex';
+  swarmWrap.style.flexDirection = 'column';
+  swarmWrap.style.alignItems = 'center';
+  swarmWrap.style.marginBottom = '6px';
+  const swarmLabel = document.createElement('div');
+  swarmLabel.textContent = 'Beestjes';
+  swarmLabel.style.fontSize = '10px';
+  swarmWrap.appendChild(swarmLabel);
+  const swarmSlider = document.createElement('input');
+  swarmSlider.type = 'range';
+  swarmSlider.min = 0;
+  swarmSlider.max = 1;
+  swarmSlider.step = 0.01;
+  swarmSlider.value = node.audioParams.swarmCount || 0;
+  swarmSlider.addEventListener('input', () => {
+    node.audioParams.swarmCount = parseFloat(swarmSlider.value);
+    updateNodeAudioParams(node);
+  });
+  swarmWrap.appendChild(swarmSlider);
+  container.appendChild(swarmWrap);
 
   const btn = document.createElement('button');
   btn.textContent = 'Auto Drift';
