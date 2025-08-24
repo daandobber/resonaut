@@ -11028,11 +11028,12 @@ function updateAndDrawFmDroneSwarm(node, nodes, ctx, r, color) {
   const rate = node.audioParams?.lfoRate || 0.5;
   const modIndex = node.audioParams?.modulationIndex || 0;
   const harmonicity = node.audioParams?.harmonicity || 1;
-  const swarmIntensity = Math.min(
-    1,
-    modIndex / 20 + harmonicity / 6
-  );
-  const targetCount = Math.max(1, Math.floor(swarmIntensity * 40) + 1);
+  const defaultMod = DEFAULT_FM_DRONE_PARAMS.modulationIndex;
+  const defaultHarm = DEFAULT_FM_DRONE_PARAMS.harmonicity;
+  const modDelta = Math.abs(modIndex - defaultMod);
+  const harmDelta = Math.abs(harmonicity - defaultHarm);
+  const swarmIntensity = Math.min(1, modDelta / 20 + harmDelta / 6);
+  const targetCount = 1 + Math.floor(swarmIntensity * 40);
   const size =
     r * (0.05 + (node.audioParams?.filterResonance || 0) * 0.05);
 
