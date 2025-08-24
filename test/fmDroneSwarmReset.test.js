@@ -7,6 +7,12 @@ vi.mock('nexusui', () => ({
       constructor() {}
       on() {}
       set() {}
+      colorize() {}
+    },
+    Dial: class {
+      constructor() { this.value = 0; }
+      on() {}
+      colorize() {}
     },
   },
 }));
