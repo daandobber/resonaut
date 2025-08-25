@@ -106,4 +106,82 @@ describe('playWithToneSampler', () => {
     expect(source.start).toHaveBeenCalledWith(1, 0, buffer.duration);
     expect(gainNode.gain.setValueAtTime).toHaveBeenCalledWith(0, 1);
   });
+
+  it('warns and returns when AudioContext is missing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    delete globalThis.audioContext;
+
+    playWithToneSampler({}, 100, 100, 0, 0.1, 0.2, 0.5);
+
+    expect(warn).toHaveBeenCalledWith(
+      '[playWithToneSampler] AudioContext not available.',
+    );
+    warn.mockRestore();
+  });
+
+  it('warns and returns when buffer is missing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const gainNode = {
+      gain: {
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        setTargetAtTime: vi.fn(),
+      },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const createBufferSource = vi.fn(() => ({}));
+    const createGain = vi.fn(() => gainNode);
+    globalThis.audioContext = {
+      currentTime: 0,
+      createBufferSource,
+      createGain,
+      destination: {},
+    };
+
+    playWithToneSampler(null, 100, 100, 0, 0.1, 0.2, 0.5);
+
+    expect(warn).toHaveBeenCalledWith(
+      '[playWithToneSampler] No buffer provided.',
+    );
+    warn.mockRestore();
+  });
+
+  it('defaults playbackRate to 1 when baseFreq is invalid', () => {
+    const buffer = { duration: 1 };
+    const source = {
+      buffer: null,
+      playbackRate: { value: 0 },
+      connect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const gainNode = {
+      gain: {
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        setTargetAtTime: vi.fn(),
+      },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const createBufferSource = vi.fn(() => source);
+    const createGain = vi.fn(() => gainNode);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.audioContext = {
+      currentTime: 0,
+      createBufferSource,
+      createGain,
+      destination: {},
+    };
+
+    playWithToneSampler(buffer, 0, 200, 0, 0.1, 0.2, 0.5);
+
+    expect(source.playbackRate.value).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      '[playWithToneSampler] baseFreq invalid, defaulting playbackRate to 1.',
+    );
+    warn.mockRestore();
+  });
 });
