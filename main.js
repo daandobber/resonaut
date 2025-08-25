@@ -5,6 +5,7 @@ import { showAnalogOrbMenu, hideAnalogOrbMenu, hideTonePanel } from './orbs/anal
 import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
 import * as Tone from 'tone';
 import { playWithToneSampler } from './samplerPlayer.js';
+import { createSamplerOrbAudioNodes } from './orbs/sampler-orb.js';
 import { sanitizeWaveformType } from './utils/oscillatorUtils.js';
 import { morphShape } from './utils/fmShapeMorph.js';
 import { DEFAULT_RESONAUTER_PARAMS, resonauterGranParams, createResonauterOrbAudioNodes, playResonauterSound } from './orbs/resonauter-orb.js';
@@ -2420,7 +2421,9 @@ export function createAudioNodesForNode(node) {
 
           return audioNodes;
     } else if (node.type === "sound") {
-        if (node.audioParams && node.audioParams.engine === 'tonefm') {
+        if (node.audioParams?.waveform && node.audioParams.waveform.startsWith('sampler_')) {
+            return createSamplerOrbAudioNodes(node);
+        } else if (node.audioParams && node.audioParams.engine === 'tonefm') {
             return createToneFmSynthOrb(node);
         } else if (node.audioParams && node.audioParams.engine === 'tone') {
             return createAnalogOrb(node);
