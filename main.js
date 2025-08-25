@@ -8873,12 +8873,16 @@ function animateSamplerPlayhead(node, startFrac, endFrac, duration, attack = 0, 
     clearTimeout(samplerPlayheadTimeout);
     samplerPlayheadTimeout = null;
   }
+  // Clamp fractions to keep the playhead within the display bounds
+  const clampedStart = Math.min(Math.max(startFrac, 0), 1);
+  const clampedEnd = Math.min(Math.max(endFrac, 0), 1);
+
   samplerVisualPlayhead.style.transition = "none";
   samplerVisualPlayhead.style.display = "block";
-  samplerVisualPlayhead.style.left = `${startFrac * 100}%`;
+  samplerVisualPlayhead.style.left = `${clampedStart * 100}%`;
   void samplerVisualPlayhead.offsetWidth;
   samplerVisualPlayhead.style.transition = `left ${duration}s linear`;
-  samplerVisualPlayhead.style.left = `${endFrac * 100}%`;
+  samplerVisualPlayhead.style.left = `${clampedEnd * 100}%`;
   if (samplerEnvelopeDot) {
     const startTime = performance.now();
     const step = () => {
