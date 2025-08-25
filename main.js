@@ -4639,6 +4639,15 @@ export function triggerNodeEffect(
               Math.max(0.001, targetSamplerIndividualPeak),
             );
             if (targetSamplerIndividualPeak < 0.001 || noteVolumeFactor === 0) {
+              console.warn(
+                `[Sampler Trigger] Skipping due to low volume`,
+                {
+                  nodeId: node.id,
+                  freq,
+                  noteVolumeFactor,
+                  targetSamplerIndividualPeak,
+                },
+              );
               return;
             }
             const samplerAttack = params.sampleAttack ?? 0.005;
@@ -4647,6 +4656,13 @@ export function triggerNodeEffect(
               lowPassFilter && lowPassFilter.input
                 ? lowPassFilter.input
                 : lowPassFilter;
+            console.log('[Sampler Trigger]', {
+              nodeId: node.id,
+              samplerId,
+              freq,
+              startTime: scheduledStartTime,
+              velocity: targetSamplerIndividualPeak,
+            });
             playWithToneSampler(
               bufferToUse,
               definition.baseFreq,
@@ -4674,6 +4690,11 @@ export function triggerNodeEffect(
             }
           });
       } else {
+        console.warn('[Sampler Trigger] Definition not ready', {
+          samplerId,
+          isLoaded: definition?.isLoaded,
+          hasBuffer: !!definition?.buffer,
+        });
         if (oscillator1 && oscillator1.frequency) {
           const fallbackFreq =
             effectivePitch * Math.pow(2, params.osc1Octave || 0);
