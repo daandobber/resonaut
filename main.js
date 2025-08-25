@@ -4640,7 +4640,7 @@ export function triggerNodeEffect(
             );
             if (targetSamplerIndividualPeak < 0.001 || noteVolumeFactor === 0) {
               console.warn(
-                `[Sampler Trigger] Skipping due to low volume`,
+                `[Sampler Trigger] Low volume detected, using minimum`,
                 {
                   nodeId: node.id,
                   freq,
@@ -4648,7 +4648,7 @@ export function triggerNodeEffect(
                   targetSamplerIndividualPeak,
                 },
               );
-              return;
+              targetSamplerIndividualPeak = 0.001;
             }
             const samplerAttack = params.sampleAttack ?? 0.005;
             const samplerRelease = params.sampleRelease ?? 0.2;
@@ -22150,6 +22150,8 @@ function applyOrbitoneTimingFromPhase(node) {
 
 function addNode(x, y, type, subtype = null, optionalDimensions = null) {
 
+  const requestedSubtype = subtype;
+
   const isStartNodeType = isPulsarType(type);
   let nodeTypeVisual = type;
   let initialScaleIndex = 0;
@@ -22963,6 +22965,28 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     delete newNode.starPoints;
     delete newNode.baseHue;
     delete newNode.color;
+  }
+
+  if (requestedSubtype && requestedSubtype.startsWith("sampler_")) {
+    const samplerId = requestedSubtype.replace("sampler_", "");
+    if (
+      nodeSubtypeForAudioParams &&
+      nodeSubtypeForAudioParams.startsWith("sampler_")
+    ) {
+      console.log("[Sampler Placement]", {
+        nodeId: newNode.id,
+        samplerId,
+        x,
+        y,
+      });
+    } else {
+      console.warn("[Sampler Placement] Definition not ready", {
+        nodeId: newNode.id,
+        samplerId,
+        x,
+        y,
+      });
+    }
   }
 
   if (isStartNodeType && newNode.isEnabled && audioContext) {
