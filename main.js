@@ -4310,6 +4310,7 @@ export function triggerNodeEffect(
   const oscillatorVolumeMultiplier = 0.75;
   const samplerVolumeMultiplier = 1.5;
   const isSampler = params.waveform && params.waveform.startsWith("sampler_");
+  const generalUpdateTimeConstant = 0.02;
 
   const ampEnv = params.ampEnv || {
     attack: 0.01,
