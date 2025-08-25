@@ -4310,6 +4310,7 @@ export function triggerNodeEffect(
   const oscillatorVolumeMultiplier = 0.75;
   const samplerVolumeMultiplier = 1.5;
   const isSampler = params.waveform && params.waveform.startsWith("sampler_");
+  const generalUpdateTimeConstant = 0.02;
 
   const ampEnv = params.ampEnv || {
     attack: 0.01,
@@ -4369,6 +4370,14 @@ export function triggerNodeEffect(
     const orbitoneModulatorGains = audioNodes.orbitoneModulatorGains;
     const orbitoneIndividualGains = audioNodes.orbitoneIndividualGains;
     const osc1Gain = audioNodes.osc1Gain;
+    const bitCrusherWetGain = audioNodes.bitCrusherWetGain;
+    const bitCrusherDryGain = audioNodes.bitCrusherDryGain;
+
+    if (bitCrusherWetGain && bitCrusherDryGain && params.sampleCrush !== undefined) {
+      const amt = Math.max(0, Math.min(1, params.sampleCrush));
+      bitCrusherWetGain.gain.setTargetAtTime(amt, now, generalUpdateTimeConstant);
+      bitCrusherDryGain.gain.setTargetAtTime(1 - amt, now, generalUpdateTimeConstant);
+    }
 
     if (!isSampler && node.audioParams && node.audioParams.engine === 'tonefm') {
       node.isTriggered = true;
@@ -21116,7 +21125,8 @@ function showSamplerOrbMenu(node) {
         {id:'sampleEnd',min:0,max:1,label:'END'},
         {id:'sampleAttack',min:0,max:1,label:'F.IN'},
         {id:'sampleRelease',min:0,max:1.5,label:'F.OUT'},
-        {id:'sampleGain',min:0,max:2,label:'VOL'}
+        {id:'sampleGain',min:0,max:2,label:'VOL'},
+        {id:'sampleCrush',min:0,max:1,label:'CRSH'}
     ];
     samplerSliders = {};
     controls.forEach(info => {
@@ -22816,6 +22826,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         sampleRelease: 0.2,
         sampleGain: 1.0,
         sampleReverse: false,
+        sampleCrush: 0,
       });
     }
 
