@@ -3591,7 +3591,7 @@ export function updateNodeAudioParams(node) {
       modulatorOsc3.frequency.setTargetAtTime(base * params.modulator3Ratio, now, generalUpdateTimeConstant);
     }
 
-    if (node.audioParams && node.audioParams.engine === 'tonefm') {
+    if (!isSampler && node.audioParams && node.audioParams.engine === 'tonefm') {
       if (modulatorGain1 && params.modulatorDepthScale !== undefined) {
         modulatorGain1.gain.setTargetAtTime(
           params.modulatorDepthScale * 10,
@@ -4306,6 +4306,7 @@ export function triggerNodeEffect(
   const baseVolumeSettingForFinalEnvelope = 1.0;
   const oscillatorVolumeMultiplier = 0.75;
   const samplerVolumeMultiplier = 1.5;
+  const isSampler = params.waveform && params.waveform.startsWith("sampler_");
 
   const ampEnv = params.ampEnv || {
     attack: 0.01,
@@ -4366,7 +4367,7 @@ export function triggerNodeEffect(
     const orbitoneIndividualGains = audioNodes.orbitoneIndividualGains;
     const osc1Gain = audioNodes.osc1Gain;
 
-    if (node.audioParams && node.audioParams.engine === 'tonefm') {
+    if (!isSampler && node.audioParams && node.audioParams.engine === 'tonefm') {
       node.isTriggered = true;
       node.animationState = 1;
 
@@ -4398,7 +4399,7 @@ export function triggerNodeEffect(
       return;
     }
 
-    if (node.audioParams && node.audioParams.engine === 'tone') {
+    if (!isSampler && node.audioParams && node.audioParams.engine === 'tone') {
       node.isTriggered = true;
       node.animationState = 1;
 
@@ -4531,7 +4532,7 @@ export function triggerNodeEffect(
     node.isTriggered = true;
     node.animationState = 1;
     let finalEnvelopePeak;
-    if (params.waveform && params.waveform.startsWith("sampler_")) {
+    if (isSampler) {
       finalEnvelopePeak =
         baseVolumeSettingForFinalEnvelope *
         intensity *
@@ -4580,7 +4581,7 @@ export function triggerNodeEffect(
       if (stillNode) stillNode.isTriggered = false;
     }, totalDurationForMainNodeEnvelope * 1000);
 
-    if (params.waveform && params.waveform.startsWith("sampler_")) {
+    if (isSampler) {
       const samplerId = params.waveform.replace("sampler_", "");
       const definition = SAMPLER_DEFINITIONS.find((s) => s.id === samplerId);
 
