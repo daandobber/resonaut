@@ -1,4 +1,4 @@
-export function playWithToneSampler(
+export async function playWithToneSampler(
   buffer,
   baseFreq,
   freq,
@@ -26,9 +26,8 @@ export function playWithToneSampler(
   if (ctx.state !== 'running') {
     console.warn('[playWithToneSampler] AudioContext state is', ctx.state);
     try {
-      ctx.resume().then(() => {
-        console.log('[playWithToneSampler] AudioContext resumed');
-      });
+      await ctx.resume();
+      console.log('[playWithToneSampler] AudioContext resumed');
     } catch (e) {
       console.error('[playWithToneSampler] Failed to resume AudioContext', e);
       return;
