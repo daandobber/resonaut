@@ -34,7 +34,6 @@ export function playWithToneSampler(
       return;
     }
   }
-
   if (!buffer) {
     console.warn('[playWithToneSampler] No buffer provided.');
     return;
