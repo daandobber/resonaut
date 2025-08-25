@@ -727,6 +727,7 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 .tape-loop-handle.end { right: -3px; border-top-right-radius: 2px; border-bottom-right-radius: 2px; }
 .tape-loop-handle:hover { background-color: rgba(255,255,255,.9); }
 .tape-visual-playhead { position: absolute; top: 0; left: 0; width: 2px; height: 100%; background-color: #ff6060; box-shadow: 0 0 3px #ff6060; z-index: 3; transition: left .05s linear; }
+.op1-display { position: relative; overflow: hidden; }
 .sampler-visual-playhead { position: absolute; top: 0; left: 0; width: 2px; height: 100%; background-color: #ff6060; box-shadow: 0 0 3px #ff6060; z-index: 2; }
 .sampler-envelope-dot { position: absolute; left: 50%; width: 6px; height: 6px; margin-left: -3px; margin-top: -3px; border-radius: 50%; background-color: #ff6060; box-shadow: 0 0 3px #ff6060; pointer-events: none; }
 .cassette-reels { display: flex; justify-content: space-around; align-items: center; width: 100%; }
