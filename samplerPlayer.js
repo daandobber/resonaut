@@ -8,10 +8,31 @@ export function playWithToneSampler(
   velocity,
   destination,
 ) {
+  console.log('[playWithToneSampler] Invoked', {
+    baseFreq,
+    freq,
+    startTime,
+    attack,
+    release,
+    velocity,
+  });
+
   const ctx = globalThis.audioContext;
   if (!ctx) {
     console.warn('[playWithToneSampler] AudioContext not available.');
     return;
+  }
+
+  if (ctx.state !== 'running') {
+    console.warn('[playWithToneSampler] AudioContext state is', ctx.state);
+    try {
+      ctx.resume().then(() => {
+        console.log('[playWithToneSampler] AudioContext resumed');
+      });
+    } catch (e) {
+      console.error('[playWithToneSampler] Failed to resume AudioContext', e);
+      return;
+    }
   }
   if (!buffer) {
     console.warn('[playWithToneSampler] No buffer provided.');
