@@ -4639,7 +4639,16 @@ export function triggerNodeEffect(
               Math.max(0.001, targetSamplerIndividualPeak),
             );
             if (targetSamplerIndividualPeak < 0.001 || noteVolumeFactor === 0) {
-              return;
+              console.warn(
+                `[Sampler Trigger] Low volume detected, using minimum`,
+                {
+                  nodeId: node.id,
+                  freq,
+                  noteVolumeFactor,
+                  targetSamplerIndividualPeak,
+                },
+              );
+              targetSamplerIndividualPeak = 0.001;
             }
             const samplerAttack = params.sampleAttack ?? 0.005;
             const samplerRelease = params.sampleRelease ?? 0.2;
@@ -4647,6 +4656,13 @@ export function triggerNodeEffect(
               lowPassFilter && lowPassFilter.input
                 ? lowPassFilter.input
                 : lowPassFilter;
+            console.log('[Sampler Trigger]', {
+              nodeId: node.id,
+              samplerId,
+              freq,
+              startTime: scheduledStartTime,
+              velocity: targetSamplerIndividualPeak,
+            });
             playWithToneSampler(
               bufferToUse,
               definition.baseFreq,
@@ -4674,6 +4690,11 @@ export function triggerNodeEffect(
             }
           });
       } else {
+        console.warn('[Sampler Trigger] Definition not ready', {
+          samplerId,
+          isLoaded: definition?.isLoaded,
+          hasBuffer: !!definition?.buffer,
+        });
         if (oscillator1 && oscillator1.frequency) {
           const fallbackFreq =
             effectivePitch * Math.pow(2, params.osc1Octave || 0);
@@ -22129,6 +22150,8 @@ function applyOrbitoneTimingFromPhase(node) {
 
 function addNode(x, y, type, subtype = null, optionalDimensions = null) {
 
+  const requestedSubtype = subtype;
+
   const isStartNodeType = isPulsarType(type);
   let nodeTypeVisual = type;
   let initialScaleIndex = 0;
@@ -22942,6 +22965,28 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     delete newNode.starPoints;
     delete newNode.baseHue;
     delete newNode.color;
+  }
+
+  if (requestedSubtype && requestedSubtype.startsWith("sampler_")) {
+    const samplerId = requestedSubtype.replace("sampler_", "");
+    if (
+      nodeSubtypeForAudioParams &&
+      nodeSubtypeForAudioParams.startsWith("sampler_")
+    ) {
+      console.log("[Sampler Placement]", {
+        nodeId: newNode.id,
+        samplerId,
+        x,
+        y,
+      });
+    } else {
+      console.warn("[Sampler Placement] Definition not ready", {
+        nodeId: newNode.id,
+        samplerId,
+        x,
+        y,
+      });
+    }
   }
 
   if (isStartNodeType && newNode.isEnabled && audioContext) {

@@ -53,8 +53,12 @@ export function playWithToneSampler(
   const gain = ctx.createGain();
   const now = ctx.currentTime;
   const actualStart = Math.max(now, startTime);
+  const safeVelocity = Number.isFinite(velocity) && velocity > 0 ? velocity : 0.001;
+  if (safeVelocity !== velocity) {
+    console.warn('[playWithToneSampler] Invalid velocity, using', safeVelocity);
+  }
   gain.gain.setValueAtTime(0, actualStart);
-  gain.gain.linearRampToValueAtTime(velocity, actualStart + attack);
+  gain.gain.linearRampToValueAtTime(safeVelocity, actualStart + attack);
   gain.gain.setTargetAtTime(0, actualStart + attack + buffer.duration, release / 4);
 
   source.connect(gain);
@@ -74,7 +78,7 @@ export function playWithToneSampler(
     actualStart,
     stopTime,
     rate,
-    velocity,
+    velocity: safeVelocity,
   });
 
   setTimeout(() => {
