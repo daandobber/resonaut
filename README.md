@@ -28,6 +28,10 @@ Use the **Radar** button in the toolbar to add a circular radar. It behaves like
 Each radar can sync its rotation to the global tempo or run at a custom speed. You can also change its radius, number of divisions and whether nodes snap to those lines when dragging.
 Radars support two motion modes: **Normal** (always clockwise) and **Reverse Sweep** (switches direction after each revolution). Enable **Crank Mode** in the edit panel to control the sweep manually using the yellow handle and pulse-driven pushes.
 
+## Grid Sequencer
+
+Click the **Grid** button (🔳) in the toolbar to add a Grid Sequencer. Each row exposes a connector on the right edge. Link a row to any pulse-receiving node to trigger it when the row fires. Drag the grid by its border; click cells inside to toggle them, or hold and drag to paint multiple steps. Press the global **Play** button to advance through the columns in time with the transport.
+
 ## Canvas Switching
 
 Multiple canvases can be added to a session. Use the **Canvas** menu to create
