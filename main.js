@@ -17848,10 +17848,10 @@ function populateEditPanel() {
 
     if (selectedArray.length === 1) {
         const element =
-            firstElementData.type === "node" ?
-            findNodeById(firstElementData.id) :
-            findConnectionById(firstElementData.id);
-        if (element) {
+            firstElementData.type === "node"
+                ? findNodeById(firstElementData.id)
+                : findConnectionById(firstElementData.id);
+        if (element?.type) {
             logicalType = element.type.replace(/_/g, " ");
             titleText = `Edit ${logicalType} #${element.id}`;
             allSameLogicalType = true;
@@ -17861,9 +17861,14 @@ function populateEditPanel() {
     } else {
         const types = new Set([...nodeTypes, ...connectionTypesSet]);
         if (types.size === 1) {
-            logicalType = [...types][0].replace(/_/g, " ");
-            titleText = `Edit ${selectedArray.length} ${logicalType}s`;
-            allSameLogicalType = true;
+            const onlyType = [...types][0];
+            if (onlyType) {
+                logicalType = onlyType.replace(/_/g, " ");
+                titleText = `Edit ${selectedArray.length} ${logicalType}s`;
+                allSameLogicalType = true;
+            } else {
+                titleText = `Edit ${selectedArray.length} Elements`;
+            }
         } else {
             titleText = `Edit ${selectedArray.length} Elements (Mixed Types)`;
             allSameLogicalType = false;
