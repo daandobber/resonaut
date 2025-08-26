@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GridPulsar } from '../pulsar.js';
-
-describe('GridPulsar', () => {
-  it('emits pulses for active cells as sequencer steps', () => {
-    const grid = new GridPulsar(0, 0, 2, 2, { sync: false });
+import { GridSequencer } from '../pulsar.js';
+ 
+describe('GridSequencer', () => {
+  it('triggers callbacks for active cells on each step', () => {
+    const grid = new GridSequencer(0, 0, 2, 2, { sync: false });
     const cb0 = vi.fn();
     const cb1 = vi.fn();
     grid.on(0, cb0);
@@ -20,8 +20,8 @@ describe('GridPulsar', () => {
     expect(cb1).toHaveBeenCalledOnce();
   });
 
-  it('wraps around after last column', () => {
-    const grid = new GridPulsar(0, 0, 1, 2, { sync: false });
+  it('wraps around after the last column', () => {
+    const grid = new GridSequencer(0, 0, 1, 2, { sync: false });
     const cb = vi.fn();
     grid.on(0, cb);
     grid.toggle(0, 0, true);

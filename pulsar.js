@@ -33,14 +33,15 @@ export class Pulsar {
   }
 }
 
-export class GridPulsar {
+export class GridSequencer {
   constructor(
     x,
     y,
     rows = 4,
-    cols = 4,
-    { interval = "8n", sync = true, target = null } = {}
+    cols = 8,
+    { interval = "16n", sync = true, target = null } = {}
   ) {
+    // position kept for compatibility with node layout
     this.x = x;
     this.y = y;
     this.rows = rows;
@@ -49,7 +50,7 @@ export class GridPulsar {
     this.sync = sync;
     this.grid = Array.from({ length: rows }, () => Array(cols).fill(false));
     this.column = 0;
-    this.connectors = Array.from({ length: rows }, () => []);
+    this.callbacks = Array.from({ length: rows }, () => []);
     this.loop = null;
     this.sequencer = null;
 
@@ -60,6 +61,7 @@ export class GridPulsar {
           columns: cols,
           size: [cols * 20, rows * 20],
         });
+        // allow click/drag toggling even during playback
         this.sequencer.on('change', (v) => {
           let row, col, state;
           if (Array.isArray(v)) {
@@ -74,12 +76,12 @@ export class GridPulsar {
           }
         });
       }).catch(() => {
-        /* ignore */
+        /* ignore Nexus loading errors */
       });
     }
   }
 
-  toggle(row, col, state = true) {
+  toggle(row, col, state = !this.grid[row][col]) {
     if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
     this.grid[row][col] = state;
     if (this.sequencer) {
@@ -93,20 +95,24 @@ export class GridPulsar {
 
   on(row, callback) {
     if (row < 0 || row >= this.rows) return;
-    this.connectors[row].push(callback);
+    this.callbacks[row].push(callback);
   }
 
   step(time) {
-    const pulses = [];
+    if (this.sequencer) {
+      try {
+        this.sequencer.stepper.value = this.column;
+        this.sequencer.render();
+      } catch {
+        /* ignore */
+      }
+    }
     for (let r = 0; r < this.rows; r++) {
       if (this.grid[r][this.column]) {
-        const pulse = new Pulse(this.x, this.y, 0);
-        pulses.push(pulse);
-        for (const cb of this.connectors[r]) cb(pulse, time);
+        for (const cb of this.callbacks[r]) cb(time);
       }
     }
     this.column = (this.column + 1) % this.cols;
-    return pulses;
   }
 
   start() {
@@ -118,6 +124,18 @@ export class GridPulsar {
   }
 
   stop() {
-    if (this.loop) this.loop.stop();
+    if (this.loop) {
+      this.loop.stop();
+      this.loop = null;
+    }
+    this.column = 0;
+    if (this.sequencer) {
+      try {
+        this.sequencer.stepper.value = -1;
+        this.sequencer.render();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 }
