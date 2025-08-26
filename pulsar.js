@@ -167,8 +167,11 @@ export class GridSequencer {
     this.loop = new Tone.Loop((time) => this.step(time), this.interval);
     const transportStarted = Tone.Transport.state === "started";
     if (this.sync) {
-      const startTime = transportStarted ? Tone.now() : 0;
-      console.log('[GridSequencer.start] Sync start', { startTime });
+      const startTime = transportStarted ? "+0" : 0;
+      console.log('[GridSequencer.start] Sync start', {
+        startTime,
+        transportStarted,
+      });
       this.loop.start(startTime);
     } else {
       console.log('[GridSequencer.start] Unsynced start');
