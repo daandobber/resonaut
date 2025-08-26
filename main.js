@@ -9894,7 +9894,8 @@ function animationLoop() {
           node.type === "pulsar_rocket" ||
           node.type === "pulsar_ufo" ||
           node.type === "pulsar_triggerable" ||
-          node.type === "pulsar_meteorshower")
+          node.type === "pulsar_meteorshower" ||
+          node.type === GRID_SEQUENCER_TYPE)
       ) {
         let shouldPulse = false;
         let pulseData = {};
@@ -9985,6 +9986,45 @@ function animationLoop() {
                     const checkNode = findNodeById(node.id);
                     if (checkNode) checkNode.animationState = 0;
                 }, 150);
+            } else if (node.type === GRID_SEQUENCER_TYPE) {
+                currentGlobalPulseId++;
+                const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+                const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+                for (let r = 0; r < rows; r++) {
+                    if (node.grid && node.grid[r] && node.grid[r][node.column]) {
+                        connections.forEach((c) => {
+                            if (
+                                (c.nodeAId === node.id && c.nodeAHandle === r) ||
+                                (!c.directional && c.nodeBId === node.id && c.nodeBHandle === r)
+                            ) {
+                                const targetId = c.nodeAId === node.id ? c.nodeBId : c.nodeAId;
+                                const neighborNode = findNodeById(targetId);
+                                if (neighborNode) {
+                                    const travelTime = c.length * DELAY_FACTOR;
+                                    createVisualPulse(
+                                        c.id,
+                                        travelTime,
+                                        node.id,
+                                        Infinity,
+                                        "trigger",
+                                        null,
+                                        node.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY,
+                                    );
+                                    propagateTrigger(
+                                        neighborNode,
+                                        travelTime,
+                                        currentGlobalPulseId,
+                                        node.id,
+                                        Infinity,
+                                        { type: "trigger", data: {} },
+                                        c,
+                                    );
+                                }
+                            }
+                        });
+                    }
+                }
+                node.column = (node.column + 1) % cols;
             } else {
                 pulseData = {
                     intensity:
@@ -11173,22 +11213,42 @@ function drawNode(node) {
     ctx.fillStyle = gridStroke.replace(/[\d\.]+\)$/g, "0.05)");
     ctx.fillRect(innerX, innerY, innerW, innerH);
 
+    const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+    const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+    const cellW = innerW / cols;
+    const cellH = innerH / rows;
+    const activeFill = gridStroke.replace(/[\d\.]+\)$/g, "0.3)");
+    if (node.grid) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (node.grid[r] && node.grid[r][c]) {
+            ctx.fillStyle = activeFill;
+            ctx.fillRect(innerX + c * cellW, innerY + r * cellH, cellW, cellH);
+          }
+        }
+      }
+    }
+
     ctx.strokeStyle = internalColor;
     ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
-    for (let i = 1; i < (node.cols || GRID_SEQUENCER_DEFAULT_COLS); i++) {
-      const x = innerX + (i * innerW) / (node.cols || GRID_SEQUENCER_DEFAULT_COLS);
+    for (let i = 1; i < cols; i++) {
+      const x = innerX + (i * innerW) / cols;
       ctx.beginPath();
       ctx.moveTo(x, innerY);
       ctx.lineTo(x, innerY + innerH);
       ctx.stroke();
     }
-    for (let i = 1; i < (node.rows || GRID_SEQUENCER_DEFAULT_ROWS); i++) {
-      const y = innerY + (i * innerH) / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
+    for (let i = 1; i < rows; i++) {
+      const y = innerY + (i * innerH) / rows;
       ctx.beginPath();
       ctx.moveTo(innerX, y);
       ctx.lineTo(innerX + innerW, y);
       ctx.stroke();
     }
+
+    const scanX = innerX + ((node.column % cols + cols) % cols) * cellW;
+    ctx.fillStyle = gridStroke.replace(/[\d\.]+\)$/g, "0.15)");
+    ctx.fillRect(scanX, innerY, cellW, innerH);
 
     ctx.strokeStyle = gridStroke;
     ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
@@ -23115,6 +23175,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.audioParams.ignoreGlobalSync = newNode.audioParams.ignoreGlobalSync ?? false;
     newNode.audioParams.syncSubdivisionIndex = newNode.audioParams.syncSubdivisionIndex ?? DEFAULT_SUBDIVISION_INDEX;
     newNode.audioParams.triggerInterval = newNode.audioParams.triggerInterval ?? DEFAULT_TRIGGER_INTERVAL;
+    newNode.isStartNode = true;
     delete newNode.starPoints;
     delete newNode.baseHue;
     delete newNode.color;
