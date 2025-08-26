@@ -1204,9 +1204,14 @@ const pulsarTypes = [
     icon: "🛸",
   },
   {
-    type: "pulsar_meteorshower", 
-    label: "Meteor Shower",     
-    icon: "☄️",                 
+    type: "pulsar_meteorshower",
+    label: "Meteor Shower",
+    icon: "☄️",
+  },
+  {
+    type: "pulsar_grid",
+    label: "Grid",
+    icon: "🔳",
   },
 ];
 
