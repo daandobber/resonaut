@@ -162,6 +162,14 @@ export class GridSequencer {
     this.column = (this.column + 1) % this.cols;
   }
 
+  // Manually advance to the next column and trigger callbacks.
+  // If a specific time is provided, it's passed through to the callbacks.
+  // Otherwise, Tone.now() is used so that the sequence can be stepped
+  // outside of a scheduled Tone.js clock.
+  next(time = Tone.now()) {
+    this.step(time);
+  }
+
   start() {
     if (this.loop) return;
     this.loop = new Tone.Loop((time) => this.step(time), this.interval);

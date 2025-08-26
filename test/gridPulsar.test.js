@@ -44,6 +44,19 @@ describe('GridSequencer', () => {
     expect(setCell).toHaveBeenCalledWith(0, 1, 1);
   });
 
+  it('manually advances using next()', () => {
+    const grid = new GridSequencer(0, 0, 1, 2, { sync: false });
+    const cb = vi.fn();
+    grid.on(0, cb);
+    grid.toggle(0, 1, true);
+
+    grid.next();
+    expect(cb).not.toHaveBeenCalled();
+
+    grid.next();
+    expect(cb).toHaveBeenCalledOnce();
+  });
+
   it('forces toggle on ctrl+click and prevents dragging', () => {
     const grid = new GridSequencer(0, 0, 2, 2, { sync: false });
     const listeners = {};
