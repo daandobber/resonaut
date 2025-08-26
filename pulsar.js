@@ -62,19 +62,34 @@ export class GridSequencer {
           size: [cols * 20, rows * 20],
         });
         // allow click/drag toggling even during playback
-        this.sequencer.on('change', (v) => {
-          let row, col, state;
+        this.sequencer.on("change", (v) => {
+          let row, col;
           if (Array.isArray(v)) {
-            [row, col, state] = v;
-          } else if (v && typeof v === 'object') {
+            // NexusUI may emit [row, column] or [row, column, state]
+            [row, col] = v;
+          } else if (v && typeof v === "object") {
             row = v.row;
-            col = v.column;
-            state = v.state;
+            col = v.column ?? v.col;
           }
-          if (typeof row === 'number' && typeof col === 'number') {
-            this.toggle(row, col, !!state);
+          if (typeof row === "number" && typeof col === "number") {
+            // Some Nexus versions swap row & column in the callback.
+            if (!this.grid[row] && this.grid[col]) {
+              [row, col] = [col, row];
+            }
+            const matrixState = !!(
+              this.sequencer?.matrix?.pattern?.[row]?.[col]
+            );
+            this.toggle(row, col, matrixState);
           }
         });
+        // reflect any pre-existing grid state
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (this.grid[r][c]) {
+              this.sequencer.matrix.set.cell(r, c, 1);
+            }
+          }
+        }
       }).catch(() => {
         /* ignore Nexus loading errors */
       });
@@ -102,7 +117,11 @@ export class GridSequencer {
     if (this.sequencer) {
       try {
         this.sequencer.stepper.value = this.column;
-        this.sequencer.render();
+        if (typeof this.sequencer.stepper.draw === "function") {
+          this.sequencer.stepper.draw();
+        } else if (typeof this.sequencer.draw === "function") {
+          this.sequencer.draw();
+        }
       } catch {
         /* ignore */
       }
