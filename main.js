@@ -1448,12 +1448,18 @@ function getCrankRadarHandleGripPos(n) {
 }
 
 function getConnectionPoint(node, useHandle) {
-  if (typeof useHandle === 'number' && (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid')) {
+  if (
+    typeof useHandle === 'number' &&
+    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid')
+  ) {
     const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
     const cy = rectY + (useHandle + 0.5) * node.height / rows;
-    const cx = rectX - 10; // matches drawing offset for connector dots
+    const cx =
+      node.type === GRID_SEQUENCER_TYPE
+        ? rectX + node.width + 10
+        : rectX - 10; // matches drawing offset for connector dots
     return { x: cx, y: cy };
   }
   if (useHandle && node.type === CRANK_RADAR_TYPE) {
@@ -11204,8 +11210,10 @@ function drawNode(node) {
     const connectorRadius = 5 / viewScale;
     ctx.fillStyle = gridStroke;
     for (let r = 0; r < (node.rows || GRID_SEQUENCER_DEFAULT_ROWS); r++) {
-      const cy = rectY + (r + 0.5) * node.height / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
-      const cx = rectX - connectorRadius * 2;
+      const cy =
+        rectY +
+        (r + 0.5) * node.height / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
+      const cx = rectX + node.width + connectorRadius * 2;
       ctx.beginPath();
       ctx.arc(cx, cy, connectorRadius, 0, Math.PI * 2);
       ctx.fill();
