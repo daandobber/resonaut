@@ -1,10 +1,23 @@
 let NexusPromise = typeof window !== "undefined" ? import("nexusui") : null;
 
 export class GridSequencer {
-  constructor(target, { rows = 4, columns = 8, interval = 150 } = {}) {
+  constructor(
+    target,
+    {
+      rows = 4,
+      columns = 8,
+      interval = 150,
+      subdivision = 1,
+      bpm,
+      useGlobalSync = false,
+    } = {},
+  ) {
     this.rows = rows;
     this.columns = columns;
     this.interval = interval;
+    this.subdivision = subdivision;
+    this.bpm = bpm;
+    this.useGlobalSync = useGlobalSync;
     this.position = 0;
     this.timer = null;
     this.matrix = Array.from({ length: rows }, () =>
@@ -89,6 +102,7 @@ export class GridSequencer {
   start() {
     if (this.timer) return;
     this.position = 0;
+    this.updateInterval();
     this.timer = setInterval(() => this.step(), this.interval);
   }
 
@@ -96,5 +110,63 @@ export class GridSequencer {
     if (!this.timer) return;
     clearInterval(this.timer);
     this.timer = null;
+  }
+
+  updateInterval() {
+    let newInterval = this.interval;
+    if (
+      this.useGlobalSync &&
+      typeof isGlobalSyncEnabled !== "undefined" &&
+      isGlobalSyncEnabled &&
+      typeof globalBPM === "number" &&
+      globalBPM > 0
+    ) {
+      const secondsPerBeat = 60 / globalBPM;
+      newInterval = secondsPerBeat * 1000 * this.subdivision;
+    } else if (this.bpm && this.bpm > 0) {
+      const secondsPerBeat = 60 / this.bpm;
+      newInterval = secondsPerBeat * 1000 * this.subdivision;
+    }
+    this.interval = newInterval;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = setInterval(() => this.step(), this.interval);
+    }
+  }
+
+  setSubdivision(sub) {
+    this.subdivision = sub;
+    this.updateInterval();
+  }
+
+  setBpm(bpm) {
+    this.bpm = bpm;
+    this.updateInterval();
+  }
+
+  setUseGlobalSync(flag) {
+    this.useGlobalSync = flag;
+    this.updateInterval();
+  }
+
+  setSteps(columns) {
+    if (!Number.isInteger(columns) || columns <= 0) return;
+    this.columns = columns;
+    this.matrix = Array.from({ length: this.rows }, () =>
+      Array(columns).fill(false)
+    );
+    this.position = 0;
+    if (this.sequencer) {
+      try {
+        if (typeof this.sequencer.set === "function") {
+          this.sequencer.set({ columns, rows: this.rows });
+        }
+        if (this.sequencer.matrix && this.sequencer.matrix.set) {
+          this.sequencer.matrix.set.all(this.matrix);
+        }
+      } catch {
+        /* ignore resize errors */
+      }
+    }
   }
 }

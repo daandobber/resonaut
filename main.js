@@ -18796,6 +18796,96 @@ function populateEditPanel() {
                 section.appendChild(autoRotateSection);
                 fragment.appendChild(section);
 
+            } else if (node && node.type === GRID_SEQUENCER_TYPE) {
+                const section = document.createElement("div");
+                section.classList.add("panel-section");
+
+                const currentSteps = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+                const stepsSlider = createSlider(
+                    `edit-gridseq-steps-${node.id}`,
+                    `Steps (${currentSteps}):`,
+                    1,
+                    32,
+                    1,
+                    currentSteps,
+                    saveState,
+                    (e_input) => {
+                        const newSteps = parseInt(e_input.target.value, 10);
+                        selectedArray.forEach((elData) => {
+                            const n = findNodeById(elData.id);
+                            if (n && n.type === GRID_SEQUENCER_TYPE) {
+                                const rows = n.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+                                const oldGrid = n.grid || [];
+                                n.cols = newSteps;
+                                if (n.audioParams) n.audioParams.cols = newSteps;
+                                const newGrid = Array.from({ length: rows }, (_, r) =>
+                                    Array.from({ length: newSteps }, (_, c) =>
+                                        (oldGrid[r] && oldGrid[r][c]) || false,
+                                    ),
+                                );
+                                n.grid = newGrid;
+                                if (n.column >= newSteps) n.column = 0;
+                            }
+                        });
+                        e_input.target.previousElementSibling.textContent = `Steps (${newSteps}):`;
+                    },
+                );
+                section.appendChild(stepsSlider);
+
+                if (isGlobalSyncEnabled) {
+                    const subdivLabel = document.createElement("label");
+                    subdivLabel.htmlFor = `edit-gridseq-subdiv-${node.id}`;
+                    subdivLabel.textContent = "Subdivision:";
+                    section.appendChild(subdivLabel);
+                    const subdivSelect = document.createElement("select");
+                    subdivSelect.id = `edit-gridseq-subdiv-${node.id}`;
+                    const currentIndex = node.audioParams?.syncSubdivisionIndex ?? DEFAULT_SUBDIVISION_INDEX;
+                    subdivisionOptions.forEach((opt, index) => {
+                        const optionEl = document.createElement("option");
+                        optionEl.value = index;
+                        optionEl.textContent = opt.label;
+                        if (index === currentIndex) optionEl.selected = true;
+                        subdivSelect.appendChild(optionEl);
+                    });
+                    subdivSelect.addEventListener("change", (e) => {
+                        const newIndex = parseInt(e.target.value, 10);
+                        selectedArray.forEach((elData) => {
+                            const n = findNodeById(elData.id);
+                            if (n && n.type === GRID_SEQUENCER_TYPE) {
+                                if (n.audioParams) n.audioParams.syncSubdivisionIndex = newIndex;
+                                n.syncSubdivisionIndex = newIndex;
+                                n.nextSyncTriggerTime = 0;
+                            }
+                        });
+                        saveState();
+                    });
+                    section.appendChild(subdivSelect);
+                } else {
+                    const curInterval = node.audioParams?.triggerInterval || DEFAULT_TRIGGER_INTERVAL;
+                    const intervalSlider = createSlider(
+                        `edit-gridseq-interval-${node.id}`,
+                        `Interval (${curInterval.toFixed(1)}s):`,
+                        0.1,
+                        10,
+                        0.1,
+                        curInterval,
+                        saveState,
+                        (e_input) => {
+                            const newVal = parseFloat(e_input.target.value);
+                            selectedArray.forEach((elData) => {
+                                const n = findNodeById(elData.id);
+                                if (n && n.type === GRID_SEQUENCER_TYPE && n.audioParams) {
+                                    n.audioParams.triggerInterval = newVal;
+                                }
+                            });
+                            e_input.target.previousElementSibling.textContent = `Interval (${newVal.toFixed(1)}s):`;
+                        },
+                    );
+                    section.appendChild(intervalSlider);
+                }
+
+                fragment.appendChild(section);
+
             } else if (node && (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE)) {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
