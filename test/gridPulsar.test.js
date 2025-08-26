@@ -43,4 +43,41 @@ describe('GridSequencer', () => {
 
     expect(setCell).toHaveBeenCalledWith(0, 1, 1);
   });
+
+  it('forces toggle on ctrl+click and prevents dragging', () => {
+    const grid = new GridSequencer(0, 0, 2, 2, { sync: false });
+    const listeners = {};
+    const element = {
+      addEventListener: (type, fn) => {
+        listeners[type] = fn;
+      },
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+    };
+    grid.sequencer = { node: element };
+    grid.bindCtrlToggle();
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    listeners['pointerdown']({
+      ctrlKey: true,
+      clientX: 75,
+      clientY: 25,
+      preventDefault,
+      stopPropagation,
+    });
+
+    expect(grid.grid[0][1]).toBe(true);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopPropagation).toHaveBeenCalledOnce();
+
+    listeners['pointerdown']({
+      ctrlKey: false,
+      clientX: 25,
+      clientY: 25,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    });
+
+    expect(grid.grid[0][0]).toBe(false);
+  });
 });

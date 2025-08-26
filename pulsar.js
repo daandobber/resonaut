@@ -74,6 +74,7 @@ export class GridSequencer {
             }
           }
         }
+        this.bindCtrlToggle();
       }).catch(() => {
         /* ignore Nexus loading errors */
       });
@@ -91,6 +92,28 @@ export class GridSequencer {
         // ignore if Nexus matrix API is unavailable
       }
     }
+  }
+
+  bindCtrlToggle() {
+    const node =
+      this.sequencer?.node ||
+      this.sequencer?.element ||
+      this.sequencer?.canvas?.element;
+    if (!node) return;
+    node.addEventListener("pointerdown", (e) => {
+      if (e.ctrlKey) {
+        const rect = node.getBoundingClientRect();
+        const col = Math.floor(
+          (e.clientX - rect.left) / (rect.width / this.cols),
+        );
+        const row = Math.floor(
+          (e.clientY - rect.top) / (rect.height / this.rows),
+        );
+        this.toggle(row, col);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
   }
 
   on(row, callback) {
