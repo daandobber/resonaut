@@ -113,20 +113,14 @@ describe('playWithToneSampler', () => {
     expect(gainNode.gain.setValueAtTime).toHaveBeenCalledWith(0, 1);
   });
 
-  it('warns and returns when AudioContext is missing', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('returns when AudioContext is missing', () => {
     delete globalThis.audioContext;
-
-    playWithToneSampler({}, 100, 100, 0, 0.1, 0.2, 0.5);
-
-    expect(warn).toHaveBeenCalledWith(
-      '[playWithToneSampler] AudioContext not available.',
-    );
-    warn.mockRestore();
+    expect(() =>
+      playWithToneSampler({}, 100, 100, 0, 0.1, 0.2, 0.5),
+    ).not.toThrow();
   });
 
-  it('warns and returns when buffer is missing', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('returns when buffer is missing', () => {
     const gainNode = {
       gain: {
         setValueAtTime: vi.fn(),
@@ -146,13 +140,8 @@ describe('playWithToneSampler', () => {
       resume: vi.fn(),
       destination: {},
     };
-
     playWithToneSampler(null, 100, 100, 0, 0.1, 0.2, 0.5);
-
-    expect(warn).toHaveBeenCalledWith(
-      '[playWithToneSampler] No buffer provided.',
-    );
-    warn.mockRestore();
+    expect(createBufferSource).not.toHaveBeenCalled();
   });
 
   it('defaults playbackRate to 1 when baseFreq is invalid', () => {
@@ -176,7 +165,6 @@ describe('playWithToneSampler', () => {
     };
     const createBufferSource = vi.fn(() => source);
     const createGain = vi.fn(() => gainNode);
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     globalThis.audioContext = {
       currentTime: 0,
       createBufferSource,
@@ -189,13 +177,9 @@ describe('playWithToneSampler', () => {
     playWithToneSampler(buffer, 0, 200, 0, 0.1, 0.2, 0.5);
 
     expect(source.playbackRate.value).toBe(1);
-    expect(warn).toHaveBeenCalledWith(
-      '[playWithToneSampler] baseFreq invalid, defaulting playbackRate to 1.',
-    );
-    warn.mockRestore();
   });
 
-  it('resumes audioContext and logs when suspended', async () => {
+  it('resumes audioContext when suspended', async () => {
     const buffer = { duration: 1 };
     const source = {
       buffer: null,
@@ -217,8 +201,6 @@ describe('playWithToneSampler', () => {
     const createBufferSource = vi.fn(() => source);
     const createGain = vi.fn(() => gainNode);
     const resume = vi.fn(() => Promise.resolve());
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     globalThis.audioContext = {
       currentTime: 0,
       createBufferSource,
@@ -230,14 +212,7 @@ describe('playWithToneSampler', () => {
 
     playWithToneSampler(buffer, 100, 100, 0, 0.1, 0.2, 0.5);
 
-    expect(warn).toHaveBeenCalledWith(
-      '[playWithToneSampler] AudioContext state is',
-      'suspended',
-    );
     expect(resume).toHaveBeenCalled();
     await Promise.resolve();
-    expect(log).toHaveBeenCalledWith('[playWithToneSampler] AudioContext resumed');
-    log.mockRestore();
-    warn.mockRestore();
   });
 });
