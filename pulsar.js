@@ -62,25 +62,8 @@ export class GridSequencer {
           size: [cols * 20, rows * 20],
         });
         // allow click/drag toggling even during playback
-        this.sequencer.on("change", (v) => {
-          let row, col;
-          if (Array.isArray(v)) {
-            // NexusUI may emit [row, column] or [row, column, state]
-            [row, col] = v;
-          } else if (v && typeof v === "object") {
-            row = v.row;
-            col = v.column ?? v.col;
-          }
-          if (typeof row === "number" && typeof col === "number") {
-            // Some Nexus versions swap row & column in the callback.
-            if (!this.grid[row] && this.grid[col]) {
-              [row, col] = [col, row];
-            }
-            const matrixState = !!(
-              this.sequencer?.matrix?.pattern?.[row]?.[col]
-            );
-            this.toggle(row, col, matrixState);
-          }
+        this.sequencer.on("change", ({ row, column, state }) => {
+          this.toggle(row, column, !!state);
         });
         // reflect any pre-existing grid state
         for (let r = 0; r < rows; r++) {
