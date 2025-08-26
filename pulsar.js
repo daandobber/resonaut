@@ -100,7 +100,11 @@ export class GridSequencer {
     if (this.sequencer) {
       try {
         this.sequencer.stepper.value = this.column;
-        this.sequencer.render();
+        if (typeof this.sequencer.stepper.draw === "function") {
+          this.sequencer.stepper.draw();
+        } else if (typeof this.sequencer.draw === "function") {
+          this.sequencer.draw();
+        }
       } catch {
         /* ignore */
       }
