@@ -4684,15 +4684,6 @@ export function triggerNodeEffect(
               Math.max(0.001, targetSamplerIndividualPeak),
             );
             if (targetSamplerIndividualPeak < 0.001 || noteVolumeFactor === 0) {
-              console.warn(
-                `[Sampler Trigger] Low volume detected, using minimum`,
-                {
-                  nodeId: node.id,
-                  freq,
-                  noteVolumeFactor,
-                  targetSamplerIndividualPeak,
-                },
-              );
               targetSamplerIndividualPeak = 0.001;
             }
             const samplerAttack = params.sampleAttack ?? 0.005;
@@ -4701,13 +4692,6 @@ export function triggerNodeEffect(
               lowPassFilter && lowPassFilter.input
                 ? lowPassFilter.input
                 : lowPassFilter;
-            console.log('[Sampler Trigger]', {
-              nodeId: node.id,
-              samplerId,
-              freq,
-              startTime: scheduledStartTime,
-              velocity: targetSamplerIndividualPeak,
-            });
             playWithToneSampler(
               bufferToUse,
               definition.baseFreq,
@@ -4735,11 +4719,6 @@ export function triggerNodeEffect(
             }
           });
       } else {
-        console.warn('[Sampler Trigger] Definition not ready', {
-          samplerId,
-          isLoaded: definition?.isLoaded,
-          hasBuffer: !!definition?.buffer,
-        });
         if (oscillator1 && oscillator1.frequency) {
           const fallbackFreq =
             effectivePitch * Math.pow(2, params.osc1Octave || 0);
@@ -6290,12 +6269,10 @@ function playSingleRetrigger(
           targetRate = currentPitch / definition.baseFreq;
           targetRate = Math.max(0.05, Math.min(16, targetRate));
         } else {
-          console.warn(`[Retrigger Sampler V3] Invalid pitch (${currentPitch}) or baseFreq (${definition.baseFreq}) for rate calc. Using default rate 1.0.`);
           targetRate = 1.0;
         }
 
         if (isNaN(targetRate) || !isFinite(targetRate)) {
-          console.error(`[Retrigger Sampler V3] FATAL: targetRate is ${targetRate}. Aborting retrigger step for ${samplerId}.`);
           return;
         }
 
@@ -6328,8 +6305,6 @@ function playSingleRetrigger(
         source.onended = () => {
           try { source.disconnect(); } catch (e) {}
         };
-      } else {
-        console.warn(`[Retrigger Sampler V3] Sampler def/buffer not ready, or core audioNodes (filter/gain) missing for ${samplerId}. Node ID: ${node.id}`);
       }
     } else if (audioNodes.oscillator1 && audioNodes.gainNode) {
       const {
@@ -23241,24 +23216,11 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   }
 
   if (requestedSubtype && requestedSubtype.startsWith("sampler_")) {
-    const samplerId = requestedSubtype.replace("sampler_", "");
     if (
-      nodeSubtypeForAudioParams &&
-      nodeSubtypeForAudioParams.startsWith("sampler_")
+      !(nodeSubtypeForAudioParams &&
+        nodeSubtypeForAudioParams.startsWith("sampler_"))
     ) {
-      console.log("[Sampler Placement]", {
-        nodeId: newNode.id,
-        samplerId,
-        x,
-        y,
-      });
-    } else {
-      console.warn("[Sampler Placement] Definition not ready", {
-        nodeId: newNode.id,
-        samplerId,
-        x,
-        y,
-      });
+      /* sampler definition not ready - previously logged */
     }
   }
 

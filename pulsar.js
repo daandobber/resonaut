@@ -54,6 +54,15 @@ export class GridSequencer {
     this.loop = null;
     this.sequencer = null;
 
+    console.log('[GridSequencer] Initialized', {
+      x,
+      y,
+      rows,
+      cols,
+      interval,
+      sync,
+      targetPresent: !!target,
+    });
     if (target && NexusPromise) {
       NexusPromise.then(({ default: Nexus }) => {
         this.sequencer = new Nexus.Sequencer(target, {
@@ -82,8 +91,12 @@ export class GridSequencer {
   }
 
   toggle(row, col, state = !this.grid[row][col]) {
-    if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
+    if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) {
+      console.log('[GridSequencer.toggle] Ignored out of bounds', { row, col });
+      return;
+    }
     this.grid[row][col] = state;
+    console.log('[GridSequencer.toggle]', { row, col, state });
     if (this.sequencer) {
       try {
         // Matrix.set.cell uses (column, row, value)
@@ -109,6 +122,7 @@ export class GridSequencer {
         const row = Math.floor(
           (e.clientY - rect.top) / (rect.height / this.rows),
         );
+        console.log('[GridSequencer.ctrlToggle]', { row, col });
         this.toggle(row, col);
         e.preventDefault();
         e.stopPropagation();
@@ -117,11 +131,16 @@ export class GridSequencer {
   }
 
   on(row, callback) {
-    if (row < 0 || row >= this.rows) return;
+    if (row < 0 || row >= this.rows) {
+      console.log('[GridSequencer.on] Ignored out of bounds row', row);
+      return;
+    }
+    console.log('[GridSequencer.on] Added callback for row', row);
     this.callbacks[row].push(callback);
   }
 
   step(time) {
+    console.log('[GridSequencer.step] Column', this.column, 'Time', time);
     if (this.sequencer) {
       try {
         this.sequencer.stepper.value = this.column;
@@ -136,6 +155,7 @@ export class GridSequencer {
     }
     for (let r = 0; r < this.rows; r++) {
       if (this.grid[r][this.column]) {
+        console.log('[GridSequencer.step] Trigger', { row: r, column: this.column });
         for (const cb of this.callbacks[r]) cb(time);
       }
     }
@@ -145,13 +165,27 @@ export class GridSequencer {
   start() {
     if (this.loop) return;
     this.loop = new Tone.Loop((time) => this.step(time), this.interval);
-    if (this.sync) this.loop.start(0);
-    else this.loop.start();
-    if (Tone.Transport.state !== "started") Tone.Transport.start();
+    const transportStarted = Tone.Transport.state === "started";
+    if (this.sync) {
+      const startTime = transportStarted ? "+0" : 0;
+      console.log('[GridSequencer.start] Sync start', {
+        startTime,
+        transportStarted,
+      });
+      this.loop.start(startTime);
+    } else {
+      console.log('[GridSequencer.start] Unsynced start');
+      this.loop.start();
+    }
+    if (!transportStarted) {
+      console.log('[GridSequencer.start] Starting Transport');
+      Tone.Transport.start();
+    }
   }
 
   stop() {
     if (this.loop) {
+      console.log('[GridSequencer.stop] Stopping loop');
       this.loop.stop();
       this.loop = null;
     }
@@ -159,7 +193,11 @@ export class GridSequencer {
     if (this.sequencer) {
       try {
         this.sequencer.stepper.value = -1;
-        this.sequencer.render();
+        if (typeof this.sequencer.draw === "function") {
+          this.sequencer.draw();
+        } else {
+          this.sequencer.render();
+        }
       } catch {
         /* ignore */
       }
