@@ -417,6 +417,10 @@ const GRID_SEQUENCER_DEFAULT_WIDTH = 200;
 const GRID_SEQUENCER_DEFAULT_HEIGHT = 150;
 const GRID_SEQUENCER_DEFAULT_ROWS = 4;
 const GRID_SEQUENCER_DEFAULT_COLS = 8;
+const GRID_PULSAR_DEFAULT_WIDTH = 200;
+const GRID_PULSAR_DEFAULT_HEIGHT = 150;
+const GRID_PULSAR_DEFAULT_ROWS = 4;
+const GRID_PULSAR_DEFAULT_COLS = 4;
 const SPACERADAR_MODE_NORMAL = "normal";
 const SPACERADAR_MODE_REVERSE = "reverse";
 const SPACERADAR_DEFAULT_MODE = SPACERADAR_MODE_NORMAL;
@@ -1377,7 +1381,7 @@ function updateAllConnectionLengths() {
 function findNodeAt(worldX, worldY) {
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
-    if (n.type === TIMELINE_GRID_TYPE || n.type === GRID_SEQUENCER_TYPE) {
+    if (n.type === TIMELINE_GRID_TYPE || n.type === GRID_SEQUENCER_TYPE || n.type === "pulsar_grid") {
       const rectX1 = n.x - n.width / 2;
       const rectY1 = n.y - n.height / 2;
       const rectX2 = n.x + n.width / 2;
@@ -11105,6 +11109,53 @@ function drawNode(node) {
       node.audioParams.color !== null
         ? node.audioParams.color
         : gridBoxStrokeFromCSSTimeline;
+  } else if (node.type === "pulsar_grid") {
+    const rectX = node.x - node.width / 2;
+    const rectY = node.y - node.height / 2;
+    const currentStyles = getComputedStyle(document.documentElement);
+    const gridStroke =
+      currentStyles
+        .getPropertyValue("--timeline-grid-default-border-color")
+        .trim() || "rgba(220, 220, 220, 0.8)";
+    const internalColor =
+      currentStyles
+        .getPropertyValue("--timeline-grid-internal-lines-color")
+        .trim() || gridStroke.replace(/[\d\.]+\)$/g, "0.3)");
+
+    ctx.fillStyle = gridStroke.replace(/[\d\.]+\)$/g, "0.05)");
+    ctx.fillRect(rectX, rectY, node.width, node.height);
+
+    ctx.strokeStyle = gridStroke;
+    ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
+    ctx.strokeRect(rectX, rectY, node.width, node.height);
+
+    ctx.strokeStyle = internalColor;
+    ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
+    for (let i = 1; i < (node.cols || GRID_PULSAR_DEFAULT_COLS); i++) {
+      const x = rectX + (i * node.width) / (node.cols || GRID_PULSAR_DEFAULT_COLS);
+      ctx.beginPath();
+      ctx.moveTo(x, rectY);
+      ctx.lineTo(x, rectY + node.height);
+      ctx.stroke();
+    }
+    for (let i = 1; i < (node.rows || GRID_PULSAR_DEFAULT_ROWS); i++) {
+      const y = rectY + (i * node.height) / (node.rows || GRID_PULSAR_DEFAULT_ROWS);
+      ctx.beginPath();
+      ctx.moveTo(rectX, y);
+      ctx.lineTo(rectX + node.width, y);
+      ctx.stroke();
+    }
+
+    const connectorRadius = 5 / viewScale;
+    ctx.fillStyle = gridStroke;
+    for (let r = 0; r < (node.rows || GRID_PULSAR_DEFAULT_ROWS); r++) {
+      const cy = rectY + (r + 0.5) * node.height / (node.rows || GRID_PULSAR_DEFAULT_ROWS);
+      const cx = rectX - connectorRadius * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, connectorRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
   } else if (node.type === GRID_SEQUENCER_TYPE) {
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
@@ -13346,6 +13397,24 @@ function drawAddPreview() {
         rows: GRID_SEQUENCER_DEFAULT_ROWS,
         cols: GRID_SEQUENCER_DEFAULT_COLS,
         type: GRID_SEQUENCER_TYPE,
+        audioParams: {
+          pulseIntensity: DEFAULT_PULSE_INTENSITY,
+          ignoreGlobalSync: false,
+          syncSubdivisionIndex: DEFAULT_SUBDIVISION_INDEX,
+          triggerInterval: DEFAULT_TRIGGER_INTERVAL,
+        },
+      };
+      drawNode(previewNode);
+    } else if (nodeTypeToAdd === "pulsar_grid") {
+      const previewNode = {
+        id: -1,
+        x: mousePos.x,
+        y: mousePos.y,
+        width: GRID_PULSAR_DEFAULT_WIDTH,
+        height: GRID_PULSAR_DEFAULT_HEIGHT,
+        rows: GRID_PULSAR_DEFAULT_ROWS,
+        cols: GRID_PULSAR_DEFAULT_COLS,
+        type: "pulsar_grid",
         audioParams: {
           pulseIntensity: DEFAULT_PULSE_INTENSITY,
           ignoreGlobalSync: false,
@@ -22909,7 +22978,6 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.audioParams.rocketRange = ROCKET_DEFAULT_RANGE;
     newNode.audioParams.rocketGravity = ROCKET_DEFAULT_GRAVITY;
   }
-
   if (type === GRID_SEQUENCER_TYPE) {
     newNode.width = optionalDimensions
       ? optionalDimensions.width
