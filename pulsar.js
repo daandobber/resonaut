@@ -69,10 +69,12 @@ export class GridSequencer {
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < cols; c++) {
             if (this.grid[r][c]) {
-              this.sequencer.matrix.set.cell(r, c, 1);
+              // Matrix.set.cell expects (column, row, value)
+              this.sequencer.matrix.set.cell(c, r, 1);
             }
           }
         }
+        this.bindCtrlToggle();
       }).catch(() => {
         /* ignore Nexus loading errors */
       });
@@ -84,11 +86,34 @@ export class GridSequencer {
     this.grid[row][col] = state;
     if (this.sequencer) {
       try {
-        this.sequencer.matrix.set.cell(row, col, state ? 1 : 0);
+        // Matrix.set.cell uses (column, row, value)
+        this.sequencer.matrix.set.cell(col, row, state ? 1 : 0);
       } catch {
         // ignore if Nexus matrix API is unavailable
       }
     }
+  }
+
+  bindCtrlToggle() {
+    const node =
+      this.sequencer?.node ||
+      this.sequencer?.element ||
+      this.sequencer?.canvas?.element;
+    if (!node) return;
+    node.addEventListener("pointerdown", (e) => {
+      if (e.ctrlKey) {
+        const rect = node.getBoundingClientRect();
+        const col = Math.floor(
+          (e.clientX - rect.left) / (rect.width / this.cols),
+        );
+        const row = Math.floor(
+          (e.clientY - rect.top) / (rect.height / this.rows),
+        );
+        this.toggle(row, col);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
   }
 
   on(row, callback) {
