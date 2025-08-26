@@ -1448,6 +1448,14 @@ function getCrankRadarHandleGripPos(n) {
 }
 
 function getConnectionPoint(node, useHandle) {
+  if (typeof useHandle === 'number' && (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid')) {
+    const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+    const rectX = node.x - node.width / 2;
+    const rectY = node.y - node.height / 2;
+    const cy = rectY + (useHandle + 0.5) * node.height / rows;
+    const cx = rectX - 10; // matches drawing offset for connector dots
+    return { x: cx, y: cy };
+  }
   if (useHandle && node.type === CRANK_RADAR_TYPE) {
     return getCrankRadarHandleGripPos(node);
   }
@@ -8308,8 +8316,8 @@ function connectNodes(nodeA, nodeB, type = "standard", options = {}) {
     length: len,
     controlPointOffsetX: ctrlOffsetX,
     controlPointOffsetY: ctrlOffsetY,
-    nodeAHandle: !!options.nodeAHandle,
-    nodeBHandle: !!options.nodeBHandle,
+    nodeAHandle: options.nodeAHandle ?? null,
+    nodeBHandle: options.nodeBHandle ?? null,
     type: type,
     isSelected: false,
     audioParams: {},
