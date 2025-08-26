@@ -33,4 +33,14 @@ describe('GridSequencer', () => {
     grid.step();
     expect(cb).toHaveBeenCalledTimes(2);
   });
+
+  it('sets matrix cells using column,row order', () => {
+    const grid = new GridSequencer(0, 0, 2, 2, { sync: false });
+    const setCell = vi.fn();
+    grid.sequencer = { matrix: { set: { cell: setCell } } };
+
+    grid.toggle(1, 0, true);
+
+    expect(setCell).toHaveBeenCalledWith(0, 1, 1);
+  });
 });

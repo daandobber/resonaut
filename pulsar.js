@@ -69,7 +69,8 @@ export class GridSequencer {
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < cols; c++) {
             if (this.grid[r][c]) {
-              this.sequencer.matrix.set.cell(r, c, 1);
+              // Matrix.set.cell expects (column, row, value)
+              this.sequencer.matrix.set.cell(c, r, 1);
             }
           }
         }
@@ -84,7 +85,8 @@ export class GridSequencer {
     this.grid[row][col] = state;
     if (this.sequencer) {
       try {
-        this.sequencer.matrix.set.cell(row, col, state ? 1 : 0);
+        // Matrix.set.cell uses (column, row, value)
+        this.sequencer.matrix.set.cell(col, row, state ? 1 : 0);
       } catch {
         // ignore if Nexus matrix API is unavailable
       }
