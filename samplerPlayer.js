@@ -8,33 +8,21 @@ export async function playWithToneSampler(
   velocity,
   destination,
 ) {
-  console.log('[playWithToneSampler] Invoked', {
-    baseFreq,
-    freq,
-    startTime,
-    attack,
-    release,
-    velocity,
-  });
+  // sampler logs removed
 
   const ctx = globalThis.audioContext;
   if (!ctx) {
-    console.warn('[playWithToneSampler] AudioContext not available.');
     return;
   }
 
   if (ctx.state !== 'running') {
-    console.warn('[playWithToneSampler] AudioContext state is', ctx.state);
     try {
       await ctx.resume();
-      console.log('[playWithToneSampler] AudioContext resumed');
     } catch (e) {
-      console.error('[playWithToneSampler] Failed to resume AudioContext', e);
       return;
     }
   }
   if (!buffer) {
-    console.warn('[playWithToneSampler] No buffer provided.');
     return;
   }
 
@@ -42,9 +30,7 @@ export async function playWithToneSampler(
   source.buffer = buffer;
   const rate = baseFreq ? freq / baseFreq : 1;
   if (!baseFreq) {
-    console.warn(
-      '[playWithToneSampler] baseFreq invalid, defaulting playbackRate to 1.',
-    );
+    // baseFreq invalid, defaulting playbackRate to 1
   }
   source.playbackRate.value = rate;
 
@@ -54,7 +40,7 @@ export async function playWithToneSampler(
   const actualStart = Math.max(now, startTime);
   const safeVelocity = Number.isFinite(velocity) && velocity > 0 ? velocity : 0.001;
   if (safeVelocity !== velocity) {
-    console.warn('[playWithToneSampler] Invalid velocity, using', safeVelocity);
+    // invalid velocity
   }
   gain.gain.setValueAtTime(0, actualStart);
   gain.gain.linearRampToValueAtTime(safeVelocity, actualStart + attack);
@@ -66,26 +52,18 @@ export async function playWithToneSampler(
   try {
     source.start(actualStart, 0, buffer.duration);
   } catch (e) {
-    console.error('[playWithToneSampler] Failed to start source.', e);
     return;
   }
   const stopTime = actualStart + buffer.duration + release;
   source.stop(stopTime);
 
-  console.log('[playWithToneSampler] Scheduled sample', {
-    startTime,
-    actualStart,
-    stopTime,
-    rate,
-    velocity: safeVelocity,
-  });
+
 
   setTimeout(() => {
     try {
       source.disconnect();
       gain.disconnect();
     } catch (e) {
-      console.warn('[playWithToneSampler] Error during disconnect.', e);
     }
   }, (stopTime - ctx.currentTime + 0.5) * 1000);
 }
