@@ -417,6 +417,7 @@ const GRID_SEQUENCER_DEFAULT_WIDTH = 200;
 const GRID_SEQUENCER_DEFAULT_HEIGHT = 150;
 const GRID_SEQUENCER_DEFAULT_ROWS = 4;
 const GRID_SEQUENCER_DEFAULT_COLS = 8;
+const GRID_SEQUENCER_DRAG_BORDER = 10;
 const GRID_PULSAR_DEFAULT_WIDTH = 200;
 const GRID_PULSAR_DEFAULT_HEIGHT = 150;
 const GRID_PULSAR_DEFAULT_ROWS = 4;
@@ -854,6 +855,7 @@ let dragStartPos = {
   x: 0,
   y: 0,
 };
+let pendingGridToggle = null;
 let brushNodeType = "sound";
 let brushWaveform = "fmBell";
 let brushStartWithPulse = true;
@@ -11174,6 +11176,7 @@ function drawNode(node) {
   } else if (node.type === GRID_SEQUENCER_TYPE) {
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
+    const border = GRID_SEQUENCER_DRAG_BORDER;
     const currentStyles = getComputedStyle(document.documentElement);
     const gridStroke =
       currentStyles
@@ -11184,36 +11187,44 @@ function drawNode(node) {
         .getPropertyValue("--timeline-grid-internal-lines-color")
         .trim() || gridStroke.replace(/[\d\.]+\)$/g, "0.3)");
 
-    ctx.fillStyle = gridStroke.replace(/[\d\.]+\)$/g, "0.05)");
+    ctx.fillStyle = gridStroke;
     ctx.fillRect(rectX, rectY, node.width, node.height);
+
+    const innerX = rectX + border;
+    const innerY = rectY + border;
+    const innerW = node.width - border * 2;
+    const innerH = node.height - border * 2;
+
+    ctx.fillStyle = gridStroke.replace(/[\d\.]+\)$/g, "0.05)");
+    ctx.fillRect(innerX, innerY, innerW, innerH);
+
+    ctx.strokeStyle = internalColor;
+    ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
+    for (let i = 1; i < (node.cols || GRID_SEQUENCER_DEFAULT_COLS); i++) {
+      const x = innerX + (i * innerW) / (node.cols || GRID_SEQUENCER_DEFAULT_COLS);
+      ctx.beginPath();
+      ctx.moveTo(x, innerY);
+      ctx.lineTo(x, innerY + innerH);
+      ctx.stroke();
+    }
+    for (let i = 1; i < (node.rows || GRID_SEQUENCER_DEFAULT_ROWS); i++) {
+      const y = innerY + (i * innerH) / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
+      ctx.beginPath();
+      ctx.moveTo(innerX, y);
+      ctx.lineTo(innerX + innerW, y);
+      ctx.stroke();
+    }
 
     ctx.strokeStyle = gridStroke;
     ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
     ctx.strokeRect(rectX, rectY, node.width, node.height);
 
-    ctx.strokeStyle = internalColor;
-    ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
-    for (let i = 1; i < (node.cols || GRID_SEQUENCER_DEFAULT_COLS); i++) {
-      const x = rectX + (i * node.width) / (node.cols || GRID_SEQUENCER_DEFAULT_COLS);
-      ctx.beginPath();
-      ctx.moveTo(x, rectY);
-      ctx.lineTo(x, rectY + node.height);
-      ctx.stroke();
-    }
-    for (let i = 1; i < (node.rows || GRID_SEQUENCER_DEFAULT_ROWS); i++) {
-      const y = rectY + (i * node.height) / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
-      ctx.beginPath();
-      ctx.moveTo(rectX, y);
-      ctx.lineTo(rectX + node.width, y);
-      ctx.stroke();
-    }
-
     const connectorRadius = 5 / viewScale;
     ctx.fillStyle = gridStroke;
     for (let r = 0; r < (node.rows || GRID_SEQUENCER_DEFAULT_ROWS); r++) {
       const cy =
-        rectY +
-        (r + 0.5) * node.height / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
+        innerY +
+        (r + 0.5) * innerH / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
       const cx = rectX + node.width + connectorRadius * 2;
       ctx.beginPath();
       ctx.arc(cx, cy, connectorRadius, 0, Math.PI * 2);
@@ -14986,6 +14997,7 @@ function handleMouseDown(event) {
   nodeClickedAtMouseDown = null;
   connectionClickedAtMouseDown = null;
   elementClickedAtMouseDown = null;
+  pendingGridToggle = null;
   mouseDownPos = { ...mousePos };
 
   isRotatingTimelineGrid = false;
@@ -15443,20 +15455,61 @@ function handleMouseDown(event) {
           selectionChanged = true;
         }
         if (node) {
-          isDragging = true;
-          dragStartPos = { ...mousePos };
-          nodeDragOffsets.clear();
-          selectedElements.forEach((el) => {
-            if (el.type === "node") {
-              const n = findNodeById(el.id);
-              if (n)
-                nodeDragOffsets.set(el.id, {
-                  x: n.x - mousePos.x,
-                  y: n.y - mousePos.y,
-                });
+          if (node.type === GRID_SEQUENCER_TYPE) {
+            const border = GRID_SEQUENCER_DRAG_BORDER;
+            const rectX = node.x - node.width / 2;
+            const rectY = node.y - node.height / 2;
+            const insideX = mousePos.x - rectX;
+            const insideY = mousePos.y - rectY;
+            const withinBorder =
+              insideX < border ||
+              insideX > node.width - border ||
+              insideY < border ||
+              insideY > node.height - border;
+            if (withinBorder) {
+              isDragging = true;
+              dragStartPos = { ...mousePos };
+              nodeDragOffsets.clear();
+              selectedElements.forEach((el) => {
+                if (el.type === "node") {
+                  const n = findNodeById(el.id);
+                  if (n)
+                    nodeDragOffsets.set(el.id, {
+                      x: n.x - mousePos.x,
+                      y: n.y - mousePos.y,
+                    });
+                }
+              });
+              canvas.style.cursor = "move";
+            } else {
+              const innerW = node.width - border * 2;
+              const innerH = node.height - border * 2;
+              const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+              const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+              const row = Math.floor(
+                (insideY - border) / (innerH / rows),
+              );
+              const col = Math.floor(
+                (insideX - border) / (innerW / cols),
+              );
+              pendingGridToggle = { nodeId: node.id, row, col };
             }
-          });
-          canvas.style.cursor = "move";
+          } else {
+            isDragging = true;
+            dragStartPos = { ...mousePos };
+            nodeDragOffsets.clear();
+            selectedElements.forEach((el) => {
+              if (el.type === "node") {
+                const n = findNodeById(el.id);
+                if (n)
+                  nodeDragOffsets.set(el.id, {
+                    x: n.x - mousePos.x,
+                    y: n.y - mousePos.y,
+                  });
+              }
+            });
+            canvas.style.cursor = "move";
+          }
         }
         if (selectionChanged) {
           updateConstellationGroup();
@@ -16416,7 +16469,22 @@ function handleMouseUp(event) {
       populateEditPanel();
   } else if (!didDrag) {
       actionHandledInMainBlock = true;
-      if (currentTool === "brush") {
+      if (pendingGridToggle) {
+          const node = findNodeById(pendingGridToggle.nodeId);
+          if (node && node.type === GRID_SEQUENCER_TYPE) {
+              const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+              const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+              if (
+                  pendingGridToggle.row >= 0 && pendingGridToggle.row < rows &&
+                  pendingGridToggle.col >= 0 && pendingGridToggle.col < cols
+              ) {
+                  node.grid[pendingGridToggle.row][pendingGridToggle.col] = !node.grid[pendingGridToggle.row][pendingGridToggle.col];
+                  stateWasChanged = true;
+                  draw();
+              }
+          }
+          pendingGridToggle = null;
+      } else if (currentTool === "brush") {
           if (!elementUnderCursorAtUp) {
               let typeToPlace = brushNodeType;
               let subtypeToPlace = brushNodeType === "sound" ? brushWaveform : null;
@@ -16843,6 +16911,7 @@ function handleMouseUp(event) {
 
   didDrag = false;
 
+  pendingGridToggle = null;
   nodeClickedAtMouseDown = null;
   connectionClickedAtMouseDown = null;
   elementClickedAtMouseDown = null;
