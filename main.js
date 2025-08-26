@@ -822,6 +822,7 @@ let nodeClickedAtMouseDown = null;
 let connectionClickedAtMouseDown = null;
 let elementClickedAtMouseDown = null;
 let connectingNode = null;
+let connectFromGridHandle = null;
 let resizeStartSize = 1.0;
 let resizeStartY = 0;
 let mousePos = {
@@ -13370,8 +13371,9 @@ function drawTemporaryConnection() {
     ctx.lineWidth = Math.max(0.5, lineWidth);
     ctx.setLineDash(lineDash);
 
+    const startPos = getConnectionPoint(connectingNode, connectFromGridHandle);
     ctx.beginPath();
-    ctx.moveTo(connectingNode.x, connectingNode.y);
+    ctx.moveTo(startPos.x, startPos.y);
     ctx.lineTo(mousePos.x, mousePos.y);
     ctx.stroke();
 
@@ -15385,6 +15387,28 @@ function handleMouseDown(event) {
         ) {
           isConnecting = true;
           connectingNode = node;
+          if (
+            node.type === GRID_SEQUENCER_TYPE ||
+            node.type === "pulsar_grid"
+          ) {
+            const rows =
+              node.rows ||
+              (node.type === GRID_SEQUENCER_TYPE
+                ? GRID_SEQUENCER_DEFAULT_ROWS
+                : GRID_PULSAR_DEFAULT_ROWS);
+            const rectY = node.y - node.height / 2;
+            connectFromGridHandle = Math.max(
+              0,
+              Math.min(
+                rows - 1,
+                Math.floor(
+                  (mousePos.y - rectY) / (node.height / rows),
+                ),
+              ),
+            );
+          } else {
+            connectFromGridHandle = null;
+          }
           if (currentTool === "connect_string")
             connectionTypeToAdd = "string_violin";
           else if (currentTool === "connect_glide")
@@ -16321,10 +16345,38 @@ function handleMouseUp(event) {
               nodeUnderCursorOnUp.type,
           ) || connectToCrankHandle)
       ) {
-          connectNodes(connectingNode, nodeUnderCursorOnUp, connectionTypeToAdd, { nodeBHandle: connectToCrankHandle });
+          let connectToGridHandle = null;
+          if (
+            nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE ||
+            nodeUnderCursorOnUp.type === "pulsar_grid"
+          ) {
+            const rows =
+              nodeUnderCursorOnUp.rows ||
+              (nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE
+                ? GRID_SEQUENCER_DEFAULT_ROWS
+                : GRID_PULSAR_DEFAULT_ROWS);
+            const rectY = nodeUnderCursorOnUp.y - nodeUnderCursorOnUp.height / 2;
+            connectToGridHandle = Math.max(
+              0,
+              Math.min(
+                rows - 1,
+                Math.floor(
+                  (mousePos.y - rectY) /
+                    (nodeUnderCursorOnUp.height / rows),
+                ),
+              ),
+            );
+          }
+          const options = {};
+          if (connectFromGridHandle !== null)
+            options.nodeAHandle = connectFromGridHandle;
+          if (connectToCrankHandle || connectToGridHandle !== null)
+            options.nodeBHandle = connectToCrankHandle || connectToGridHandle;
+          connectNodes(connectingNode, nodeUnderCursorOnUp, connectionTypeToAdd, options);
           stateWasChanged = true;
       }
       connectingNode = null;
+      connectFromGridHandle = null;
   } else if (wasResizingNode) {
       actionHandledInMainBlock = true;
       stateWasChanged = true;
