@@ -18,12 +18,18 @@ function getCrankRadarHandleGripPos(n) {
 }
 
 function getConnectionPoint(node, useHandle) {
-  if (typeof useHandle === 'number' && (node.type === 'grid_sequencer' || node.type === 'pulsar_grid')) {
+  if (
+    typeof useHandle === 'number' &&
+    (node.type === 'grid_sequencer' || node.type === 'pulsar_grid')
+  ) {
     const rows = node.rows || 4;
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
     const cy = rectY + (useHandle + 0.5) * node.height / rows;
-    const cx = rectX - 10;
+    const cx =
+      node.type === 'grid_sequencer'
+        ? rectX + node.width + 10
+        : rectX - 10; // matches drawing offset for connector dots
     return { x: cx, y: cy };
   }
   if (useHandle && node.type === 'crank_radar') {
