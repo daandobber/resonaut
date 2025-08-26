@@ -11149,6 +11149,7 @@ function drawNode(node) {
       ctx.arc(cx, cy, connectorRadius, 0, Math.PI * 2);
       ctx.fill();
     }
+    return;
   } else if (node.type === GRID_SEQUENCER_TYPE) {
     const currentStylesTimeline = getComputedStyle(document.documentElement);
     const gridBoxStrokeFromCSS =
@@ -13400,6 +13401,12 @@ function drawAddPreview() {
         rows: GRID_PULSAR_DEFAULT_ROWS,
         cols: GRID_PULSAR_DEFAULT_COLS,
         type: "pulsar_grid",
+        audioParams: {
+          pulseIntensity: DEFAULT_PULSE_INTENSITY,
+          ignoreGlobalSync: false,
+          syncSubdivisionIndex: DEFAULT_SUBDIVISION_INDEX,
+          triggerInterval: DEFAULT_TRIGGER_INTERVAL,
+        },
       };
       drawNode(previewNode);
     } else {
@@ -22974,6 +22981,10 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     if (!newNode.audioParams) newNode.audioParams = {};
     newNode.audioParams.rows = newNode.rows;
     newNode.audioParams.cols = newNode.cols;
+    newNode.audioParams.pulseIntensity = newNode.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY;
+    newNode.audioParams.ignoreGlobalSync = newNode.audioParams.ignoreGlobalSync ?? false;
+    newNode.audioParams.syncSubdivisionIndex = newNode.audioParams.syncSubdivisionIndex ?? DEFAULT_SUBDIVISION_INDEX;
+    newNode.audioParams.triggerInterval = newNode.audioParams.triggerInterval ?? DEFAULT_TRIGGER_INTERVAL;
     delete newNode.starPoints;
     delete newNode.baseHue;
     delete newNode.color;
