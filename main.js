@@ -203,6 +203,7 @@ const {
   appMenuReplace,
   appMenuGridToggleBtn,
   appMenuGridSnapBtn,
+  appMenuMovePlaceBtn,
   appMenuSyncToggleBtn,
   appMenuBpmControls,
   appMenuBpmInput,
@@ -10749,8 +10750,9 @@ function drawGrid() {
       .trim() || "rgba(100, 130, 180, 0.15)";
   ctx.lineWidth = 0.5 / viewScale;
   ctx.fillStyle = ctx.strokeStyle;
-  const worldTopLeft = getWorldCoords(0, 0);
-  const worldBottomRight = getWorldCoords(canvas.width, canvas.height);
+  const extra = spacing;
+  const worldTopLeft = getWorldCoords(0, -extra);
+  const worldBottomRight = getWorldCoords(canvas.width, canvas.height + extra);
   const startX = Math.floor(worldTopLeft.x / spacing) * spacing;
   const startY = Math.floor(worldTopLeft.y / spacing) * spacing;
   const endX = Math.ceil(worldBottomRight.x / spacing) * spacing;
@@ -17918,6 +17920,11 @@ function setActiveTool(toolName) {
     updateGroupControlsUI();
     updateRestartPulsarsButtonVisibility();
 
+    if (appMenuMovePlaceBtn) {
+        appMenuMovePlaceBtn.classList.toggle("active", toolName === "add");
+        appMenuMovePlaceBtn.textContent = toolName === "add" ? "Place" : "Move";
+    }
+
     if (toolName === "edit") {
         populateEditPanel();
     } else {
@@ -23845,6 +23852,15 @@ if (appMenuGridSnapBtn) {
   appMenuGridSnapBtn.addEventListener("click", () => {
     isSnapEnabled = !isSnapEnabled;
     appMenuGridSnapBtn.classList.toggle("active", isSnapEnabled);
+  });
+}
+if (appMenuMovePlaceBtn) {
+  appMenuMovePlaceBtn.addEventListener("click", () => {
+    if (currentTool === "add") {
+      setActiveTool("edit");
+    } else {
+      setActiveTool("add");
+    }
   });
 }
 if (appMenuSyncToggleBtn) {
