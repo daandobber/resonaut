@@ -77,17 +77,22 @@ export class GridSequencer {
 
   updateColors() {
     if (!this.sequencer) return;
-    const style = getComputedStyle(document.body || document.documentElement);
-    const inactiveColor = style.getPropertyValue("--panel-bg").trim() || "#222";
+    const style = getComputedStyle(document.documentElement);
+    const inactiveColor = style.getPropertyValue("--grid-color").trim() || "#222";
     const activeColor =
       style.getPropertyValue("--start-node-color").trim() || "#ffd700";
     this.scanlineColor =
       style
         .getPropertyValue("--timeline-grid-default-scanline-color")
         .trim() || "#fff";
+    const borderColor =
+      style
+        .getPropertyValue("--timeline-grid-default-border-color")
+        .trim() || activeColor;
     this.sequencer.colorize("fill", inactiveColor);
     this.sequencer.colorize("accent", activeColor);
     this.sequencer.colorize("mediumLight", this.scanlineColor);
+    this.sequencer.colorize("mediumDark", borderColor);
     if (typeof this.sequencer.render === "function") {
       this.sequencer.render();
     }
