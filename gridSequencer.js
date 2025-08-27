@@ -77,7 +77,7 @@ export class GridSequencer {
 
   updateColors() {
     if (!this.sequencer) return;
-    const style = getComputedStyle(document.documentElement);
+    const style = getComputedStyle(document.body || document.documentElement);
     const inactiveColor = style.getPropertyValue("--grid-color").trim() || "#222";
     const activeColor =
       style.getPropertyValue("--start-node-color").trim() || "#ffd700";

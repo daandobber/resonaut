@@ -4968,7 +4968,7 @@ export function triggerNodeEffect(
     );
     createParticles(node.x, node.y, particleCount);
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
-    const currentStylesRadar = getComputedStyle(document.documentElement);
+    const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
     const radarStroke =
       currentStylesRadar
         .getPropertyValue("--spaceradar-border-color")
@@ -6893,7 +6893,7 @@ function createRetriggerVisualEditor(node, selectedArray, initialParamType = "vo
 
 function createParticles(x, y, count) {
   const baseColor =
-    getComputedStyle(document.documentElement)
+    getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--particle-color")
       .trim() || "rgba(220, 240, 255, 0.7)";
   for (let i = 0; i < count; i++) {
@@ -6916,7 +6916,7 @@ function createParticles(x, y, count) {
 
 function createWindParticles(count) {
   const windColor =
-    getComputedStyle(document.documentElement)
+    getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--wind-particle-color")
       .trim() || "rgba(180, 210, 230, 0.3)";
   for (let i = 0; i < count; i++) {
@@ -7241,11 +7241,11 @@ function startTravelingGlideSound(
 
 function updateAndDrawPulses(now) {
   const defaultPulseColor =
-    getComputedStyle(document.documentElement)
+    getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--pulse-visual-color")
       .trim() || "rgba(255, 255, 255, 1)";
   const stringPulseColor =
-    getComputedStyle(document.documentElement)
+    getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--string-violin-pulse-color")
       .trim() || "#ffccaa";
   const wavetrailGlowColor = "rgba(230, 255, 230, 0.7)";
@@ -7505,11 +7505,11 @@ function updateAndDrawPulses(now) {
 
 function drawStandardPulseVisual(p, pX, pY, connection, progress) {
   const defaultPulseColor =
-    getComputedStyle(document.documentElement)
+    getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--pulse-visual-color")
       .trim() || "rgba(255, 255, 255, 1)";
   const stringPulseColor =
-    getComputedStyle(document.documentElement)
+    getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--string-violin-pulse-color")
       .trim() || "#ffccaa";
 
@@ -10747,7 +10747,7 @@ function drawGrid() {
   const opacity = GRID_OPACITY_LEVELS[gridOpacityIndex];
   if (opacity <= 0 || spacing <= 0) return;
   const baseColor =
-    getComputedStyle(document.documentElement)
+    getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--grid-color")
       .trim() || "rgba(100, 130, 180, 0.15)";
   const [r, g, b] = baseColor.match(/\d+/g) || [100, 130, 180];
@@ -10980,7 +10980,7 @@ function drawNode(node) {
   const currentRadius = NODE_RADIUS_BASE * node.size * bloomFactor;
   const r = currentRadius;
   let fillColor, borderColor, glowColor, osc2Color, accentColor;
-  const styles = getComputedStyle(document.documentElement);
+  const styles = getComputedStyle(document.body || document.documentElement);
   const scaleBase = currentScale.baseHSL || {
     h: 200,
     s: 70,
@@ -11134,7 +11134,7 @@ function drawNode(node) {
     );
     glowColor = hslToRgba(nodeBaseHue, saturation, lightness * 1.1, 1.0);
   } else if (node.type === TIMELINE_GRID_TYPE) {
-    const currentStylesTimeline = getComputedStyle(document.documentElement);
+    const currentStylesTimeline = getComputedStyle(document.body || document.documentElement);
     const gridBoxStrokeFromCSSTimeline =
       currentStylesTimeline
         .getPropertyValue("--timeline-grid-default-border-color")
@@ -11160,7 +11160,7 @@ function drawNode(node) {
   } else if (node.type === "pulsar_grid") {
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
-    const currentStyles = getComputedStyle(document.documentElement);
+    const currentStyles = getComputedStyle(document.body || document.documentElement);
     const gridStroke =
       currentStyles
         .getPropertyValue("--timeline-grid-default-border-color")
@@ -11208,7 +11208,7 @@ function drawNode(node) {
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
     const border = GRID_SEQUENCER_DRAG_BORDER;
-    const currentStyles = getComputedStyle(document.documentElement);
+    const currentStyles = getComputedStyle(document.body || document.documentElement);
     const gridStroke =
       currentStyles
         .getPropertyValue("--timeline-grid-default-border-color")
@@ -11283,7 +11283,7 @@ function drawNode(node) {
     }
     return;
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
-    const currentStylesRadar = getComputedStyle(document.documentElement);
+    const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
     const radarStroke =
       currentStylesRadar
         .getPropertyValue("--spaceradar-border-color")
@@ -11435,7 +11435,7 @@ function drawNode(node) {
   if (node.type === TIMELINE_GRID_TYPE) {
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
-    const currentStylesTimeline = getComputedStyle(document.documentElement);
+    const currentStylesTimeline = getComputedStyle(document.body || document.documentElement);
     const gridBoxStrokeActual =
       node.audioParams &&
       node.audioParams.color !== undefined &&
@@ -11690,7 +11690,7 @@ function drawNode(node) {
       }
     }
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
-    const currentStylesRadar = getComputedStyle(document.documentElement);
+    const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
     const radarStroke =
       currentStylesRadar
         .getPropertyValue("--spaceradar-border-color")
@@ -13413,7 +13413,7 @@ function drawTemporaryConnection() {
 
     if (connectionTypeToAdd === "string_violin") {
       strokeStyle =
-        getComputedStyle(document.documentElement)
+        getComputedStyle(document.body || document.documentElement)
           .getPropertyValue("--string-violin-connection-color")
           .trim() || "#ffccaa";
       lineWidth = 2 / viewScale;
@@ -13450,7 +13450,7 @@ function drawSelectionRect() {
     const w = Math.abs(selectionRect.startX - selectionRect.endX);
     const h = Math.abs(selectionRect.startY - selectionRect.endY);
     const rectColor =
-      getComputedStyle(document.documentElement)
+      getComputedStyle(document.body || document.documentElement)
         .getPropertyValue("--selection-rect-color")
         .trim() || "rgba(150,200,255,0.3)";
     ctx.fillStyle = rectColor;
@@ -14049,7 +14049,7 @@ function launchRocket(pulsarNode, pulseData) {
       color:
         pulsarNode.color ||
         pulseData.color ||
-        getComputedStyle(document.documentElement)
+        getComputedStyle(document.body || document.documentElement)
           .getPropertyValue("--pulse-visual-color")
           .trim(),
     },
@@ -19604,7 +19604,7 @@ function populateEditPanel() {
                     const colorInput = document.createElement("input");
                     colorInput.type = "color";
                     colorInput.id = `edit-pulsar-color-${node.id}`;
-                    const styles = getComputedStyle(document.documentElement);
+                    const styles = getComputedStyle(document.body || document.documentElement);
                     const defaultColorVar = `--${node.type.replace("_", "-")}-color`;
                     const fallbackColorVar = "--start-node-color";
                     const defaultColorRgba =
@@ -24743,7 +24743,7 @@ function drawConnection(conn) {
 
     if (conn.type === "string_violin") {
         baseClr =
-            getComputedStyle(document.documentElement)
+            getComputedStyle(document.body || document.documentElement)
                 .getPropertyValue("--string-violin-connection-color")
                 .trim() || "#ffccaa";
         thickness = (1.5 + 2.0 * (1 - Math.min(1, conn.length / 500))) / viewScale;
@@ -24774,7 +24774,7 @@ function drawConnection(conn) {
       }
     } else {
         baseClr =
-            getComputedStyle(document.documentElement)
+            getComputedStyle(document.body || document.documentElement)
                 .getPropertyValue("--connection-color")
                 .trim() || "#8AC";
         thickness = (1.0 + 1.5 * (1 - Math.min(1, conn.length / 500))) / viewScale;
@@ -24909,7 +24909,7 @@ function drawConnection(conn) {
     if (conn.animationState > 0 && conn.type === "string_violin") {
         ctx.strokeStyle = isSelected
             ? "rgba(255, 255, 0, 0.9)"
-            : getComputedStyle(document.documentElement)
+            : getComputedStyle(document.body || document.documentElement)
                   .getPropertyValue("--string-violin-connection-color")
                   .trim() || "#ffccaa";
         ctx.lineWidth =
@@ -24917,7 +24917,7 @@ function drawConnection(conn) {
         ctx.setLineDash([5 / viewScale, 3 / viewScale]);
         ctx.shadowColor = isSelected
             ? "rgba(255, 255, 0, 0.9)"
-            : getComputedStyle(document.documentElement)
+            : getComputedStyle(document.body || document.documentElement)
                   .getPropertyValue("--string-violin-pulse-color")
                   .trim() || "#ffccaa";
         ctx.shadowBlur = (conn.animationState * 15) / viewScale;
