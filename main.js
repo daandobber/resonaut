@@ -22248,6 +22248,7 @@ function changeScale(scaleKey, skipNodeUpdate = false) {
   if (!skipNodeUpdate) {
       saveState();
   }
+  window.dispatchEvent(new Event('scale-changed'));
 }
 function updateSyncUI() {
   if (appMenuSyncToggleBtn) {
