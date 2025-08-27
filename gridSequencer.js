@@ -1,3 +1,4 @@
+import { rgbToHex } from "./utils/colorUtils.js";
 let NexusPromise = typeof window !== "undefined" ? import("nexusui") : null;
 
 export class GridSequencer {
@@ -26,6 +27,10 @@ export class GridSequencer {
     this.handlers = { pulse: [] };
     this.sequencer = null;
     this.scanlineColor = "#fff";
+    this.scanlineAlpha = 1;
+    this.borderAlpha = 1;
+    this.activeAlpha = 1;
+    this.inactiveAlpha = 1;
 
     if (target && NexusPromise) {
       NexusPromise.then(({ default: Nexus }) => {
@@ -51,9 +56,15 @@ export class GridSequencer {
         this.sequencer.render = () => {
           originalRender();
           if (this.sequencer?.cells) {
-            this.sequencer.cells.forEach(({ pad }) => {
+            this.sequencer.cells.forEach((cell) => {
+              const { pad } = cell;
               pad.setAttribute("stroke", this.borderColor || "transparent");
               pad.setAttribute("stroke-width", "1");
+              pad.setAttribute("stroke-opacity", this.borderAlpha);
+              pad.setAttribute(
+                "fill-opacity",
+                cell.state ? this.activeAlpha : this.inactiveAlpha,
+              );
             });
           }
           const col = this.sequencer.stepper.value;
@@ -63,7 +74,7 @@ export class GridSequencer {
               const pad = this.sequencer.cells[idx].pad;
               pad.setAttribute("stroke", this.scanlineColor);
               pad.setAttribute("stroke-width", "2");
-              pad.setAttribute("stroke-opacity", "1");
+              pad.setAttribute("stroke-opacity", this.scanlineAlpha);
             }
           }
         };
@@ -71,6 +82,14 @@ export class GridSequencer {
         this.sequencer.on("change", ({ row, column, state }) => {
           if (row < rows && column < columns) {
             this.matrix[row][column] = state;
+            if (this.sequencer?.cells) {
+              const idx = row * this.sequencer.columns + column;
+              const pad = this.sequencer.cells[idx].pad;
+              pad.setAttribute(
+                "fill-opacity",
+                state ? this.activeAlpha : this.inactiveAlpha,
+              );
+            }
           }
         });
 
@@ -84,23 +103,60 @@ export class GridSequencer {
   updateColors() {
     if (!this.sequencer) return;
     const style = getComputedStyle(document.body || document.documentElement);
-    const inactiveColor = style.getPropertyValue("--grid-color").trim() || "#222";
-    const activeColor =
-      style.getPropertyValue("--start-node-color").trim() || "#ffd700";
-    this.scanlineColor =
-      style
-        .getPropertyValue("--timeline-grid-default-scanline-color")
-        .trim() || "#fff";
-    this.borderColor =
-      style
-        .getPropertyValue("--timeline-grid-default-border-color")
-        .trim() || activeColor;
-    this.sequencer.colorize("fill", inactiveColor);
-    this.sequencer.colorize("accent", activeColor);
+
+    const parseColor = (value, fallback = "#000") => {
+      if (!value) return { hex: fallback, alpha: 1 };
+      const val = value.trim();
+      if (val.startsWith("rgba")) {
+        const parts = val
+          .substring(val.indexOf("(") + 1, val.lastIndexOf(")"))
+          .split(",");
+        const r = parseFloat(parts[0]);
+        const g = parseFloat(parts[1]);
+        const b = parseFloat(parts[2]);
+        const a = parseFloat(parts[3]);
+        return { hex: rgbToHex(r, g, b), alpha: isNaN(a) ? 1 : a };
+      }
+      if (val.startsWith("rgb")) {
+        const parts = val
+          .substring(val.indexOf("(") + 1, val.lastIndexOf(")"))
+          .split(",");
+        const r = parseFloat(parts[0]);
+        const g = parseFloat(parts[1]);
+        const b = parseFloat(parts[2]);
+        return { hex: rgbToHex(r, g, b), alpha: 1 };
+      }
+      return { hex: val, alpha: 1 };
+    };
+
+    const inactive = parseColor(style.getPropertyValue("--grid-color") || "#222");
+    const active = parseColor(style.getPropertyValue("--start-node-color") || "#ffd700");
+    const scan = parseColor(
+      style.getPropertyValue("--timeline-grid-default-scanline-color") || "#fff",
+    );
+    const border = parseColor(
+      style.getPropertyValue("--timeline-grid-default-border-color") || active.hex,
+    );
+
+    this.scanlineColor = scan.hex;
+    this.scanlineAlpha = scan.alpha;
+    this.borderColor = border.hex;
+    this.borderAlpha = border.alpha;
+    this.activeAlpha = active.alpha;
+    this.inactiveAlpha = inactive.alpha;
+
+    this.sequencer.colorize("fill", inactive.hex);
+    this.sequencer.colorize("accent", active.hex);
     if (this.sequencer?.cells) {
-      this.sequencer.cells.forEach(({ pad }) => {
+      this.sequencer.cells.forEach((cell) => {
+        const { pad } = cell;
         pad.setAttribute("stroke", this.borderColor);
         pad.setAttribute("stroke-width", "1");
+        pad.setAttribute("stroke-opacity", this.borderAlpha);
+        pad.setAttribute(
+          "fill-opacity",
+          cell.state ? this.activeAlpha : this.inactiveAlpha,
+        );
       });
     }
     if (typeof this.sequencer.render === "function") {
