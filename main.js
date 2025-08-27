@@ -203,6 +203,7 @@ const {
   appMenuReplace,
   appMenuGridToggleBtn,
   appMenuGridSnapBtn,
+  appMenuMovePlaceBtn,
   appMenuSyncToggleBtn,
   appMenuBpmControls,
   appMenuBpmInput,
@@ -15046,6 +15047,7 @@ function handleMouseDown(event) {
   connectionClickedAtMouseDown = null;
   elementClickedAtMouseDown = null;
   pendingGridToggle = null;
+  pendingGridMove = null;
   mouseDownPos = { ...mousePos };
 
   isRotatingTimelineGrid = false;
@@ -17004,6 +17006,7 @@ function handleMouseUp(event) {
   didDrag = false;
 
   pendingGridToggle = null;
+  pendingGridMove = null;
   nodeClickedAtMouseDown = null;
   connectionClickedAtMouseDown = null;
   elementClickedAtMouseDown = null;
@@ -17964,6 +17967,11 @@ function setActiveTool(toolName) {
 
     updateGroupControlsUI();
     updateRestartPulsarsButtonVisibility();
+
+    if (appMenuMovePlaceBtn) {
+        appMenuMovePlaceBtn.classList.toggle("active", toolName === "add");
+        appMenuMovePlaceBtn.textContent = toolName === "add" ? "Place" : "Move";
+    }
 
     if (toolName === "edit") {
         populateEditPanel();
@@ -23906,6 +23914,15 @@ if (appMenuGridSnapBtn) {
   appMenuGridSnapBtn.addEventListener("click", () => {
     isSnapEnabled = !isSnapEnabled;
     appMenuGridSnapBtn.classList.toggle("active", isSnapEnabled);
+  });
+}
+if (appMenuMovePlaceBtn) {
+  appMenuMovePlaceBtn.addEventListener("click", () => {
+    if (currentTool === "add") {
+      setActiveTool("edit");
+    } else {
+      setActiveTool("add");
+    }
   });
 }
 if (appMenuSyncToggleBtn) {
