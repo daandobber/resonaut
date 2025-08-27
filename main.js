@@ -820,6 +820,7 @@ let waveformPathData = null;
 
 
 let currentTool = "edit";
+let isGridSequencerMoveMode = false;
 let nodeTypeToAdd = null;
 let waveformToAdd = null;
 let soundEngineToAdd = null;
@@ -866,6 +867,7 @@ let dragStartPos = {
   y: 0,
 };
 let pendingGridToggle = null;
+let pendingGridMove = null;
 let brushNodeType = "sound";
 let brushWaveform = "fmBell";
 let brushStartWithPulse = true;
@@ -10749,8 +10751,9 @@ function drawGrid() {
       .trim() || "rgba(100, 130, 180, 0.15)";
   ctx.lineWidth = 0.5 / viewScale;
   ctx.fillStyle = ctx.strokeStyle;
-  const worldTopLeft = getWorldCoords(0, 0);
-  const worldBottomRight = getWorldCoords(canvas.width, canvas.height);
+  const extra = spacing;
+  const worldTopLeft = getWorldCoords(0, -extra);
+  const worldBottomRight = getWorldCoords(canvas.width, canvas.height + extra);
   const startX = Math.floor(worldTopLeft.x / spacing) * spacing;
   const startY = Math.floor(worldTopLeft.y / spacing) * spacing;
   const endX = Math.ceil(worldBottomRight.x / spacing) * spacing;
@@ -15043,6 +15046,7 @@ function handleMouseDown(event) {
   connectionClickedAtMouseDown = null;
   elementClickedAtMouseDown = null;
   pendingGridToggle = null;
+  pendingGridMove = null;
   mouseDownPos = { ...mousePos };
 
   isRotatingTimelineGrid = false;
@@ -15537,7 +15541,13 @@ function handleMouseDown(event) {
               const col = Math.floor(
                 (insideX - border) / (innerW / cols),
               );
-              pendingGridToggle = { nodeId: node.id, row, col };
+              if (isGridSequencerMoveMode) {
+                if (node.grid && node.grid[row] && node.grid[row][col]) {
+                  pendingGridMove = { nodeId: node.id, row, col };
+                }
+              } else {
+                pendingGridToggle = { nodeId: node.id, row, col };
+              }
             }
           } else {
             isDragging = true;
@@ -16514,7 +16524,34 @@ function handleMouseUp(event) {
       populateEditPanel();
   } else if (!didDrag) {
       actionHandledInMainBlock = true;
-      if (pendingGridToggle) {
+      if (pendingGridMove) {
+          const node = findNodeById(pendingGridMove.nodeId);
+          if (node && node.type === GRID_SEQUENCER_TYPE) {
+              const border = GRID_SEQUENCER_DRAG_BORDER;
+              const rectX = node.x - node.width / 2;
+              const rectY = node.y - node.height / 2;
+              const innerW = node.width - border * 2;
+              const innerH = node.height - border * 2;
+              const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+              const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+              const insideX = mousePos.x - rectX;
+              const insideY = mousePos.y - rectY;
+              const row = Math.floor((insideY - border) / (innerH / rows));
+              const col = Math.floor((insideX - border) / (innerW / cols));
+              if (
+                  row >= 0 && row < rows &&
+                  col >= 0 && col < cols &&
+                  !(row === pendingGridMove.row && col === pendingGridMove.col) &&
+                  !node.grid[row][col]
+              ) {
+                  node.grid[pendingGridMove.row][pendingGridMove.col] = false;
+                  node.grid[row][col] = true;
+                  stateWasChanged = true;
+                  draw();
+              }
+          }
+          pendingGridMove = null;
+      } else if (pendingGridToggle) {
           const node = findNodeById(pendingGridToggle.nodeId);
           if (node && node.type === GRID_SEQUENCER_TYPE) {
               const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
@@ -16957,6 +16994,7 @@ function handleMouseUp(event) {
   didDrag = false;
 
   pendingGridToggle = null;
+  pendingGridMove = null;
   nodeClickedAtMouseDown = null;
   connectionClickedAtMouseDown = null;
   elementClickedAtMouseDown = null;
@@ -18106,7 +18144,21 @@ function populateEditPanel() {
         if (firstElementData.type === "node") {
             const node = findNodeById(firstElementData.id);
 
-            if (node && node.type === TIMELINE_GRID_TYPE) {
+            if (node && node.type === GRID_SEQUENCER_TYPE) {
+                const section = document.createElement("div");
+                section.classList.add("panel-section");
+                const moveLabel = document.createElement("label");
+                moveLabel.textContent = "Move Notes:";
+                const moveToggle = document.createElement("input");
+                moveToggle.type = "checkbox";
+                moveToggle.checked = isGridSequencerMoveMode;
+                moveToggle.addEventListener("change", (e) => {
+                    isGridSequencerMoveMode = e.target.checked;
+                });
+                section.appendChild(moveLabel);
+                section.appendChild(moveToggle);
+                fragment.appendChild(section);
+            } else if (node && node.type === TIMELINE_GRID_TYPE) {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
 
