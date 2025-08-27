@@ -31,6 +31,8 @@ export class GridSequencer {
     this.borderAlpha = 1;
     this.activeAlpha = 1;
     this.inactiveAlpha = 1;
+    this.activeColor = "#ffd700";
+    this.inactiveColor = "#222";
 
     if (target && NexusPromise) {
       NexusPromise.then(({ default: Nexus }) => {
@@ -62,9 +64,19 @@ export class GridSequencer {
               pad.setAttribute("stroke-width", "1");
               pad.setAttribute("stroke-opacity", this.borderAlpha);
               pad.setAttribute(
+                "fill",
+                cell.state ? this.activeColor : this.inactiveColor,
+              );
+              pad.setAttribute(
                 "fill-opacity",
                 cell.state ? this.activeAlpha : this.inactiveAlpha,
               );
+              console.log("render pad", {
+                row: cell.row,
+                column: cell.column,
+                state: cell.state,
+                color: cell.state ? this.activeColor : this.inactiveColor,
+              });
             });
           }
           const col = this.sequencer.stepper.value;
@@ -76,6 +88,7 @@ export class GridSequencer {
               pad.setAttribute("stroke-width", "2");
               pad.setAttribute("stroke-opacity", this.scanlineAlpha);
             }
+            console.log("scanline", { column: col, color: this.scanlineColor });
           }
         };
 
@@ -86,10 +99,20 @@ export class GridSequencer {
               const idx = row * this.sequencer.columns + column;
               const pad = this.sequencer.cells[idx].pad;
               pad.setAttribute(
+                "fill",
+                state ? this.activeColor : this.inactiveColor,
+              );
+              pad.setAttribute(
                 "fill-opacity",
                 state ? this.activeAlpha : this.inactiveAlpha,
               );
             }
+            console.log("toggle", {
+              row,
+              column,
+              state,
+              color: state ? this.activeColor : this.inactiveColor,
+            });
           }
         });
 
@@ -151,6 +174,8 @@ export class GridSequencer {
     this.borderAlpha = border.alpha;
     this.activeAlpha = baseActive.alpha;
     this.inactiveAlpha = inactive.alpha;
+    this.activeColor = activeHex;
+    this.inactiveColor = inactive.hex;
 
     this.sequencer.colorize("fill", inactive.hex);
     this.sequencer.colorize("accent", activeHex);
@@ -169,6 +194,16 @@ export class GridSequencer {
     if (typeof this.sequencer.render === "function") {
       this.sequencer.render();
     }
+    console.log("updateColors", {
+      active: this.activeColor,
+      inactive: this.inactiveColor,
+      scanline: this.scanlineColor,
+      alpha: {
+        active: this.activeAlpha,
+        inactive: this.inactiveAlpha,
+        scanline: this.scanlineAlpha,
+      },
+    });
   }
 
   on(type, fn) {
@@ -212,6 +247,11 @@ export class GridSequencer {
     if (this.sequencer && this.sequencer.matrix && this.sequencer.matrix.toggle) {
       this.sequencer.matrix.toggle(row, column);
     }
+    console.log("toggle method", {
+      row,
+      column,
+      state: this.matrix[row][column],
+    });
   }
 
   step() {
