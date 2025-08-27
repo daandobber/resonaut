@@ -22142,6 +22142,17 @@ function changeScale(scaleKey, skipNodeUpdate = false) {
   currentScaleKey = scaleKey;
   currentScale = scales[scaleKey];
   document.body.className = currentScale.theme;
+  const rootStyle = document.documentElement?.style;
+  const base = currentScale.baseHSL || { h: 200, s: 70, l: 65 };
+  const startColor = hslToRgba(base.h, base.s, base.l, 0.9);
+  const scanlineColor = hslToRgba(base.h, base.s, Math.min(100, base.l + 10), 1);
+  const borderColor = hslToRgba(base.h, base.s, Math.min(100, base.l + 20), 1);
+  if (rootStyle && typeof rootStyle.setProperty === 'function') {
+    rootStyle.setProperty('--start-node-color', startColor);
+    rootStyle.setProperty('--start-node-border', borderColor);
+    rootStyle.setProperty('--timeline-grid-default-scanline-color', scanlineColor);
+    rootStyle.setProperty('--timeline-grid-default-border-color', borderColor);
+  }
   if (scaleSelectTransport) {
       scaleSelectTransport.value = scaleKey;
   }

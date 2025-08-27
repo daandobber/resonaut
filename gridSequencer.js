@@ -50,6 +50,12 @@ export class GridSequencer {
         const originalRender = this.sequencer.render.bind(this.sequencer);
         this.sequencer.render = () => {
           originalRender();
+          if (this.sequencer?.cells) {
+            this.sequencer.cells.forEach(({ pad }) => {
+              pad.setAttribute("stroke", this.borderColor || "transparent");
+              pad.setAttribute("stroke-width", "1");
+            });
+          }
           const col = this.sequencer.stepper.value;
           if (col >= 0) {
             for (let r = 0; r < this.sequencer.rows; r++) {
@@ -85,14 +91,18 @@ export class GridSequencer {
       style
         .getPropertyValue("--timeline-grid-default-scanline-color")
         .trim() || "#fff";
-    const borderColor =
+    this.borderColor =
       style
         .getPropertyValue("--timeline-grid-default-border-color")
         .trim() || activeColor;
     this.sequencer.colorize("fill", inactiveColor);
     this.sequencer.colorize("accent", activeColor);
-    this.sequencer.colorize("mediumLight", this.scanlineColor);
-    this.sequencer.colorize("mediumDark", borderColor);
+    if (this.sequencer?.cells) {
+      this.sequencer.cells.forEach(({ pad }) => {
+        pad.setAttribute("stroke", this.borderColor);
+        pad.setAttribute("stroke-width", "1");
+      });
+    }
     if (typeof this.sequencer.render === "function") {
       this.sequencer.render();
     }
