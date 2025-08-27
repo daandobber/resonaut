@@ -25,6 +25,7 @@ export class GridSequencer {
     );
     this.handlers = { pulse: [] };
     this.sequencer = null;
+    this.scanlineColor = "#fff";
 
     if (target && NexusPromise) {
       NexusPromise.then(({ default: Nexus }) => {
@@ -35,18 +36,7 @@ export class GridSequencer {
           paddingColumn: 4,
         });
 
-        const style = getComputedStyle(document.documentElement);
-        const inactiveColor = style.getPropertyValue("--panel-bg").trim() || "#222";
-        const activeColor =
-          style.getPropertyValue("--start-node-color").trim() || "#ffd700";
-        const scanlineColor =
-          style
-            .getPropertyValue("--timeline-grid-default-scanline-color")
-            .trim() || "#fff";
-
-        this.sequencer.colorize("fill", inactiveColor);
-        this.sequencer.colorize("accent", activeColor);
-        this.sequencer.colorize("mediumLight", scanlineColor);
+        this.updateColors();
 
         const element =
           this.sequencer.element || this.sequencer.canvas || target;
@@ -65,7 +55,7 @@ export class GridSequencer {
             for (let r = 0; r < this.sequencer.rows; r++) {
               const idx = r * this.sequencer.columns + col;
               const pad = this.sequencer.cells[idx].pad;
-              pad.setAttribute("stroke", scanlineColor);
+              pad.setAttribute("stroke", this.scanlineColor);
               pad.setAttribute("stroke-width", "2");
               pad.setAttribute("stroke-opacity", "1");
             }
@@ -77,9 +67,29 @@ export class GridSequencer {
             this.matrix[row][column] = state;
           }
         });
+
+        window.addEventListener("scale-changed", () => this.updateColors());
       }).catch(() => {
         /* ignore load errors */
       });
+    }
+  }
+
+  updateColors() {
+    if (!this.sequencer) return;
+    const style = getComputedStyle(document.documentElement);
+    const inactiveColor = style.getPropertyValue("--panel-bg").trim() || "#222";
+    const activeColor =
+      style.getPropertyValue("--start-node-color").trim() || "#ffd700";
+    this.scanlineColor =
+      style
+        .getPropertyValue("--timeline-grid-default-scanline-color")
+        .trim() || "#fff";
+    this.sequencer.colorize("fill", inactiveColor);
+    this.sequencer.colorize("accent", activeColor);
+    this.sequencer.colorize("mediumLight", this.scanlineColor);
+    if (typeof this.sequencer.render === "function") {
+      this.sequencer.render();
     }
   }
 
