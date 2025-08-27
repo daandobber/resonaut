@@ -42,7 +42,6 @@ export const appMenuPaste = safeGetById("app-menu-paste");
 export const appMenuReplace = safeGetById("app-menu-replace");
 export const appMenuGridToggleBtn = safeGetById("app-menu-grid-toggle-btn");
 export const appMenuGridSnapBtn = safeGetById("app-menu-grid-snap-btn");
-export const appMenuMovePlaceBtn = safeGetById("app-menu-move-place-btn");
 export const appMenuSyncToggleBtn = safeGetById("app-menu-sync-toggle-btn");
 export const appMenuBpmControls = safeGetById("app-menu-bpm-controls");
 export const appMenuBpmInput = safeGetById("app-menu-bpm-input");
