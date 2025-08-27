@@ -1071,6 +1071,8 @@ let currentConstellationGroup = new Set();
 let fluctuatingGroupNodeIDs = new Set();
 
 let isGridVisible = false;
+const GRID_OPACITY_LEVELS = [0, 0.1, 0.25, 0.5, 0.75, 1];
+let gridOpacityIndex = 0;
 let gridType = "lines";
 let isSnapEnabled = false;
 const DEFAULT_GRID_SIZE_PX = 50;
@@ -10742,13 +10744,17 @@ function snapToGrid(x, y) {
 
 function drawGrid() {
   const spacing = calculateGridSpacing();
-  if (!isGridVisible || spacing <= 0) return;
-  ctx.strokeStyle =
+  const opacity = GRID_OPACITY_LEVELS[gridOpacityIndex];
+  if (opacity <= 0 || spacing <= 0) return;
+  const baseColor =
     getComputedStyle(document.documentElement)
       .getPropertyValue("--grid-color")
       .trim() || "rgba(100, 130, 180, 0.15)";
+  const [r, g, b] = baseColor.match(/\d+/g) || [100, 130, 180];
+  const gridColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  ctx.strokeStyle = gridColor;
   ctx.lineWidth = 0.5 / viewScale;
-  ctx.fillStyle = ctx.strokeStyle;
+  ctx.fillStyle = gridColor;
   const worldTopLeft = getWorldCoords(0, 0);
   const worldBottomRight = getWorldCoords(canvas.width, canvas.height);
   const startX = Math.floor(worldTopLeft.x / spacing) * spacing;
@@ -23837,7 +23843,9 @@ if (stringPanelCloseBtn) {
 
 if (appMenuGridToggleBtn) {
   appMenuGridToggleBtn.addEventListener("click", () => {
-    isGridVisible = !isGridVisible;
+    gridOpacityIndex =
+      (gridOpacityIndex + 1) % GRID_OPACITY_LEVELS.length;
+    isGridVisible = GRID_OPACITY_LEVELS[gridOpacityIndex] > 0;
     appMenuGridToggleBtn.classList.toggle("active", isGridVisible);
   });
 }
