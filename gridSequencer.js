@@ -1,4 +1,4 @@
-import { rgbToHex } from "./utils/colorUtils.js";
+import { rgbToHex, lerpColor } from "./utils/colorUtils.js";
 let NexusPromise = typeof window !== "undefined" ? import("nexusui") : null;
 
 export class GridSequencer {
@@ -130,23 +130,30 @@ export class GridSequencer {
     };
 
     const inactive = parseColor(style.getPropertyValue("--grid-color") || "#222");
-    const active = parseColor(style.getPropertyValue("--start-node-color") || "#ffd700");
-    const scan = parseColor(
-      style.getPropertyValue("--timeline-grid-default-scanline-color") || "#fff",
+    const baseActive = parseColor(
+      style.getPropertyValue("--start-node-color") || "#ffd700",
+    );
+    const baseScan = parseColor(
+      style.getPropertyValue("--timeline-grid-default-scanline-color") ||
+        baseActive.hex,
     );
     const border = parseColor(
-      style.getPropertyValue("--timeline-grid-default-border-color") || active.hex,
+      style.getPropertyValue("--timeline-grid-default-border-color") ||
+        baseActive.hex,
     );
 
-    this.scanlineColor = scan.hex;
-    this.scanlineAlpha = scan.alpha;
+    const activeHex = lerpColor(baseActive.hex, "#ffffff", 0.25);
+    const scanHex = lerpColor(baseScan.hex, "#ffffff", 0.5);
+
+    this.scanlineColor = scanHex;
+    this.scanlineAlpha = baseScan.alpha;
     this.borderColor = border.hex;
     this.borderAlpha = border.alpha;
-    this.activeAlpha = active.alpha;
+    this.activeAlpha = baseActive.alpha;
     this.inactiveAlpha = inactive.alpha;
 
     this.sequencer.colorize("fill", inactive.hex);
-    this.sequencer.colorize("accent", active.hex);
+    this.sequencer.colorize("accent", activeHex);
     if (this.sequencer?.cells) {
       this.sequencer.cells.forEach((cell) => {
         const { pad } = cell;
