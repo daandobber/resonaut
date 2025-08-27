@@ -16539,19 +16539,30 @@ function handleMouseUp(event) {
               const insideY = mousePos.y - rectY;
               const row = Math.floor((insideY - border) / (innerH / rows));
               const col = Math.floor((insideX - border) / (innerW / cols));
-              if (
-                  row >= 0 && row < rows &&
-                  col >= 0 && col < cols &&
-                  !(row === pendingGridMove.row && col === pendingGridMove.col) &&
-                  !node.grid[row][col]
-              ) {
-                  node.grid[pendingGridMove.row][pendingGridMove.col] = false;
-                  node.grid[row][col] = true;
-                  stateWasChanged = true;
-                  draw();
+              if (row >= 0 && row < rows && col >= 0 && col < cols) {
+                  if (
+                      !(row === pendingGridMove.row && col === pendingGridMove.col) &&
+                      !node.grid[row][col]
+                  ) {
+                      node.grid[pendingGridMove.row][pendingGridMove.col] = false;
+                      node.grid[row][col] = true;
+                      stateWasChanged = true;
+                      pendingGridMove = null;
+                      draw();
+                  } else if (
+                      row === pendingGridMove.row &&
+                      col === pendingGridMove.col
+                  ) {
+                      // first click release - keep pendingGridMove
+                  } else {
+                      pendingGridMove = null;
+                  }
+              } else {
+                  pendingGridMove = null;
               }
+          } else {
+              pendingGridMove = null;
           }
-          pendingGridMove = null;
       } else if (pendingGridToggle) {
           const node = findNodeById(pendingGridToggle.nodeId);
           if (node && node.type === GRID_SEQUENCER_TYPE) {
