@@ -413,11 +413,21 @@ const SPACERADAR_DEFAULT_SPEED = 4.0;
 const SPACERADAR_DEFAULT_COLOR = "rgba(150, 220, 150, 0.7)";
 const SPACERADAR_DEFAULT_PULSE_INTENSITY = 0.9;
 const SPACERADAR_DEFAULT_MUSICAL_BARS = 1;
-const GRID_SEQUENCER_DEFAULT_WIDTH = 200;
 const GRID_SEQUENCER_DEFAULT_HEIGHT = 150;
 const GRID_SEQUENCER_DEFAULT_ROWS = 4;
 const GRID_SEQUENCER_DEFAULT_COLS = 8;
 const GRID_SEQUENCER_DRAG_BORDER = 10;
+function calcGridSequencerWidth(
+  cols,
+  height = GRID_SEQUENCER_DEFAULT_HEIGHT,
+  rows = GRID_SEQUENCER_DEFAULT_ROWS,
+) {
+  const cellSize = (height - GRID_SEQUENCER_DRAG_BORDER * 2) / rows;
+  return cellSize * cols + GRID_SEQUENCER_DRAG_BORDER * 2;
+}
+const GRID_SEQUENCER_DEFAULT_WIDTH = calcGridSequencerWidth(
+  GRID_SEQUENCER_DEFAULT_COLS
+);
 const GRID_PULSAR_DEFAULT_WIDTH = 200;
 const GRID_PULSAR_DEFAULT_HEIGHT = 150;
 const GRID_PULSAR_DEFAULT_ROWS = 4;
@@ -18818,6 +18828,9 @@ function populateEditPanel() {
                                 const oldGrid = n.grid || [];
                                 n.cols = newSteps;
                                 if (n.audioParams) n.audioParams.cols = newSteps;
+                                const border = GRID_SEQUENCER_DRAG_BORDER;
+                                const cellSize = (n.height - border * 2) / rows;
+                                n.width = cellSize * newSteps + border * 2;
                                 const newGrid = Array.from({ length: rows }, (_, r) =>
                                     Array.from({ length: newSteps }, (_, c) =>
                                         (oldGrid[r] && oldGrid[r][c]) || false,

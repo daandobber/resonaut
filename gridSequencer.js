@@ -29,6 +29,14 @@ export class GridSequencer {
     if (target && NexusPromise) {
       NexusPromise.then(({ default: Nexus }) => {
         this.sequencer = new Nexus.Sequencer(target, { rows, columns });
+        const element =
+          this.sequencer.element || this.sequencer.canvas || target;
+        try {
+          const rect = element.getBoundingClientRect();
+          this.cellSize = rect.height / rows;
+        } catch {
+          this.cellSize = (element?.height || element?.offsetHeight || 0) / rows;
+        }
         this.sequencer.on("change", ({ row, column, state }) => {
           if (row < rows && column < columns) {
             this.matrix[row][column] = state;
@@ -158,6 +166,17 @@ export class GridSequencer {
     this.position = 0;
     if (this.sequencer) {
       try {
+        const element = this.sequencer.element || this.sequencer.canvas;
+        if (element && typeof this.cellSize === "number") {
+          const width = this.cellSize * columns;
+          const height = this.cellSize * this.rows;
+          if (element.width !== undefined) element.width = width;
+          if (element.height !== undefined) element.height = height;
+          if (element.style) {
+            element.style.width = `${width}px`;
+            element.style.height = `${height}px`;
+          }
+        }
         if (typeof this.sequencer.set === "function") {
           this.sequencer.set({ columns, rows: this.rows });
         }
