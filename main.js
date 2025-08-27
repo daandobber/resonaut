@@ -15999,6 +15999,15 @@ function handleMouseMove(event) {
             const globalSnapped = snapToGrid(targetX, targetY);
             targetX = globalSnapped.x;
             targetY = globalSnapped.y;
+            if (n.type === GRID_SEQUENCER_TYPE) {
+              const spacing = calculateGridSpacing();
+              if (((n.cols || GRID_SEQUENCER_DEFAULT_COLS) % 2) === 0) {
+                targetX += spacing / 2;
+              }
+              if (((n.rows || GRID_SEQUENCER_DEFAULT_ROWS) % 2) === 0) {
+                targetY += spacing / 2;
+              }
+            }
           }
           n.x = targetX;
           n.y = targetY;
@@ -16903,6 +16912,15 @@ function handleMouseUp(event) {
                           const globalSnapped = snapToGrid(finalX, finalY);
                           finalX = globalSnapped.x;
                           finalY = globalSnapped.y;
+                          if (nodeTypeToAdd === GRID_SEQUENCER_TYPE) {
+                              const spacing = calculateGridSpacing();
+                              if (GRID_SEQUENCER_DEFAULT_COLS % 2 === 0) {
+                                  finalX += spacing / 2;
+                              }
+                              if (GRID_SEQUENCER_DEFAULT_ROWS % 2 === 0) {
+                                  finalY += spacing / 2;
+                              }
+                          }
                       }
                   }
 
