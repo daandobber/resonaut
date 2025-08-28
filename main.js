@@ -10037,7 +10037,6 @@ function animationLoop() {
                     }
                 }
                 node.column = (node.column + 1) % cols;
-                console.log("scanline step", { nodeId: node.id, column: node.column });
             } else {
                 pulseData = {
                     intensity:
@@ -11235,24 +11234,6 @@ function drawNode(node) {
     const cellW = innerW / cols;
     const cellH = innerH / rows;
     const activeFill = gridStroke.replace(/[\d\.]+\)$/g, "0.3)");
-    if (
-      !node._loggedColors ||
-      node._loggedColors.gridStroke !== gridStroke ||
-      node._loggedColors.activeFill !== activeFill ||
-      node._loggedColors.internalColor !== internalColor
-    ) {
-      console.log("grid colors", {
-        nodeId: node.id,
-        stroke: gridStroke,
-        active: activeFill,
-        internal: internalColor,
-      });
-      node._loggedColors = {
-        gridStroke,
-        activeFill,
-        internalColor,
-      };
-    }
     if (node.grid) {
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -16558,12 +16539,6 @@ function handleMouseUp(event) {
                   pendingGridToggle.col >= 0 && pendingGridToggle.col < cols
               ) {
                   node.grid[pendingGridToggle.row][pendingGridToggle.col] = !node.grid[pendingGridToggle.row][pendingGridToggle.col];
-                  console.log("pad toggle", {
-                      nodeId: node.id,
-                      row: pendingGridToggle.row,
-                      col: pendingGridToggle.col,
-                      state: node.grid[pendingGridToggle.row][pendingGridToggle.col],
-                  });
                   stateWasChanged = true;
                   draw();
               }
