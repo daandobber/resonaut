@@ -417,6 +417,35 @@ const GRID_SEQUENCER_DEFAULT_HEIGHT = 220;
 const GRID_SEQUENCER_DEFAULT_ROWS = 4;
 const GRID_SEQUENCER_DEFAULT_COLS = 8;
 const GRID_SEQUENCER_DRAG_BORDER = 10;
+
+// Robustly apply alpha to a CSS color value (supports rgb(), rgba(), and #hex)
+function colorWithAlpha(colorStr, alpha) {
+  try {
+    const s = String(colorStr || "").trim();
+    if (!s) return `rgba(255,255,255,${alpha})`;
+    const m = s.match(/^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*\)$/i);
+    if (m) {
+      const r = Math.round(parseFloat(m[1]));
+      const g = Math.round(parseFloat(m[2]));
+      const b = Math.round(parseFloat(m[3]));
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+    if (s[0] === '#') {
+      let hex = s.slice(1);
+      if (hex.length === 3) hex = hex.split('').map((ch) => ch + ch).join('');
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+    }
+    // Fallback: return original if parsing failed
+    return s;
+  } catch {
+    return `rgba(255,255,255,${alpha})`;
+  }
+}
 function calcGridSequencerWidth(
   cols,
   height = GRID_SEQUENCER_DEFAULT_HEIGHT,
@@ -2473,7 +2502,38 @@ export function createAudioNodesForNode(node) {
             return createAnalogOrb(node);
         }
         return null;
-    } else if (node.type === ALIEN_ORB_TYPE) {
+        } else if (isDrumType(node.type)) {
+            const audioNodes = { mainGain: audioContext.createGain() };
+            const pv = node.audioParams?.volume;
+            audioNodes.mainGain.gain.value = (pv !== undefined && pv !== null) ? pv : 1.0;
+            if (isReverbReady && reverbPreDelayNode) {
+              audioNodes.reverbSendGain = audioContext.createGain();
+              audioNodes.reverbSendGain.gain.value = node.audioParams?.reverbSend ?? DEFAULT_REVERB_SEND;
+              audioNodes.mainGain.connect(audioNodes.reverbSendGain);
+              audioNodes.reverbSendGain.connect(reverbPreDelayNode);
+            }
+            if (isDelayReady && masterDelaySendGain) {
+              audioNodes.delaySendGain = audioContext.createGain();
+              audioNodes.delaySendGain.gain.value = node.audioParams?.delaySend ?? DEFAULT_DELAY_SEND;
+              audioNodes.mainGain.connect(audioNodes.delaySendGain);
+              audioNodes.delaySendGain.connect(masterDelaySendGain);
+            }
+            if (mistEffectInput) {
+              audioNodes.mistSendGain = audioContext.createGain();
+              audioNodes.mistSendGain.gain.value = 0;
+              audioNodes.mainGain.connect(audioNodes.mistSendGain);
+              audioNodes.mistSendGain.connect(mistEffectInput);
+            }
+            if (crushEffectInput) {
+              audioNodes.crushSendGain = audioContext.createGain();
+              audioNodes.crushSendGain.gain.value = 0;
+              audioNodes.mainGain.connect(audioNodes.crushSendGain);
+              audioNodes.crushSendGain.connect(crushEffectInput);
+            }
+            // default route to master; grouping may re-route later
+            audioNodes.mainGain.connect(masterGain);
+            return audioNodes;
+        } else if (node.type === ALIEN_ORB_TYPE) {
             const audioNodes = createAlienSynth(
                 node.audioParams.engine || 0,
                 node.audioParams.pitch,
@@ -5265,7 +5325,10 @@ export function triggerNodeEffect(
       if (stillNode) stillNode.isTriggered = false;
     }, 500);
   } else if (isDrumType(node.type)) {
-    if (!node.audioNodes?.mainGain) return;
+    if (!node.audioNodes?.mainGain) {
+      const created = createAudioNodesForNode(node);
+      if (created) node.audioNodes = created; else return;
+    }
     node.isTriggered = true;
     node.animationState = 1;
     const soundParams = params;
@@ -5473,6 +5536,99 @@ export function triggerNodeEffect(
         mod.start(now);
         carrier.stop(now + decay + 0.05);
         mod.stop(now + decay + 0.05);
+      } else if (node.type === "drum_tone_fm" || (typeof node.type === 'string' && node.type.startsWith("drum_tone_fm"))) {
+        try {
+          // Ensure Tone is started (browser gesture usually available here)
+          if (Tone?.getContext()?.state !== 'running') {
+            // Fire-and-forget start
+            Tone.start().catch(() => {});
+          }
+          const decay = soundParams.decay ?? 0.25;
+          const harmonicity = soundParams.fmHarmonicity ?? 2.0;
+          const modIndex = soundParams.fmModIndex ?? 8;
+          const carType = soundParams.carrierWaveform || 'sine';
+          const modType = soundParams.modulatorWaveform || 'sine';
+          const synth = new Tone.FMSynth({
+            harmonicity,
+            modulationIndex: modIndex,
+            oscillator: { type: carType },
+            modulation: { type: modType },
+            envelope: { attack: 0.001, decay: decay, sustain: 0.0, release: 0.01 },
+            modulationEnvelope: { attack: 0.001, decay: decay * 0.8, sustain: 0.0, release: 0.01 },
+          });
+          const tGain = new Tone.Gain(finalVol);
+          // Route into the node's WebAudio mainGain so mixer/FX see it
+          try {
+            tGain.connect(node.audioNodes.mainGain);
+          } catch {
+            // As a fallback, route to destination
+            tGain.toDestination();
+          }
+          synth.connect(tGain);
+          const freq = targetFreq > 0 ? targetFreq : 100;
+          // FM Kick variant: apply pitch sweep
+          if (node.type === 'drum_tone_fm_kick' || node.type === 'drum_tone_fm_808') {
+            const tnow = Tone.now();
+            const startMult = node.type === 'drum_tone_fm_808' ? 1.8 : 2.2;
+            const sweepTime = node.type === 'drum_tone_fm_808' ? 0.1 : 0.06;
+            synth.triggerAttack(freq * startMult, tnow);
+            try { synth.frequency.setValueAtTime(freq * 2.2, tnow); } catch {}
+            try { synth.frequency.exponentialRampToValueAtTime(freq, tnow + sweepTime); } catch {}
+            synth.triggerRelease(tnow + decay);
+          } else {
+            synth.triggerAttackRelease(freq, decay);
+          }
+          // Dispose after sound ends to avoid leaks
+          setTimeout(() => { try { synth.dispose(); tGain.dispose(); } catch {} }, Math.max(100, decay * 1000 + 50));
+        } catch (_) {
+          // If Tone path fails, do nothing rather than crashing other drums
+        }
+      } else if (typeof node.type === 'string' && node.type.startsWith('drum_chip_')) {
+        // 8-bit style drums with simple pulse and noise
+        const decay = soundParams.decay ?? 0.2;
+        const outGain = audioContext.createGain();
+        outGain.gain.setValueAtTime(finalVol, now);
+        outGain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+        outGain.connect(mainGain);
+
+        if (node.type === 'drum_chip_kick' || node.type === 'drum_chip_tom') {
+          const osc = audioContext.createOscillator();
+          const shaper = audioContext.createWaveShaper();
+          // crude 8-bit-ish pulse via waveshaper thresholding with adjustable threshold
+          const thr = Math.max(-0.9, Math.min(0.9, soundParams.chipPulseThreshold ?? 0.0));
+          const curveLen = 256; const curve = new Float32Array(curveLen);
+          for (let i=0;i<curveLen;i++) { const x = (i/(curveLen-1))*2-1; curve[i] = x > thr ? 1 : -1; }
+          shaper.curve = curve;
+          shaper.oversample = 'none';
+          const startFreq = targetFreq * (node.type === 'drum_chip_kick' ? 2.5 : 1.8);
+          osc.type = 'square';
+          try { osc.frequency.setValueAtTime(startFreq, now); } catch {}
+          try { osc.frequency.exponentialRampToValueAtTime(targetFreq, now + (node.type === 'drum_chip_kick' ? 0.06 : 0.08)); } catch {}
+          osc.connect(shaper);
+          shaper.connect(outGain);
+          osc.start(now);
+          osc.stop(now + decay + 0.02);
+        }
+        if (node.type === 'drum_chip_snare' || node.type === 'drum_chip_hihat') {
+          const noise = audioContext.createBufferSource();
+          const dur = Math.max(0.03, decay);
+          const buf = audioContext.createBuffer(1, audioContext.sampleRate * dur, audioContext.sampleRate);
+          const data = buf.getChannelData(0);
+          for (let i=0;i<data.length;i++) data[i] = (Math.random() < 0.5 ? -1 : 1); // 1-bit noise feel
+          noise.buffer = buf;
+          const hp = audioContext.createBiquadFilter();
+          hp.type = 'highpass';
+          const hpFreq = soundParams.chipNoiseHPFreq ?? (node.type === 'drum_chip_hihat' ? 7000 : 1500);
+          hp.frequency.value = hpFreq;
+          const nGain = audioContext.createGain();
+          nGain.gain.setValueAtTime(finalVol * (node.type === 'drum_chip_hihat' ? 0.6 : 0.8), now);
+          nGain.gain.exponentialRampToValueAtTime(0.001, now + decay * (node.type === 'drum_chip_hihat' ? 0.7 : 1));
+          noise.connect(hp);
+          hp.connect(nGain);
+          nGain.connect(outGain);
+          noise.start(now);
+          noise.stop(now + dur + 0.02);
+        }
       }
     } catch (e) {
       node.isTriggered = false;
@@ -11003,7 +11159,7 @@ function drawNode(node) {
     (node.size || 1.0) * 0.3;
 
   if (isPulsarType(node.type)) {
-    const cssVarBase = `--${node.type.replace("_", "-")}`;
+    const cssVarBase = `--${node.type.replace(/_/g, "-")}`;
     fillColor = isStartNodeDisabled
       ? disabledFillColorGeneral
       : node.color ||
@@ -11025,7 +11181,7 @@ function drawNode(node) {
             .trim();
     glowColor = isStartNodeDisabled ? "transparent" : borderColor;
   } else if (isDrumType(node.type)) {
-    const typeName = node.type.replace("_", "-");
+    const typeName = node.type.replace(/_/g, "-");
     fillColor = styles.getPropertyValue(`--${typeName}-color`).trim() || "grey";
     borderColor =
       styles.getPropertyValue(`--${typeName}-border`).trim() || "darkgrey";
@@ -11218,23 +11374,27 @@ function drawNode(node) {
       currentStyles
         .getPropertyValue("--timeline-grid-internal-lines-color")
         .trim() || gridStroke.replace(/[\d\.]+\)$/g, "0.3)");
+    const startNodeAccent =
+      currentStyles
+        .getPropertyValue("--start-node-color")
+        .trim() || "rgba(255, 255, 200, 0.9)";
 
-    ctx.fillStyle = gridStroke;
-    ctx.fillRect(rectX, rectY, node.width, node.height);
+    // Do NOT fill the outer rect solid; only stroke the border later
 
     const innerX = rectX + border;
     const innerY = rectY + border;
     const innerW = node.width - border * 2;
     const innerH = node.height - border * 2;
 
-    ctx.fillStyle = gridStroke.replace(/[\d\.]+\)$/g, "0.05)");
+    const innerFill = colorWithAlpha(gridStroke, 0.06);
+    ctx.fillStyle = innerFill;
     ctx.fillRect(innerX, innerY, innerW, innerH);
 
     const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
     const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
     const cellW = innerW / cols;
     const cellH = innerH / rows;
-    const activeFill = gridStroke.replace(/[\d\.]+\)$/g, "0.3)");
+    const activeFill = colorWithAlpha(startNodeAccent, 0.55);
     if (
       !node._loggedColors ||
       node._loggedColors.gridStroke !== gridStroke ||
@@ -11281,10 +11441,13 @@ function drawNode(node) {
       ctx.stroke();
     }
 
-    const scanX = innerX + ((node.column % cols + cols) % cols) * cellW;
-    ctx.fillStyle = gridStroke.replace(/[\d\.]+\)$/g, "0.15)");
+    const colVal = Number.isFinite(node.column) ? node.column : 0;
+    const scanX = innerX + (((colVal % cols) + cols) % cols) * cellW;
+    const scanFill = colorWithAlpha(startNodeAccent, 0.28);
+    ctx.fillStyle = scanFill;
     ctx.fillRect(scanX, innerY, cellW, innerH);
 
+    // Outer border
     ctx.strokeStyle = gridStroke;
     ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
     ctx.strokeRect(rectX, rectY, node.width, node.height);
@@ -12481,18 +12644,43 @@ function drawNode(node) {
         ctx.fill();
         ctx.stroke();
         break;
-      case "drum_fm_kick":
-        drawStarShape(ctx, node.x, node.y, 5, r, r * 0.4);
+      case "drum_tone_fm":
+      case "drum_tone_fm_kick":
+      case "drum_tone_fm_snap":
+      case "drum_tone_fm_punch":
+      case "drum_tone_fm_metal":
+        // Unique hex-chip shape with inner dot
+        const sides = 6;
+        const angleOffset = Math.PI / 6;
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+          const ang = angleOffset + (i * 2 * Math.PI) / sides;
+          const px = node.x + Math.cos(ang) * r;
+          const py = node.y + Math.sin(ang) * r;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        break;
-      case "drum_fm_snare":
-        drawStarShape(ctx, node.x, node.y, 6, r, r * 0.4);
+        // inner dot
+        ctx.save();
+        ctx.fillStyle = borderColor;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, Math.max(1.5 / viewScale, r * 0.25), 0, Math.PI * 2);
         ctx.fill();
-        ctx.stroke();
+        ctx.restore();
         break;
-      case "drum_fm_tom":
-        drawStarShape(ctx, node.x, node.y, 4, r, r * 0.4);
+      case "drum_chip_kick":
+      case "drum_chip_snare":
+      case "drum_chip_hihat":
+      case "drum_chip_tom":
+        // pixel-ish diamond
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y - r);
+        ctx.lineTo(node.x + r, node.y);
+        ctx.lineTo(node.x, node.y + r);
+        ctx.lineTo(node.x - r, node.y);
+        ctx.closePath();
         ctx.fill();
         ctx.stroke();
         break;
@@ -16553,6 +16741,10 @@ function handleMouseUp(event) {
           if (node && node.type === GRID_SEQUENCER_TYPE) {
               const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
               const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+              // Ensure grid exists and matches dimensions
+              if (!Array.isArray(node.grid) || node.grid.length !== rows || !Array.isArray(node.grid[0]) || node.grid[0].length !== cols) {
+                  node.grid = Array.from({ length: rows }, () => Array(cols).fill(false));
+              }
               if (
                   pendingGridToggle.row >= 0 && pendingGridToggle.row < rows &&
                   pendingGridToggle.col >= 0 && pendingGridToggle.col < cols
@@ -20052,6 +20244,88 @@ function populateEditPanel() {
                         }
                     );
                     soundDiv.appendChild(volSliderContainer);
+
+                    // FM Drum specific controls
+                    if (typeof node.type === 'string' && (node.type === 'drum_tone_fm' || node.type.startsWith('drum_tone_fm_'))) {
+                        const harm = params?.fmHarmonicity ?? defaults?.fmHarmonicity ?? 2.0;
+                        const modIdx = params?.fmModIndex ?? defaults?.fmModIndex ?? 8;
+                        const harmSlider = createSlider(
+                            `edit-drum-fm-harm-${node.id}`, `Harmonicity (${harm.toFixed(2)}):`, 0.1, 8, 0.1, harm,
+                            () => { saveState(); },
+                            (e_input) => {
+                                const newVal = parseFloat(e_input.target.value);
+                                selectedArray.forEach((elData) => { const n = findNodeById(elData.id); if (n?.audioParams) n.audioParams.fmHarmonicity = newVal; });
+                                e_input.target.previousElementSibling.textContent = `Harmonicity (${newVal.toFixed(2)}):`;
+                            }
+                        );
+                        soundDiv.appendChild(harmSlider);
+
+                        const modIdxSlider = createSlider(
+                            `edit-drum-fm-modidx-${node.id}`, `Mod Index (${modIdx.toFixed(1)}):`, 0, 30, 0.5, modIdx,
+                            () => { saveState(); },
+                            (e_input) => {
+                                const newVal = parseFloat(e_input.target.value);
+                                selectedArray.forEach((elData) => { const n = findNodeById(elData.id); if (n?.audioParams) n.audioParams.fmModIndex = newVal; });
+                                e_input.target.previousElementSibling.textContent = `Mod Index (${newVal.toFixed(1)}):`;
+                            }
+                        );
+                        soundDiv.appendChild(modIdxSlider);
+
+                        // Waveform selectors
+                        const wfWrap = document.createElement('div');
+                        wfWrap.style.display = 'grid';
+                        wfWrap.style.gridTemplateColumns = '1fr 1fr';
+                        wfWrap.style.gap = '6px';
+
+                        const carLabel = document.createElement('label');
+                        carLabel.textContent = 'Carrier Waveform:';
+                        const carSel = document.createElement('select');
+                        ;['sine','triangle','sawtooth','square'].forEach(w=>{ const o=document.createElement('option'); o.value=w; o.textContent=w; if ((params?.carrierWaveform||defaults?.carrierWaveform||'sine')===w) o.selected=true; carSel.appendChild(o); });
+                        carSel.addEventListener('change', ()=>{ selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n?.audioParams){ n.audioParams.carrierWaveform = carSel.value; } }); saveState(); });
+
+                        const modLabel = document.createElement('label');
+                        modLabel.textContent = 'Modulator Waveform:';
+                        const modSel = document.createElement('select');
+                        ;['sine','triangle','sawtooth','square'].forEach(w=>{ const o=document.createElement('option'); o.value=w; o.textContent=w; if ((params?.modulatorWaveform||defaults?.modulatorWaveform||'sine')===w) o.selected=true; modSel.appendChild(o); });
+                        modSel.addEventListener('change', ()=>{ selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n?.audioParams){ n.audioParams.modulatorWaveform = modSel.value; } }); saveState(); });
+
+                        wfWrap.appendChild(carLabel); wfWrap.appendChild(carSel);
+                        wfWrap.appendChild(modLabel); wfWrap.appendChild(modSel);
+                        soundDiv.appendChild(wfWrap);
+                    }
+
+                    // Chip Drum specific controls
+                    if (typeof node.type === 'string' && node.type.startsWith('drum_chip_')) {
+                        if (node.type === 'drum_chip_kick' || node.type === 'drum_chip_tom') {
+                            const thr = params?.chipPulseThreshold ?? 0.0;
+                            // Map [-0.9..0.9] to slider [0..1]
+                            const sliderVal = (thr + 0.9) / 1.8;
+                            const pwSlider = createSlider(
+                              `edit-chip-pw-${node.id}`, `Pulse Width (${thr.toFixed(2)}):`, 0, 1, 0.01, sliderVal,
+                              () => { saveState(); },
+                              (e_input) => {
+                                const v = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                                const newThr = v * 1.8 - 0.9;
+                                selectedArray.forEach((elData) => { const n = findNodeById(elData.id); if (n?.audioParams) n.audioParams.chipPulseThreshold = newThr; });
+                                e_input.target.previousElementSibling.textContent = `Pulse Width (${newThr.toFixed(2)}):`;
+                              }
+                            );
+                            soundDiv.appendChild(pwSlider);
+                        }
+                        if (node.type === 'drum_chip_snare' || node.type === 'drum_chip_hihat') {
+                            const curHP = params?.chipNoiseHPFreq ?? (node.type === 'drum_chip_hihat' ? 7000 : 1500);
+                            const hpSlider = createSlider(
+                              `edit-chip-hp-${node.id}`, `Noise Tone (${curHP.toFixed(0)} Hz):`, 500, 12000, 10, curHP,
+                              () => { identifyAndRouteAllGroups(); saveState(); },
+                              (e_input) => {
+                                const v = Math.max(200, Math.min(16000, parseFloat(e_input.target.value)));
+                                selectedArray.forEach((elData) => { const n = findNodeById(elData.id); if (n?.audioParams) n.audioParams.chipNoiseHPFreq = v; });
+                                e_input.target.previousElementSibling.textContent = `Noise Tone (${v.toFixed(0)} Hz):`;
+                              }
+                            );
+                            soundDiv.appendChild(hpSlider);
+                        }
+                    }
                     currentSection.appendChild(soundDiv);
                 } else if (node.type === "switch" && selectedArray.length === 1) {
                     const label = document.createElement("label");
@@ -23276,6 +23550,14 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
           newNode.audioParams.carrierWaveform = nodeSubtypeForAudioParams;
         }
       }
+    }
+    // Inject FM drum defaults for Tone FM variants
+    if (isDrumType(type) && (type === 'drum_tone_fm' || (typeof type === 'string' && type.startsWith('drum_tone_fm_')))) {
+      const def = DRUM_ELEMENT_DEFAULTS[type] || DRUM_ELEMENT_DEFAULTS['drum_tone_fm'] || {};
+      if (newNode.audioParams.fmHarmonicity === undefined) newNode.audioParams.fmHarmonicity = def.fmHarmonicity ?? 2.0;
+      if (newNode.audioParams.fmModIndex === undefined) newNode.audioParams.fmModIndex = def.fmModIndex ?? 8;
+      if (!newNode.audioParams.carrierWaveform) newNode.audioParams.carrierWaveform = def.carrierWaveform || 'sine';
+      if (!newNode.audioParams.modulatorWaveform) newNode.audioParams.modulatorWaveform = def.modulatorWaveform || 'sine';
     }
   }
   

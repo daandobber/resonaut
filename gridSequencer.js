@@ -55,22 +55,30 @@ export class GridSequencer {
         }
 
         const originalRender = this.sequencer.render.bind(this.sequencer);
+        const applyPadVisual = (pad, isActive) => {
+          const fillColor = isActive ? this.activeColor : this.inactiveColor;
+          const fillOpacity = isActive ? this.activeAlpha : this.inactiveAlpha;
+          // Use both style and attribute to win against Nexus inline styles
+          if (pad && pad.style) {
+            pad.style.fill = fillColor;
+            pad.style.fillOpacity = String(fillOpacity);
+            pad.style.stroke = this.borderColor || "transparent";
+            pad.style.strokeOpacity = String(this.borderAlpha);
+            pad.style.strokeWidth = "1";
+          }
+          pad?.setAttribute?.("fill", fillColor);
+          pad?.setAttribute?.("fill-opacity", fillOpacity);
+          pad?.setAttribute?.("stroke", this.borderColor || "transparent");
+          pad?.setAttribute?.("stroke-width", "1");
+          pad?.setAttribute?.("stroke-opacity", this.borderAlpha);
+        };
+
         this.sequencer.render = () => {
           originalRender();
           if (this.sequencer?.cells) {
             this.sequencer.cells.forEach((cell) => {
               const { pad } = cell;
-              pad.setAttribute("stroke", this.borderColor || "transparent");
-              pad.setAttribute("stroke-width", "1");
-              pad.setAttribute("stroke-opacity", this.borderAlpha);
-              pad.setAttribute(
-                "fill",
-                cell.state ? this.activeColor : this.inactiveColor,
-              );
-              pad.setAttribute(
-                "fill-opacity",
-                cell.state ? this.activeAlpha : this.inactiveAlpha,
-              );
+              applyPadVisual(pad, !!cell.state);
               console.log("render pad", {
                 row: cell.row,
                 column: cell.column,
@@ -98,14 +106,7 @@ export class GridSequencer {
             if (this.sequencer?.cells) {
               const idx = row * this.sequencer.columns + column;
               const pad = this.sequencer.cells[idx].pad;
-              pad.setAttribute(
-                "fill",
-                state ? this.activeColor : this.inactiveColor,
-              );
-              pad.setAttribute(
-                "fill-opacity",
-                state ? this.activeAlpha : this.inactiveAlpha,
-              );
+              applyPadVisual(pad, !!state);
             }
             console.log("toggle", {
               row,
@@ -177,18 +178,29 @@ export class GridSequencer {
     this.activeColor = activeHex;
     this.inactiveColor = inactive.hex;
 
+    // Keep Nexus base colors in sync for background rendering,
+    // but we will explicitly style pads to reflect active/inactive state.
     this.sequencer.colorize("fill", inactive.hex);
     this.sequencer.colorize("accent", activeHex);
     if (this.sequencer?.cells) {
       this.sequencer.cells.forEach((cell) => {
         const { pad } = cell;
-        pad.setAttribute("stroke", this.borderColor);
-        pad.setAttribute("stroke-width", "1");
-        pad.setAttribute("stroke-opacity", this.borderAlpha);
-        pad.setAttribute(
-          "fill-opacity",
-          cell.state ? this.activeAlpha : this.inactiveAlpha,
-        );
+        // Reapply complete visual after theme/scale change
+        const isActive = !!cell.state;
+        const fillColor = isActive ? this.activeColor : this.inactiveColor;
+        const fillOpacity = isActive ? this.activeAlpha : this.inactiveAlpha;
+        if (pad && pad.style) {
+          pad.style.fill = fillColor;
+          pad.style.fillOpacity = String(fillOpacity);
+          pad.style.stroke = this.borderColor || "transparent";
+          pad.style.strokeOpacity = String(this.borderAlpha);
+          pad.style.strokeWidth = "1";
+        }
+        pad?.setAttribute?.("stroke", this.borderColor);
+        pad?.setAttribute?.("stroke-width", "1");
+        pad?.setAttribute?.("stroke-opacity", this.borderAlpha);
+        pad?.setAttribute?.("fill", fillColor);
+        pad?.setAttribute?.("fill-opacity", fillOpacity);
       });
     }
     if (typeof this.sequencer.render === "function") {
