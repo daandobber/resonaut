@@ -74,16 +74,27 @@ export function createAnalogOrb(node) {
   if (globalThis.isDelayReady && globalThis.masterDelaySendGain) {
     audioNodes.delaySendGain.connect(globalThis.masterDelaySendGain);
   }
-  if (globalThis.mistEffectInput) {
-    audioNodes.mistSendGain = new Tone.Gain(0);
-    audioNodes.mainGain.connect(audioNodes.mistSendGain);
-    audioNodes.mistSendGain.connect(globalThis.mistEffectInput);
-  }
-  if (globalThis.crushEffectInput) {
-    audioNodes.crushSendGain = new Tone.Gain(0);
-    audioNodes.mainGain.connect(audioNodes.crushSendGain);
-    audioNodes.crushSendGain.connect(globalThis.crushEffectInput);
-  }
+  // Always create sends; connect if inputs exist
+  audioNodes.mistSendGain = new Tone.Gain(0);
+  audioNodes.crushSendGain = new Tone.Gain(0);
+  audioNodes.mainGain.connect(audioNodes.mistSendGain);
+  audioNodes.mainGain.connect(audioNodes.crushSendGain);
+  try {
+    if (globalThis.mistEffectInput) {
+      audioNodes.mistSendGain.connect(globalThis.mistEffectInput);
+      console.log('[PATCH][ANALOG] mist send created + connected', { nodeId: node.id });
+    } else {
+      console.log('[PATCH][ANALOG] mist send created (not connected yet)', { nodeId: node.id });
+    }
+  } catch {}
+  try {
+    if (globalThis.crushEffectInput) {
+      audioNodes.crushSendGain.connect(globalThis.crushEffectInput);
+      console.log('[PATCH][ANALOG] crush send created + connected', { nodeId: node.id });
+    } else {
+      console.log('[PATCH][ANALOG] crush send created (not connected yet)', { nodeId: node.id });
+    }
+  } catch {}
 
   audioNodes.orbitoneOscillators = [];
   audioNodes.orbitoneOsc1Gains = [];

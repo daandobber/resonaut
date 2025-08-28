@@ -1,8 +1,12 @@
 import { fmSynthPresets, createToneFmSynthOrb, DEFAULT_TONE_FM_SYNTH_PARAMS } from './orbs/fm-synth-orb.js';
+import { createPulseSynthOrb, DEFAULT_PULSE_SYNTH_PARAMS } from './orbs/pulse-synth-orb.js';
+import { triggerPulseOrbitones } from './orbs/pulse-orbitone.js';
+import { dbgPulse, dbgOrbitone } from './utils/debug.js';
 import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { createAnalogOrb, DEFAULT_ANALOG_ORB_PARAMS } from './orbs/analog-orb.js';
 import { showAnalogOrbMenu, hideAnalogOrbMenu, hideTonePanel } from './orbs/analog-orb-ui.js';
 import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
+import { showPulseSynthMenu } from './orbs/pulse-synth-ui.js';
 import * as Tone from 'tone';
 import { playWithToneSampler } from './samplerPlayer.js';
 import { createSamplerOrbAudioNodes } from './orbs/sampler-orb.js';
@@ -681,10 +685,14 @@ async function startApplication() {
     if (context) {
       isAudioReady = true;
       if (typeof window !== 'undefined') window.isAudioReady = true;
+      try { globalThis.isAudioReady = true; } catch {}
       createMissingAudioNodes(nodes);
+      // Ensure effect sends on all nodes are connected to global effect inputs
+      try { ensureAllNodesEffectSendsConnected(); } catch {}
       updateMixerGUI();
       updateScaleAndTransposeUI();
       identifyAndRouteAllGroups();
+      try { ensureAllNodesEffectSendsConnected(); } catch {}
       updateMistWetness();
       updateCrushWetness();
       drawPianoRoll();
@@ -1496,9 +1504,15 @@ function getConnectionPoint(node, useHandle) {
     typeof useHandle === 'number' &&
     (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid')
   ) {
-    const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
+    // Special: left single input handle for grid sequencer when useHandle < 0
+    if (node.type === GRID_SEQUENCER_TYPE && useHandle < 0) {
+      const cyMid = rectY + node.height / 2;
+      const cxLeft = rectX - 10;
+      return { x: cxLeft, y: cyMid };
+    }
+    const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
     const cy = rectY + (useHandle + 0.5) * node.height / rows;
     const cx =
       node.type === GRID_SEQUENCER_TYPE
@@ -1848,6 +1862,8 @@ export async function setupAudio() {
     delayReturnAnalyser.connect(originalMasterGainDestination);
 
     isDelayReady = true;
+    try { globalThis.isDelayReady = true; } catch {}
+    try { globalThis.masterDelaySendGain = masterDelaySendGain; } catch {}
 
 
     mistEffectInput = audioContext.createGain();
@@ -1874,6 +1890,7 @@ export async function setupAudio() {
     mistLowpass.connect(mistPanner);
     mistPanner.connect(mistWetGain);
     mistWetGain.connect(masterGain);
+    try { globalThis.mistEffectInput = mistEffectInput; } catch {}
 
     mistPanLFO = audioContext.createOscillator();
     mistPanLFO.frequency.value = MIST_PAN_LFO_RATE;
@@ -1906,6 +1923,7 @@ export async function setupAudio() {
     crushCombFeedback.connect(crushCombDelay);
     crushCombDelay.connect(crushWetGain);
     crushWetGain.connect(masterGain);
+    try { globalThis.crushEffectInput = crushEffectInput; } catch {}
 
     mrfaFilters = [];
     mrfaGains = [];
@@ -2498,6 +2516,8 @@ export function createAudioNodesForNode(node) {
             return createSamplerOrbAudioNodes(node);
         } else if (node.audioParams && node.audioParams.engine === 'tonefm') {
             return createToneFmSynthOrb(node);
+        } else if (node.audioParams && (node.audioParams.engine === 'pulse' || node.audioParams.waveform === 'pulse')) {
+            return createPulseSynthOrb(node);
         } else if (node.audioParams && node.audioParams.engine === 'tone') {
             return createAnalogOrb(node);
         }
@@ -3611,6 +3631,7 @@ export function updateNodeAudioParams(node) {
     lowPassFilter,
     reverbSendGain,
     delaySendGain,
+    ampEnv,
     modulatorOsc1,
     modulatorGain1,
     modulatorOsc2,
@@ -3822,37 +3843,37 @@ export function updateNodeAudioParams(node) {
     }
 
     if (node.type === "sound") {
-      if (lowPassFilter) {
-        if (node.audioParams && (node.audioParams.engine === 'tone' || node.audioParams.engine === 'tonefm')) {
-          if (params.filterType) {
-            lowPassFilter.type = params.filterType;
-          }
-          const cutoff = params.filterCutoff ?? MAX_FILTER_FREQ;
-          lowPassFilter.frequency.setTargetAtTime(
-            cutoff,
-            now,
-            generalUpdateTimeConstant,
-          );
-          if (params.filterResonance !== undefined) {
-            lowPassFilter.Q.setTargetAtTime(
-              params.filterResonance,
+        if (lowPassFilter) {
+          if (node.audioParams && (node.audioParams.engine === 'tone' || node.audioParams.engine === 'tonefm')) {
+            if (params.filterType) {
+              lowPassFilter.type = params.filterType;
+            }
+            const cutoff = params.filterCutoff ?? MAX_FILTER_FREQ;
+            lowPassFilter.frequency.setTargetAtTime(
+              cutoff,
+              now,
+              generalUpdateTimeConstant,
+            );
+            if (params.filterResonance !== undefined) {
+              lowPassFilter.Q.setTargetAtTime(
+                params.filterResonance,
+                now,
+                generalUpdateTimeConstant,
+              );
+            }
+          } else if (!node.audioParams || node.audioParams.engine !== 'pulse') {
+            const sizeRange = MAX_NODE_SIZE - MIN_NODE_SIZE;
+            const freqRange = MAX_FILTER_FREQ - MIN_FILTER_FREQ;
+            const normalizedSize = (node.size - MIN_NODE_SIZE) / (sizeRange || 1);
+            const currentFilterFreq = MIN_FILTER_FREQ + normalizedSize * freqRange;
+            params.lowPassFreq = currentFilterFreq;
+            lowPassFilter.frequency.setTargetAtTime(
+              params.lowPassFreq,
               now,
               generalUpdateTimeConstant,
             );
           }
-        } else {
-          const sizeRange = MAX_NODE_SIZE - MIN_NODE_SIZE;
-          const freqRange = MAX_FILTER_FREQ - MIN_FILTER_FREQ;
-          const normalizedSize = (node.size - MIN_NODE_SIZE) / (sizeRange || 1);
-          const currentFilterFreq = MIN_FILTER_FREQ + normalizedSize * freqRange;
-          params.lowPassFreq = currentFilterFreq;
-          lowPassFilter.frequency.setTargetAtTime(
-            params.lowPassFreq,
-            now,
-            generalUpdateTimeConstant,
-          );
         }
-      }
       if (isReverbReady && reverbSendGain) {
         reverbSendGain.gain.setTargetAtTime(
           params.reverbSend ?? DEFAULT_REVERB_SEND,
@@ -3889,13 +3910,21 @@ export function updateNodeAudioParams(node) {
         params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
 
       if (oscillator1 && !isNaN(mainNoteFreq) && mainNoteFreq > 0) {
-        const osc1Freq =
-          mainNoteFreq * Math.pow(2, params.osc1Octave || 0);
-        oscillator1.frequency.setTargetAtTime(
-          osc1Freq,
-          now,
-          pitchUpdateTimeConstant,
-        );
+        if (node.audioParams && node.audioParams.engine === 'pulse') {
+          // For pulse, main osc tracks base pitch directly
+          oscillator1.frequency.setTargetAtTime(
+            mainNoteFreq,
+            now,
+            pitchUpdateTimeConstant,
+          );
+        } else {
+          const osc1Freq = mainNoteFreq * Math.pow(2, params.osc1Octave || 0);
+          oscillator1.frequency.setTargetAtTime(
+            osc1Freq,
+            now,
+            pitchUpdateTimeConstant,
+          );
+        }
         if (osc1Gain) {
           const mix = params.orbitonesEnabled ? 1.0 - orbitoneBaseMixLevel : 1.0;
           const lvl = (params.osc1Level ?? 1.0) * mix;
@@ -3958,6 +3987,78 @@ export function updateNodeAudioParams(node) {
         }
       }
 
+      // Pulse-specific live params
+      if (node.audioParams && (node.audioParams.engine === 'pulse' || node.audioParams.waveform === 'pulse')) {
+        // Envelope
+        if (ampEnv) {
+          if (params.ampEnvAttack !== undefined) ampEnv.attack = params.ampEnvAttack;
+          if (params.ampEnvDecay !== undefined) ampEnv.decay = params.ampEnvDecay;
+          if (params.ampEnvSustain !== undefined) ampEnv.sustain = params.ampEnvSustain;
+          if (params.ampEnvRelease !== undefined) ampEnv.release = params.ampEnvRelease;
+        }
+        if (oscillator1 && oscillator1.width && params.duty !== undefined) {
+          const w = Math.max(0.01, Math.min(0.99, params.duty));
+          try {
+            // Pulse width is a Tone.Signal – assign value for immediate effect
+            if (oscillator1.width && typeof oscillator1.width.value !== 'undefined') {
+              oscillator1.width.value = w;
+            } else if (oscillator1.width && oscillator1.width.setValueAtTime) {
+              oscillator1.width.setValueAtTime(w, Tone.getContext ? Tone.getContext().currentTime : now);
+            }
+          } catch {}
+        }
+        if (oscillator1 && oscillator1.detune && params.detune !== undefined) {
+          oscillator1.detune.setTargetAtTime(params.detune, now, generalUpdateTimeConstant);
+        }
+        // FX sends for pulse
+        if (reverbSendGain && params.reverbSend !== undefined) {
+          try { reverbSendGain.gain.setTargetAtTime(params.reverbSend, now, generalUpdateTimeConstant); } catch {}
+        }
+        if (delaySendGain && params.delaySend !== undefined) {
+          try { delaySendGain.gain.setTargetAtTime(params.delaySend, now, generalUpdateTimeConstant); } catch {}
+        }
+        if (lowPassFilter) {
+          if (params.filterType) lowPassFilter.type = params.filterType;
+          const cutoff = params.filterCutoff ?? MAX_FILTER_FREQ;
+          lowPassFilter.frequency.setTargetAtTime(cutoff, now, generalUpdateTimeConstant);
+          if (params.filterResonance !== undefined) lowPassFilter.Q.setTargetAtTime(params.filterResonance, now, generalUpdateTimeConstant);
+        }
+        // (vibrato and arp removed for pulse synth)
+        // Debug logging for pulse synth parameters (temporary)
+        try {
+          const expected = {
+            duty: params.duty,
+            detune: params.detune,
+            ampEnvAttack: params.ampEnvAttack,
+            ampEnvDecay: params.ampEnvDecay,
+            ampEnvSustain: params.ampEnvSustain,
+            ampEnvRelease: params.ampEnvRelease,
+            reverbSend: params.reverbSend,
+            delaySend: params.delaySend,
+          };
+          const actual = {
+            duty: (oscillator1 && oscillator1.width) ? (typeof oscillator1.width.value !== 'undefined' ? oscillator1.width.value : null) : null,
+            detune: (oscillator1 && oscillator1.detune && typeof oscillator1.detune.value !== 'undefined') ? oscillator1.detune.value : null,
+            ampEnvAttack: ampEnv ? ampEnv.attack : null,
+            ampEnvDecay: ampEnv ? ampEnv.decay : null,
+            ampEnvSustain: ampEnv ? ampEnv.sustain : null,
+            ampEnvRelease: ampEnv ? ampEnv.release : null,
+            reverbSend: (reverbSendGain && reverbSendGain.gain) ? reverbSendGain.gain.value : null,
+            delaySend: (delaySendGain && delaySendGain.gain) ? delaySendGain.gain.value : null,
+            frequency: (oscillator1 && oscillator1.frequency) ? oscillator1.frequency.value : null,
+          };
+          const snapshot = JSON.stringify({ expected, actual });
+          const nowMs = Date.now();
+          const lastSnap = node._pulseDebugLastSnapshot;
+          const lastTs = node._pulseDebugLastLogAt || 0;
+          // Log on change or at most every 500ms
+          if (snapshot !== lastSnap || nowMs - lastTs > 500) {
+            try { dbgPulse({ nodeId: node.id, expected, actual }); } catch {}
+            node._pulseDebugLastSnapshot = snapshot;
+            node._pulseDebugLastLogAt = nowMs;
+          }
+        } catch {}
+      }
       if (
         params.orbitonesEnabled &&
         orbitoneOscillators &&
@@ -4236,16 +4337,19 @@ export function updateNodeAudioParams(node) {
   } catch (e) {}
 }
 
-function updateConnectionAudioParams(connection) {
-  if (
-    !connection.audioNodes ||
-    connection.type !== "string_violin" ||
-    !isAudioReady
-  )
-    return;
-  const now = audioContext.currentTime;
-  const params = connection.audioParams;
-  const timeConstantForPitch = 0.05;
+  function updateConnectionAudioParams(connection) {
+    if (
+      !connection.audioNodes ||
+      connection.type !== "string_violin" ||
+      !isAudioReady
+    )
+      return;
+    const now = audioContext.currentTime;
+    const params = connection.audioParams;
+    const timeConstantForPitch = 0.05;
+    // Ensure we have a valid base pitch
+    const requestedPitch = (params && typeof params.pitch === 'number') ? params.pitch : 440;
+    const sanitizedPitch = sanitizeFrequency(requestedPitch);
 
   try {
     const {
@@ -4317,12 +4421,15 @@ function updateConnectionAudioParams(connection) {
   }
 }
 
-function createAudioNodesForConnection(connection) {
-  if (!audioContext || connection.type !== "string_violin") return null;
-  const now = audioContext.currentTime;
-  const startDelay = now + 0.02;
-  try {
-    const params = connection.audioParams;
+  function createAudioNodesForConnection(connection) {
+    if (!audioContext || connection.type !== "string_violin") return null;
+    const now = audioContext.currentTime;
+    const startDelay = now + 0.02;
+    try {
+      const params = connection.audioParams;
+      // Compute sanitized base pitch for initial node setup
+      const requestedPitch = (params && typeof params.pitch === 'number') ? params.pitch : 440;
+      const sanitizedPitch = sanitizeFrequency(requestedPitch);
     const gainNode = audioContext.createGain();
     gainNode.gain.value = 0;
     const filterNode = audioContext.createBiquadFilter();
@@ -4451,17 +4558,63 @@ export function triggerNodeEffect(
   if (node.type === "sound") {
     if (
       !node.audioNodes ||
-      !node.audioNodes.gainNode ||
-      !node.audioNodes.lowPassFilter
+      !node.audioNodes.gainNode
     ) {
       node.isTriggered = false;
       node.animationState = 0;
       return;
     }
+
+    // Common references used by multiple engines below
     const audioNodes = node.audioNodes;
+    const oscillator1 = audioNodes.oscillator1;
+
+    if (!isSampler && node.audioParams && node.audioParams.engine === 'pulse') {
+      node.isTriggered = true;
+      node.animationState = 1;
+
+      const atk = params.ampEnvAttack ?? 0.01;
+      const dec = params.ampEnvDecay ?? 0.05;
+      const sus = params.ampEnvSustain ?? 0.6;
+      const rel = params.ampEnvRelease ?? 0.08;
+
+      if (oscillator1 && oscillator1.frequency) {
+        oscillator1.frequency.setValueAtTime(
+          effectivePitch,
+          now,
+        );
+      }
+
+      if (audioNodes.triggerStart) {
+        audioNodes.triggerStart(now, intensity);
+      }
+      // Ensure Orbitone voices are scheduled and main/Orbitone mix is respected
+      try {
+        dbgPulse('pre-orbitone', {
+          nodeId: node.id,
+          enabled: !!params.orbitonesEnabled,
+          count: params.orbitoneCount,
+          mix: params.orbitoneMix,
+          duty: params.duty,
+          detune: params.detune,
+          intensity,
+        });
+      } catch {}
+      try { triggerPulseOrbitones(node, now, intensity); } catch {}
+
+      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      if (audioNodes.triggerStop) {
+        audioNodes.triggerStop(noteOffTime);
+      }
+
+      setTimeout(() => {
+        const stillNode = findNodeById(node.id);
+        if (stillNode) stillNode.isTriggered = false;
+      }, (noteOffTime - now + rel) * 1000 + 100);
+      return;
+    }
     const gainNode = audioNodes.gainNode;
     const lowPassFilter = audioNodes.lowPassFilter;
-    const oscillator1 = audioNodes.oscillator1;
     const modulatorOsc1 = audioNodes.modulatorOsc1;
     const modulatorGain1 = audioNodes.modulatorGain1;
     const oscillator2 = audioNodes.oscillator2;
@@ -5961,6 +6114,52 @@ function propagateTrigger(
       }
       currentNode.animationState = 1;
       playPrimaryAudioEffect = false;
+    } else if (
+      currentNode.type === GRID_SEQUENCER_TYPE &&
+      currentNode.audioParams &&
+      currentNode.audioParams.advanceOnPulse
+    ) {
+      // Pulse-driven Grid Sequencer: advance on incoming pulse and emit row triggers
+      playPrimaryAudioEffect = false;
+      canPropagateOriginalPulseFurther = false;
+      currentNode.animationState = 1;
+      const cols = currentNode.cols || GRID_SEQUENCER_DEFAULT_COLS;
+      const rows = currentNode.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+      for (let r = 0; r < rows; r++) {
+        if (currentNode.grid && currentNode.grid[r] && currentNode.grid[r][currentNode.column]) {
+          connections.forEach((c) => {
+            if (
+              (c.nodeAId === currentNode.id && c.nodeAHandle === r) ||
+              (!c.directional && c.nodeBId === currentNode.id && c.nodeBHandle === r)
+            ) {
+              const targetId = c.nodeAId === currentNode.id ? c.nodeBId : c.nodeAId;
+              const neighborNode = findNodeById(targetId);
+              if (neighborNode) {
+                const travelTime = c.length * DELAY_FACTOR;
+                createVisualPulse(
+                  c.id,
+                  travelTime,
+                  currentNode.id,
+                  Infinity,
+                  "trigger",
+                  null,
+                  currentNode.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY,
+                );
+                propagateTrigger(
+                  neighborNode,
+                  travelTime,
+                  pulseId + Math.random(),
+                  currentNode.id,
+                  Infinity,
+                  { type: "trigger", data: {} },
+                  c,
+                );
+              }
+            }
+          });
+        }
+      }
+      currentNode.column = ((currentNode.column || 0) + 1) % cols;
     } else if (currentNode.type === "pitchShift") {
       currentNode.animationState = 1;
       playPrimaryAudioEffect = false;
@@ -6275,6 +6474,8 @@ function playSingleRetrigger(
   transpositionOverride = null,
 ) {
   if (!audioContext || !node || !node.audioParams) return;
+
+  const now = audioContext.currentTime;
 
   const params = node.audioParams;
   const audioNodes = node.audioNodes;
@@ -7395,7 +7596,7 @@ function startTravelingGlideSound(
   }
 }
 
-function updateAndDrawPulses(now) {
+  function updateAndDrawPulses(now) {
   const defaultPulseColor =
     getComputedStyle(document.body || document.documentElement)
       .getPropertyValue("--pulse-visual-color")
@@ -7408,7 +7609,59 @@ function updateAndDrawPulses(now) {
   const envelopeResolution = 128;
   const hanningWindowCurve = createHanningWindow(envelopeResolution);
 
-  activePulses = activePulses.filter((p) => {
+    // Helper: distance from point to line segment (returns {dist, t, vx, vy})
+    function pointToSegmentInfo(px, py, ax, ay, bx, by) {
+      const vx = bx - ax;
+      const vy = by - ay;
+      const len2 = vx * vx + vy * vy || 1;
+      let t = ((px - ax) * vx + (py - ay) * vy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const cx = ax + t * vx;
+      const cy = ay + t * vy;
+      const dx = px - cx;
+      const dy = py - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      return { dist, t, vx, vy };
+    }
+
+    // Try pluck: when a pulse crosses near a string connection at ~perpendicular angle
+    function maybePluckNearbyString(pulseX, pulseY, pulseDirX, pulseDirY, intensity) {
+      // Early exit if no connections
+      if (!Array.isArray(connections) || connections.length === 0) return;
+      const nowMs = performance && performance.now ? performance.now() : Date.now();
+      const proximity = 8 / (viewScale || 1); // pixels
+      const minAngleCos = Math.cos(Math.PI * 60 / 180); // >60deg ~ fairly perpendicular
+
+      for (const s of connections) {
+        if (!s || s.type !== 'string_violin') continue;
+        const nA = findNodeById(s.nodeAId);
+        const nB = findNodeById(s.nodeBId);
+        if (!nA || !nB) continue;
+        const pA = getConnectionPoint(nA, s.nodeAHandle);
+        const pB = getConnectionPoint(nB, s.nodeBHandle);
+        const info = pointToSegmentInfo(pulseX, pulseY, pA.x, pA.y, pB.x, pB.y);
+        if (info.dist > proximity) continue;
+        // Angle check
+        const svx = info.vx;
+        const svy = info.vy;
+        const spl = Math.sqrt(svx * svx + svy * svy) || 1;
+        const pdl = Math.sqrt(pulseDirX * pulseDirX + pulseDirY * pulseDirY) || 1;
+        const cos = (svx * pulseDirX + svy * pulseDirY) / (spl * pdl);
+        if (Math.abs(cos) > minAngleCos) continue; // too parallel
+
+        // Cooldown to avoid rapid retriggers
+        const cooldownMs = 140;
+        const last = s.__lastPluckTime || 0;
+        if (nowMs - last < cooldownMs) continue;
+        s.__lastPluckTime = nowMs;
+
+        // Trigger a short, plucky envelope on the string
+        try { pluckStringSound(s, Math.max(0.2, Math.min(1.0, intensity || 1.0))); } catch(e) {}
+        try { s.animationState = Math.min(1.0, (s.animationState || 0) + 0.6); } catch(_) {}
+      }
+    }
+
+    activePulses = activePulses.filter((p) => {
     const elapsedTime = now - p.startTime;
     const connection = findConnectionById(p.connectionId);
 
@@ -7456,7 +7709,7 @@ function updateAndDrawPulses(now) {
       hasAudio = true;
     }
 
-    if (connection.type === "wavetrail" && hasAudio && bufferDuration > 0) {
+      if (connection.type === "wavetrail" && hasAudio && bufferDuration > 0) {
       if (!p.granularGainNode && audioContext) {
         try {
           p.granularGainNode = audioContext.createGain();
@@ -7545,27 +7798,47 @@ function updateAndDrawPulses(now) {
       }
     }
 
-    let pX, pY;
-    if (connection.type === 'string_violin') {
-      const point = getStringConnectionPoint(connection, progress);
-      pX = point.x; pY = point.y;
-    } else {
-      const startNodeForDraw = p.startNodeId === nodeA.id ? nodeA : nodeB;
-      const startPos = getConnectionPoint(startNodeForDraw, startNodeForDraw.id === nodeA.id ? connection.nodeAHandle : connection.nodeBHandle);
-      const endPos = getConnectionPoint(startNodeForDraw.id === nodeA.id ? nodeB : nodeA, startNodeForDraw.id === nodeA.id ? connection.nodeBHandle : connection.nodeAHandle);
-      const midX = (startPos.x + endPos.x) / 2 + connection.controlPointOffsetX;
-      const midY = (startPos.y + endPos.y) / 2 + connection.controlPointOffsetY;
-      pX = lerp(
-        lerp(startPos.x, midX, progress),
-        lerp(midX, endPos.x, progress),
-        progress,
-      );
-      pY = lerp(
-        lerp(startPos.y, midY, progress),
-        lerp(midY, endPos.y, progress),
-        progress,
-      );
-    }
+      let pX, pY;
+      let dirX = 0, dirY = 0;
+      if (connection.type === 'string_violin') {
+        const point = getStringConnectionPoint(connection, progress);
+        pX = point.x; pY = point.y;
+        const prevPoint = getStringConnectionPoint(connection, Math.max(0, progress - 0.01));
+        dirX = pX - prevPoint.x; dirY = pY - prevPoint.y;
+      } else {
+        const startNodeForDraw = p.startNodeId === nodeA.id ? nodeA : nodeB;
+        const startPos = getConnectionPoint(startNodeForDraw, startNodeForDraw.id === nodeA.id ? connection.nodeAHandle : connection.nodeBHandle);
+        const endPos = getConnectionPoint(startNodeForDraw.id === nodeA.id ? nodeB : nodeA, startNodeForDraw.id === nodeA.id ? connection.nodeBHandle : connection.nodeAHandle);
+        const midX = (startPos.x + endPos.x) / 2 + connection.controlPointOffsetX;
+        const midY = (startPos.y + endPos.y) / 2 + connection.controlPointOffsetY;
+        pX = lerp(
+          lerp(startPos.x, midX, progress),
+          lerp(midX, endPos.x, progress),
+          progress,
+        );
+        pY = lerp(
+          lerp(startPos.y, midY, progress),
+          lerp(midY, endPos.y, progress),
+          progress,
+        );
+        const prevProgress = Math.max(0, progress - 0.01);
+        const prevXCalc = lerp(
+          lerp(startPos.x, midX, prevProgress),
+          lerp(midX, endPos.x, prevProgress),
+          prevProgress,
+        );
+        const prevYCalc = lerp(
+          lerp(startPos.y, midY, prevProgress),
+          lerp(midY, endPos.y, prevProgress),
+          prevProgress,
+        );
+        dirX = pX - prevXCalc; dirY = pY - prevYCalc;
+      }
+
+      // Only pluck strings when traveling on non-string connections
+      if (connection.type !== 'string_violin') {
+        maybePluckNearbyString(pX, pY, dirX, dirY, p.intensity || 1.0);
+      }
 
     if (connection.type === "wavetrail" && hasAudio) {
       let currentAmplitude = 0;
@@ -8155,18 +8428,62 @@ function startStringSound(connection, intensity = 1.0) {
   } catch (e) {}
 }
 
-function stopStringSound(connection) {
-  if (!connection.audioNodes || connection.type !== "string_violin") return;
-  const now = audioContext.currentTime;
-  const { gainNode } = connection.audioNodes;
-  const params = connection.audioParams;
-  const defaults = STRING_VIOLIN_DEFAULTS;
-  const releaseTime = params.release ?? defaults.release;
-  try {
-    gainNode.gain.cancelScheduledValues(now);
-    gainNode.gain.setTargetAtTime(0, now, releaseTime / 3);
-  } catch (e) {}
-}
+  function stopStringSound(connection) {
+    if (!connection.audioNodes || connection.type !== "string_violin") return;
+    const now = audioContext.currentTime;
+    const { gainNode } = connection.audioNodes;
+    const params = connection.audioParams;
+    const defaults = STRING_VIOLIN_DEFAULTS;
+    const releaseTime = params.release ?? defaults.release;
+    try {
+      gainNode.gain.cancelScheduledValues(now);
+      gainNode.gain.setTargetAtTime(0, now, releaseTime / 3);
+    } catch (e) {}
+  }
+
+  // Short, percussive pluck for string_violin connection
+  function pluckStringSound(connection, intensity = 1.0) {
+    if (!connection.audioNodes || connection.type !== "string_violin") return;
+    const now = audioContext.currentTime;
+    const {
+      gainNode,
+      filterNode,
+      // reverbSendGain, delaySendGain, // available if needed later
+    } = connection.audioNodes;
+    const params = connection.audioParams || {};
+    const defaults = STRING_VIOLIN_DEFAULTS;
+
+    const baseVolume = params.volume ?? defaults.volume;
+    const peak = Math.max(0.02, Math.min(1.0, baseVolume * intensity * 1.1));
+
+    // Briefly open the filter for a brighter transient
+    const requestedPitch = (typeof params.pitch === 'number') ? params.pitch : 440;
+    const sanitized = sanitizeFrequency(requestedPitch);
+    const normalFreq = sanitized * (params.filterFreqFactor ?? defaults.filterFreqFactor);
+    const burstFreq = normalFreq * 3.0;
+    const targetQ = params.filterQ ?? defaults.filterQ;
+    const burstQ = Math.min(6, targetQ + 0.8);
+
+    try {
+      // Gain envelope: fast attack, quick decay to near-zero
+      gainNode.gain.cancelScheduledValues(now);
+      const currentVal = (() => { try { return gainNode.gain.value; } catch { return 0; } })();
+      gainNode.gain.setValueAtTime(Math.max(0, currentVal), now);
+      gainNode.gain.linearRampToValueAtTime(peak, now + 0.01);
+      // Exponential-like decay using setTargetAtTime
+      gainNode.gain.setTargetAtTime(0.0008, now + 0.02, 0.06);
+    } catch (e) {}
+
+    try {
+      filterNode.frequency.cancelScheduledValues(now);
+      filterNode.frequency.setValueAtTime(burstFreq, now);
+      filterNode.frequency.setTargetAtTime(normalFreq, now + 0.005, 0.07);
+
+      filterNode.Q.cancelScheduledValues(now);
+      filterNode.Q.setValueAtTime(burstQ, now);
+      filterNode.Q.setTargetAtTime(targetQ, now + 0.005, 0.08);
+    } catch (e) {}
+  }
 
 export function stopNodeAudio(node) {
   if (!node || !node.audioNodes) return;
@@ -10065,6 +10382,22 @@ function animationLoop() {
           node.type === "pulsar_meteorshower" ||
           node.type === GRID_SEQUENCER_TYPE)
       ) {
+        // In pulse-driven mode, grid sequencer should not advance on time
+        if (
+          node.type === GRID_SEQUENCER_TYPE &&
+          node.audioParams &&
+          node.audioParams.advanceOnPulse
+        ) {
+          return;
+        }
+        // In pulse-driven mode, grid sequencer should not advance on time
+        if (
+          node.type === GRID_SEQUENCER_TYPE &&
+          node.audioParams &&
+          node.audioParams.advanceOnPulse
+        ) {
+          return;
+        }
         let shouldPulse = false;
         let pulseData = {};
 
@@ -10193,7 +10526,7 @@ function animationLoop() {
                     }
                 }
                 node.column = (node.column + 1) % cols;
-                console.log("scanline step", { nodeId: node.id, column: node.column });
+                // log removed: scanline step
             } else {
                 pulseData = {
                     intensity:
@@ -11401,12 +11734,7 @@ function drawNode(node) {
       node._loggedColors.activeFill !== activeFill ||
       node._loggedColors.internalColor !== internalColor
     ) {
-      console.log("grid colors", {
-        nodeId: node.id,
-        stroke: gridStroke,
-        active: activeFill,
-        internal: internalColor,
-      });
+      // log removed: grid colors debug
       node._loggedColors = {
         gridStroke,
         activeFill,
@@ -11454,13 +11782,22 @@ function drawNode(node) {
 
     const connectorRadius = 5 / viewScale;
     ctx.fillStyle = gridStroke;
+    // Right-side output connectors (always)
     for (let r = 0; r < (node.rows || GRID_SEQUENCER_DEFAULT_ROWS); r++) {
       const cy =
         innerY +
         (r + 0.5) * innerH / (node.rows || GRID_SEQUENCER_DEFAULT_ROWS);
-      const cx = rectX + node.width + connectorRadius * 2;
+      const cxRight = rectX + node.width + connectorRadius * 2;
       ctx.beginPath();
-      ctx.arc(cx, cy, connectorRadius, 0, Math.PI * 2);
+      ctx.arc(cxRight, cy, connectorRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Left-side single input connector (only in pulse-advance mode)
+    if (node.audioParams && node.audioParams.advanceOnPulse) {
+      const cyMid = innerY + (innerH / 2);
+      const cxLeft = rectX - connectorRadius * 2;
+      ctx.beginPath();
+      ctx.arc(cxLeft, cyMid, connectorRadius, 0, Math.PI * 2);
       ctx.fill();
     }
     return;
@@ -16670,22 +17007,31 @@ function handleMouseUp(event) {
             nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE ||
             nodeUnderCursorOnUp.type === "pulsar_grid"
           ) {
+            const rectX = nodeUnderCursorOnUp.x - nodeUnderCursorOnUp.width / 2;
+            const rectY = nodeUnderCursorOnUp.y - nodeUnderCursorOnUp.height / 2;
+            const isGridSeq = nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE;
             const rows =
               nodeUnderCursorOnUp.rows ||
-              (nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE
+              (isGridSeq
                 ? GRID_SEQUENCER_DEFAULT_ROWS
                 : GRID_PULSAR_DEFAULT_ROWS);
-            const rectY = nodeUnderCursorOnUp.y - nodeUnderCursorOnUp.height / 2;
-            connectToGridHandle = Math.max(
-              0,
-              Math.min(
-                rows - 1,
-                Math.floor(
-                  (mousePos.y - rectY) /
-                    (nodeUnderCursorOnUp.height / rows),
+            // If target is a Grid Sequencer in pulse-advance mode and user is on left side, snap to single input handle
+            const advanceOnPulse = !!(nodeUnderCursorOnUp.audioParams && nodeUnderCursorOnUp.audioParams.advanceOnPulse);
+            const leftThresholdX = rectX + GRID_SEQUENCER_DRAG_BORDER * (isGridSeq ? 1 : 0) + 12;
+            if (isGridSeq && advanceOnPulse && mousePos.x <= leftThresholdX) {
+              connectToGridHandle = -1; // special left input
+            } else {
+              connectToGridHandle = Math.max(
+                0,
+                Math.min(
+                  rows - 1,
+                  Math.floor(
+                    (mousePos.y - rectY) /
+                      (nodeUnderCursorOnUp.height / rows),
+                  ),
                 ),
-              ),
-            );
+              );
+            }
           }
           const options = {};
           if (connectFromGridHandle !== null)
@@ -16750,12 +17096,7 @@ function handleMouseUp(event) {
                   pendingGridToggle.col >= 0 && pendingGridToggle.col < cols
               ) {
                   node.grid[pendingGridToggle.row][pendingGridToggle.col] = !node.grid[pendingGridToggle.row][pendingGridToggle.col];
-                  console.log("pad toggle", {
-                      nodeId: node.id,
-                      row: pendingGridToggle.row,
-                      col: pendingGridToggle.col,
-                      state: node.grid[pendingGridToggle.row][pendingGridToggle.col],
-                  });
+                  // log removed: pad toggle debug
                   stateWasChanged = true;
                   draw();
               }
@@ -17001,7 +17342,7 @@ function handleMouseUp(event) {
           if (canPlaceNodeHereOriginal) {
               const canActuallyAddThisNode =
                   (nodeTypeToAdd !== "sound" && nodeTypeToAdd !== "nebula") ||
-                  (nodeTypeToAdd === "sound" && waveformToAdd) ||
+                  (nodeTypeToAdd === "sound" && (waveformToAdd || soundEngineToAdd === 'pulse')) ||
                   (nodeTypeToAdd === "nebula" && waveformToAdd) ||
                   isPulsarType(nodeTypeToAdd) ||
                   isDrumType(nodeTypeToAdd) ||
@@ -17288,6 +17629,13 @@ function handleMouseUp(event) {
         hideSamplerOrbMenu();
       } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tonefm') {
         showToneFmSynthMenu(selectedNode);
+        hideAlienOrbMenu();
+        hideResonauterOrbMenu();
+        hideRadioOrbMenu();
+        hideArvoDroneOrbMenu();
+        hideSamplerOrbMenu();
+      } else if (selectedNode && selectedNode.type === "sound" && (selectedNode.audioParams.engine === 'pulse' || selectedNode.audioParams.waveform === 'pulse')) {
+        showPulseSynthMenu(selectedNode);
         hideAlienOrbMenu();
         hideResonauterOrbMenu();
         hideRadioOrbMenu();
@@ -18042,6 +18390,7 @@ function resetSideToolbars() {
 }
 
 function setActiveTool(toolName) {
+    try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] setActiveTool', toolName); } catch {}
     if (currentTool === "brush" && toolName !== "brush") {
         isBrushing = false;
         lastBrushNode = null;
@@ -19047,12 +19396,37 @@ function populateEditPanel() {
                 section.appendChild(autoRotateSection);
                 fragment.appendChild(section);
 
-            } else if (node && node.type === GRID_SEQUENCER_TYPE) {
-                const section = document.createElement("div");
-                section.classList.add("panel-section");
+  } else if (node && node.type === GRID_SEQUENCER_TYPE) {
+      const section = document.createElement("div");
+      section.classList.add("panel-section");
 
-                const currentSteps = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
-                const stepsSlider = createSlider(
+      // Advance on Pulse toggle
+      const advanceLabel = document.createElement("label");
+      advanceLabel.htmlFor = `edit-gridseq-advance-on-pulse-${node.id}`;
+      advanceLabel.textContent = "Advance on incoming pulses:";
+      advanceLabel.style.marginRight = "5px";
+      const advanceCheckbox = document.createElement("input");
+      advanceCheckbox.type = "checkbox";
+      advanceCheckbox.id = `edit-gridseq-advance-on-pulse-${node.id}`;
+      advanceCheckbox.checked = !!(node.audioParams && node.audioParams.advanceOnPulse);
+      advanceCheckbox.addEventListener("change", (e) => {
+          selectedArray.forEach((elData) => {
+              const n = findNodeById(elData.id);
+              if (n && n.type === GRID_SEQUENCER_TYPE) {
+                  if (!n.audioParams) n.audioParams = {};
+                  n.audioParams.advanceOnPulse = e.target.checked;
+              }
+          });
+          identifyAndRouteAllGroups();
+          saveState();
+          populateEditPanel();
+      });
+      section.appendChild(advanceLabel);
+      section.appendChild(advanceCheckbox);
+      section.appendChild(document.createElement("br"));
+
+      const currentSteps = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+      const stepsSlider = createSlider(
                     `edit-gridseq-steps-${node.id}`,
                     `Steps (${currentSteps}):`,
                     1,
@@ -20864,6 +21238,15 @@ function populateInstrumentMenu() {
       handler: () => {
         soundEngineToAdd = "tonefm";
         setupAddTool(null, "sound", true, "fmSynths", "FM Synths");
+      },
+    },
+    {
+      icon: "■",
+      label: "Pulse Synth",
+      nodeType: "sound",
+      handler: () => {
+        soundEngineToAdd = "pulse";
+        setupAddTool(null, "sound", false);
       },
     },
     {
@@ -23549,6 +23932,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         if (nodeSubtypeForAudioParams && !existing.carrierWaveform) {
           newNode.audioParams.carrierWaveform = nodeSubtypeForAudioParams;
         }
+      } else if (soundEngineToAdd === 'pulse') {
+        const existing = { ...newNode.audioParams };
+        Object.assign(newNode.audioParams, DEFAULT_PULSE_SYNTH_PARAMS);
+        Object.assign(newNode.audioParams, existing);
+        newNode.audioParams.waveform = 'pulse';
+        newNode.audioParams.engine = 'pulse';
       }
     }
     // Inject FM drum defaults for Tone FM variants
@@ -23625,6 +24014,11 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     delete newNode.starPoints;
     delete newNode.baseHue;
     delete newNode.color;
+    // New: allow grid sequencer to advance on incoming pulses only (checkbox in edit panel)
+    if (!newNode.audioParams) newNode.audioParams = {};
+    if (newNode.audioParams.advanceOnPulse === undefined) {
+      newNode.audioParams.advanceOnPulse = false;
+    }
   }
 
   if (type === TIMELINE_GRID_TYPE) {
@@ -24491,17 +24885,21 @@ if (mistLayer) {
       patchState.isMisting = true;
       patchState.currentMistGroup = null;
       const coords = getWorldCoords(e.clientX, e.clientY);
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointerdown mist at', { x: coords.x, y: coords.y }); } catch {}
       createMistPatch(coords.x, coords.y);
     } else if (currentTool === 'eraser') {
       patchState.isErasing = true;
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointerdown eraser at', { x: e.clientX, y: e.clientY }); } catch {}
       erasePatchesAt(e.clientX, e.clientY);
     }
   });
   mistLayer.addEventListener('pointermove', (e) => {
     if (currentTool === 'mist' && patchState.isMisting) {
       const coords = getWorldCoords(e.clientX, e.clientY);
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointermove mist at', { x: coords.x, y: coords.y }); } catch {}
       createMistPatch(coords.x, coords.y);
     } else if (currentTool === 'eraser' && patchState.isErasing) {
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointermove eraser at', { x: e.clientX, y: e.clientY }); } catch {}
       erasePatchesAt(e.clientX, e.clientY);
     }
   });
@@ -24512,17 +24910,21 @@ if (crushLayer) {
       patchState.isCrushing = true;
       patchState.currentCrushGroup = null;
       const coords = getWorldCoords(e.clientX, e.clientY);
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointerdown crush at', { x: coords.x, y: coords.y }); } catch {}
       createCrushPatch(coords.x, coords.y);
     } else if (currentTool === 'eraser') {
       patchState.isErasing = true;
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointerdown eraser at', { x: e.clientX, y: e.clientY }); } catch {}
       erasePatchesAt(e.clientX, e.clientY);
     }
   });
   crushLayer.addEventListener('pointermove', (e) => {
     if (currentTool === 'crush' && patchState.isCrushing) {
       const coords = getWorldCoords(e.clientX, e.clientY);
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointermove crush at', { x: coords.x, y: coords.y }); } catch {}
       createCrushPatch(coords.x, coords.y);
     } else if (currentTool === 'eraser' && patchState.isErasing) {
+      try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] pointermove eraser at', { x: e.clientX, y: e.clientY }); } catch {}
       erasePatchesAt(e.clientX, e.clientY);
     }
   });
@@ -26301,5 +26703,33 @@ if (typeof window !== 'undefined') {
     createHexNoteSelectorDOM,
     hamburgerMenuPanel,
     hamburgerBtn,
+  });
+}
+function ensureAllNodesEffectSendsConnected() {
+  try { console.log('[MIST-ROUTING] ensureAllNodesEffectSendsConnected'); } catch {}
+  nodes.forEach((node) => {
+    const an = node && node.audioNodes;
+    if (!an) return;
+    const connectIf = (sendGain, dest, tag) => {
+      try {
+        if (!sendGain || !dest) return;
+        const flag = tag === 'mist' ? '__mistConnected' : '__crushConnected';
+        if (!sendGain[flag]) {
+          sendGain.connect(dest);
+          sendGain[flag] = true;
+          try { console.log('[MIST-ROUTING] connected', tag, 'for node', node.id, node.type); } catch {}
+        }
+      } catch (e) {
+        try { console.warn('[MIST-ROUTING] connect failed', tag, node?.id, e?.message); } catch {}
+      }
+    };
+    if (an.mistSendGain) connectIf(an.mistSendGain, typeof mistEffectInput !== 'undefined' ? mistEffectInput : null, 'mist');
+    if (an.crushSendGain) connectIf(an.crushSendGain, typeof crushEffectInput !== 'undefined' ? crushEffectInput : null, 'crush');
+    if (Array.isArray(an.orbitoneSynths)) {
+      an.orbitoneSynths.forEach((o) => {
+        if (o && o.mistSendGain) connectIf(o.mistSendGain, typeof mistEffectInput !== 'undefined' ? mistEffectInput : null, 'mist');
+        if (o && o.crushSendGain) connectIf(o.crushSendGain, typeof crushEffectInput !== 'undefined' ? crushEffectInput : null, 'crush');
+      });
+    }
   });
 }

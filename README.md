@@ -67,3 +67,54 @@ Choose **New** from the menu if you want to clear the saved data.
 - Arvo Drone now features a sitar-style resonator and short comb delay for enhanced string resonance.
 - Arvo Drone gains extra oscillators and a single "Motion" control for evolving textures.
 - Drone voices now include an `oscType` parameter allowing selection of sine, square, triangle or sawtooth waveforms (plus the original string wave).
+
+## Orbitone System
+
+Orbitones are optional “extra voices” that play alongside a node’s main note. They are rendered as additional oscillators mixed into the instrument before the instrument’s FX sends, with their own timing offsets and envelopes. The goal is to get instant, musical clusters without building a full chord engine into every synth.
+
+Key concepts
+- Enable: `audioParams.orbitonesEnabled` toggles the feature per node.
+- Count: `audioParams.orbitoneCount` number of extra voices to create.
+- Voicing: `audioParams.orbitoneIntervals` holds scale‑step offsets for each voice (e.g. [2, 4, 7]). These are mapped to frequencies via the current scale and root.
+- Timing: `audioParams.orbitoneTimingOffsets` holds per‑voice delay in ms relative to the main note start.
+- Mix: `audioParams.orbitoneMix` in [0..1] balances main voice vs orbitones. 0 = only main, 1 = only orbitones.
+
+How to integrate Orbitone in a new synth
+1) Create extra oscillators and gains
+   - On instrument init, if `orbitonesEnabled && orbitoneCount > 0`:
+     - Create `orbitoneCount` oscillators of the synth’s main type.
+     - For each, create a Gain and connect: `osc -> voiceGain -> (shared pre‑amp bus) -> instrument mainGain`.
+     - Store arrays on the synth’s audio node bundle:
+       - `audioNodes.orbitoneOscillators: Oscillator[]`
+       - `audioNodes.orbitoneIndividualGains: Gain[]`
+
+2) Leave the instrument’s final output (“mainGain”) constant
+   - Apply the main note’s ADSR on the main voice gain (e.g. `osc1Gain`), not on the final output. Orbitone voices use their own envelopes; late timing offsets would worden gedempt als de master‑envelop eerder sluit.
+
+3) Schedule on trigger
+   - Tijdens note start, compute all output frequencies using the scale utilities:
+     - `getFrequency(scaleState.currentScale, baseScaleIndex + interval, 0, scaleState.currentRootNote, scaleState.globalTransposeOffset)`.
+   - Mix toepassen:
+     - Hoofdstem piek: `(1 - orbitoneMix)`.
+     - Per‑Orbitone piek: `(peak * orbitoneMix) / max(1, count)`.
+   - Voor elke Orbitone `i`:
+     - `startT = now + (orbitoneTimingOffsets[i] || 0)/1000`.
+     - Zet `osc.frequency` op `startT`, vorm `voiceGain.gain` met ADSR op `startT`.
+
+4) Live updates
+   - Reageer op live parameterwijzigingen (duty/detune/filter/send‑levels) voor zowel de hoofdstem als de orbitones waar relevant.
+
+Minimal API contract voor synths
+- Geef deze properties terug in `audioNodes`:
+  - `oscillator1` (main pitch reference) en `gainNode` (final output). Indien aanwezig: `osc1Gain` voor de hoofdstem.
+  - `orbitoneOscillators: Oscillator[]`
+  - `orbitoneIndividualGains: Gain[]`
+  - `triggerStart(time, velocity)` en `triggerStop(time)` zodat de engine enveloppen kan sturen.
+
+Referenties
+- Pulse Synth: `orbs/pulse-synth-orb.js` (main ADSR op `osc1Gain`, orbitones gemixed op shared bus).
+- Orbitone planner voor Pulse: `orbs/pulse-orbitone.js` (frequenties, per‑stem ADSR en timing‑offsets).
+
+Tips
+- Bij synths met meerdere carriers (bv. FM) dupliceer je de carrier‑keten per Orbitone en mix je outputs in dezelfde pre‑FX bus.
+- Houd per‑stem ADSR kort als je lange timing‑offsets gebruikt; anders wordt het snel een pad.

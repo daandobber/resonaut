@@ -175,19 +175,29 @@ export function createToneFmSynthOrb(node) {
     delaySendGain.connect(globalThis.masterDelaySendGain);
   }
 
-  let mistSendGain = null;
-  if (globalThis.mistEffectInput) {
-    mistSendGain = new Tone.Gain(0);
-    gainNode.connect(mistSendGain);
-    mistSendGain.connect(globalThis.mistEffectInput);
-  }
-
-  let crushSendGain = null;
-  if (globalThis.crushEffectInput) {
-    crushSendGain = new Tone.Gain(0);
-    gainNode.connect(crushSendGain);
-    crushSendGain.connect(globalThis.crushEffectInput);
-  }
+  // Always create effect sends so external updaters can target them
+  let mistSendGain = new Tone.Gain(0);
+  let crushSendGain = new Tone.Gain(0);
+  // Feed from main signal
+  gainNode.connect(mistSendGain);
+  gainNode.connect(crushSendGain);
+  // Connect to global effect inputs if available (can also be connected later by host)
+  try {
+    if (globalThis.mistEffectInput) {
+      mistSendGain.connect(globalThis.mistEffectInput);
+      console.log('[PATCH][FM] mist send created + connected', { nodeId: node.id });
+    } else {
+      console.log('[PATCH][FM] mist send created (not connected yet)', { nodeId: node.id });
+    }
+  } catch {}
+  try {
+    if (globalThis.crushEffectInput) {
+      crushSendGain.connect(globalThis.crushEffectInput);
+      console.log('[PATCH][FM] crush send created + connected', { nodeId: node.id });
+    } else {
+      console.log('[PATCH][FM] crush send created (not connected yet)', { nodeId: node.id });
+    }
+  } catch {}
 
   if (globalThis.masterGain) {
     gainNode.connect(globalThis.masterGain);
@@ -264,4 +274,3 @@ export function createToneFmSynthOrb(node) {
     setAlgorithm: applyAlgorithm,
   };
 }
-

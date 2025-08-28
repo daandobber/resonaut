@@ -9,6 +9,12 @@ import {
 } from './utils/appConstants.js';
 import { crushLayer, mistLayer } from './utils/domElements.js';
 
+// Debug helper: disabled by default. Enable with window.DEBUG_PATCH_EFFECTS = true
+function dbg(...args) {
+  try { if (!globalThis.DEBUG_PATCH_EFFECTS) return; } catch (_) { return; }
+  try { console.log('[PATCH]', ...args); } catch (_) {}
+}
+
 export const patchState = {
   isMisting: false,
   isErasing: false,
@@ -107,6 +113,7 @@ export function createCrushPatch(worldX, worldY) {
   patchState.currentCrushGroup.container.appendChild(patch);
   patchState.currentCrushGroup.patches.push({ element: patch, x: worldX, y: worldY, size });
   updateCrushWetness();
+  dbg('CRUSH patch created', { worldX, worldY, groups: patchState.crushGroups.length });
 }
 
 export function updateCrushPatchPositions() {
@@ -140,23 +147,73 @@ export function updateCrushWetness() {
   if (!getIsAudioReady() || !audioContext) return;
   const now = audioContext.currentTime;
   let anyInCrush = false;
+  let processed = 0;
+
+  const ensureConnected = (sendGain) => {
+    try {
+      if (!sendGain || !globalThis.crushEffectInput) return;
+      const flag = '__crushConnected';
+      if (!sendGain[flag] && typeof sendGain.connect === 'function') {
+        sendGain.connect(globalThis.crushEffectInput);
+        sendGain[flag] = true;
+        dbg('CRUSH ensureConnected');
+      }
+    } catch (_) {}
+  };
   getNodes().forEach((node) => {
     if (!node.audioNodes || !node.audioNodes.crushSendGain) {
-      return;
+      // Still try orbitone sends if present
+      if (!node.audioNodes || !Array.isArray(node.audioNodes.orbitoneSynths)) return;
     }
 
     const inCrush = isNodeInCrush(node);
     if (inCrush) anyInCrush = true;
     const target = inCrush ? CRUSH_SEND_LEVEL : 0.0;
-
-    node.audioNodes.crushSendGain.gain.setTargetAtTime(target, now, 0.05);
+    const applyParam = (gainNode) => {
+      if (!gainNode) return;
+      ensureConnected(gainNode);
+      try {
+        const param = gainNode.gain;
+        if (param && typeof param.setTargetAtTime === 'function') {
+          param.setTargetAtTime(target, now, 0.05);
+        } else if (param && typeof param.setValueAtTime === 'function') {
+          param.setValueAtTime(target, now);
+        } else if (param && typeof param.rampTo === 'function') {
+          param.rampTo(target, 0.05);
+        } else if (param && 'value' in param) {
+          param.value = target;
+        }
+        let currentVal = undefined;
+        try { currentVal = (param && 'value' in param) ? param.value : undefined; } catch (_) {}
+        dbg('CRUSH param set', { nodeId: node.id, haveParam: !!param, currentVal });
+      } catch (_) {}
+    };
+    if (node.audioNodes && node.audioNodes.crushSendGain) applyParam(node.audioNodes.crushSendGain);
+    if (node.audioNodes && Array.isArray(node.audioNodes.orbitoneSynths)) {
+      node.audioNodes.orbitoneSynths.forEach((o) => applyParam(o && o.crushSendGain));
+    }
+    processed++;
+    dbg('CRUSH node', { id: node.id, type: node.type, inCrush, target });
   });
 
   const wetGain = getCrushWetGain();
   if (wetGain) {
     const wet = anyInCrush ? CRUSH_WET_LEVEL : 0.0;
-    wetGain.gain.setTargetAtTime(wet, now, 0.2);
+    try {
+      const param = wetGain.gain;
+      if (param && typeof param.setTargetAtTime === 'function') {
+        param.setTargetAtTime(wet, now, 0.2);
+      } else if (param && typeof param.setValueAtTime === 'function') {
+        param.setValueAtTime(wet, now);
+      } else if (param && typeof param.rampTo === 'function') {
+        param.rampTo(wet, 0.2);
+      } else if (param && 'value' in param) {
+        param.value = wet;
+      }
+    } catch (_) {}
+    dbg('CRUSH wet', { anyInCrush, wet });
   }
+  if (processed === 0) dbg('CRUSH no nodes processed');
 }
 
 export function removePatchAtFromGroups(groups, worldX, worldY, updateFn) {
@@ -255,6 +312,7 @@ export function createMistPatch(worldX, worldY) {
   patchState.currentMistGroup.container.appendChild(patch);
   patchState.currentMistGroup.patches.push({ element: patch, x: worldX, y: worldY, size });
   updateMistWetness();
+  dbg('MIST patch created', { worldX, worldY, groups: patchState.mistGroups.length });
 }
 
 export function removeMistPatchAt(worldX, worldY) {
@@ -312,34 +370,83 @@ export function updateMistWetness() {
   if (!getIsAudioReady() || !audioContext) return;
   const now = audioContext.currentTime;
   let maxCoverage = 0;
+   let processed = 0;
+
+  const ensureConnected = (sendGain) => {
+    try {
+      if (!sendGain || !globalThis.mistEffectInput) return;
+      const flag = '__mistConnected';
+      if (!sendGain[flag] && typeof sendGain.connect === 'function') {
+        sendGain.connect(globalThis.mistEffectInput);
+        sendGain[flag] = true;
+        dbg('MIST ensureConnected');
+      }
+    } catch (_) {}
+  };
   getNodes().forEach((node) => {
     if (!node.audioNodes || !node.audioNodes.mistSendGain) {
-      return;
+      if (!node.audioNodes || !Array.isArray(node.audioNodes.orbitoneSynths)) return;
     }
 
     const coverage = mistCoverageForNode(node);
     if (coverage > maxCoverage) maxCoverage = coverage;
     const normalized = Math.min(coverage, MIST_MAX_COVERAGE) / MIST_MAX_COVERAGE;
     const target = MIST_SEND_LEVEL * normalized;
-
-    node.audioNodes.mistSendGain.gain.setTargetAtTime(target, now, 0.05);
+    const applyParam = (gainNode) => {
+      if (!gainNode) return;
+      ensureConnected(gainNode);
+      try {
+        const param = gainNode.gain;
+        if (param && typeof param.setTargetAtTime === 'function') {
+          param.setTargetAtTime(target, now, 0.05);
+        } else if (param && typeof param.setValueAtTime === 'function') {
+          param.setValueAtTime(target, now);
+        } else if (param && typeof param.rampTo === 'function') {
+          param.rampTo(target, 0.05);
+        } else if (param && 'value' in param) {
+          param.value = target;
+        }
+        let currentVal = undefined;
+        try { currentVal = (param && 'value' in param) ? param.value : undefined; } catch (_) {}
+        dbg('MIST param set', { nodeId: node.id, haveParam: !!param, currentVal });
+      } catch (_) {}
+    };
+    if (node.audioNodes && node.audioNodes.mistSendGain) applyParam(node.audioNodes.mistSendGain);
+    if (node.audioNodes && Array.isArray(node.audioNodes.orbitoneSynths)) {
+      node.audioNodes.orbitoneSynths.forEach((o) => applyParam(o && o.mistSendGain));
+    }
+    processed++;
+    dbg('MIST node', { id: node.id, type: node.type, coverage, target });
   });
 
   const filter = getMistFilter();
   if (filter) {
     const targetFreq = MIST_RESON_FREQ;
     filter.frequency.setTargetAtTime(targetFreq, now, 0.1);
+    dbg('MIST filter freq->', targetFreq);
   }
   const lowpass = getMistLowpass();
   if (lowpass) {
     lowpass.frequency.setTargetAtTime(MIST_LOW_PASS_FREQ, now, 0.1);
+    dbg('MIST lowpass freq->', MIST_LOW_PASS_FREQ);
   }
   const wetGain = getMistWetGain();
   if (wetGain) {
     const wetNorm = Math.min(maxCoverage, MIST_MAX_COVERAGE) / MIST_MAX_COVERAGE;
     const wet = MIST_WET_LEVEL * wetNorm;
-    wetGain.gain.setTargetAtTime(wet, now, 0.2);
+    try {
+      const param = wetGain.gain;
+      if (param && typeof param.setTargetAtTime === 'function') {
+        param.setTargetAtTime(wet, now, 0.2);
+      } else if (param && typeof param.setValueAtTime === 'function') {
+        param.setValueAtTime(wet, now);
+      } else if (param && typeof param.rampTo === 'function') {
+        param.rampTo(wet, 0.2);
+      } else if (param && 'value' in param) {
+        param.value = wet;
+      }
+    } catch (_) {}
+    dbg('MIST wet', { maxCoverage, wetNorm, wet });
   }
+  if (processed === 0) dbg('MIST no nodes processed');
 }
-
-

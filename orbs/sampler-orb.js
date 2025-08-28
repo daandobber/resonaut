@@ -72,21 +72,30 @@ export function createSamplerOrbAudioNodes(node) {
     delaySendGain.connect(globalThis.masterDelaySendGain);
   }
 
-  let mistSendGain;
-  if (globalThis.mistEffectInput) {
-    mistSendGain = ctx.createGain();
-    mistSendGain.gain.value = 0;
-    gainNode.connect(mistSendGain);
-    mistSendGain.connect(globalThis.mistEffectInput);
-  }
+  // Always create sends; connect if inputs exist
+  let mistSendGain = ctx.createGain();
+  mistSendGain.gain.value = 0;
+  gainNode.connect(mistSendGain);
+  try {
+    if (globalThis.mistEffectInput) {
+      mistSendGain.connect(globalThis.mistEffectInput);
+      console.log('[PATCH][SAMPLER] mist send created + connected', { nodeId: node.id });
+    } else {
+      console.log('[PATCH][SAMPLER] mist send created (not connected yet)', { nodeId: node.id });
+    }
+  } catch {}
 
-  let crushSendGain;
-  if (globalThis.crushEffectInput) {
-    crushSendGain = ctx.createGain();
-    crushSendGain.gain.value = 0;
-    gainNode.connect(crushSendGain);
-    crushSendGain.connect(globalThis.crushEffectInput);
-  }
+  let crushSendGain = ctx.createGain();
+  crushSendGain.gain.value = 0;
+  gainNode.connect(crushSendGain);
+  try {
+    if (globalThis.crushEffectInput) {
+      crushSendGain.connect(globalThis.crushEffectInput);
+      console.log('[PATCH][SAMPLER] crush send created + connected', { nodeId: node.id });
+    } else {
+      console.log('[PATCH][SAMPLER] crush send created (not connected yet)', { nodeId: node.id });
+    }
+  } catch {}
 
   if (globalThis.masterGain) {
     gainNode.connect(globalThis.masterGain);

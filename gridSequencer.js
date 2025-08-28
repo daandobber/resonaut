@@ -79,12 +79,7 @@ export class GridSequencer {
             this.sequencer.cells.forEach((cell) => {
               const { pad } = cell;
               applyPadVisual(pad, !!cell.state);
-              console.log("render pad", {
-                row: cell.row,
-                column: cell.column,
-                state: cell.state,
-                color: cell.state ? this.activeColor : this.inactiveColor,
-              });
+              // debug logs removed
             });
           }
           const col = this.sequencer.stepper.value;
@@ -96,7 +91,7 @@ export class GridSequencer {
               pad.setAttribute("stroke-width", "2");
               pad.setAttribute("stroke-opacity", this.scanlineAlpha);
             }
-            console.log("scanline", { column: col, color: this.scanlineColor });
+            // debug logs removed
           }
         };
 
@@ -108,12 +103,7 @@ export class GridSequencer {
               const pad = this.sequencer.cells[idx].pad;
               applyPadVisual(pad, !!state);
             }
-            console.log("toggle", {
-              row,
-              column,
-              state,
-              color: state ? this.activeColor : this.inactiveColor,
-            });
+            // debug logs removed
           }
         });
 
@@ -206,16 +196,7 @@ export class GridSequencer {
     if (typeof this.sequencer.render === "function") {
       this.sequencer.render();
     }
-    console.log("updateColors", {
-      active: this.activeColor,
-      inactive: this.inactiveColor,
-      scanline: this.scanlineColor,
-      alpha: {
-        active: this.activeAlpha,
-        inactive: this.inactiveAlpha,
-        scanline: this.scanlineAlpha,
-      },
-    });
+    // debug logs removed
   }
 
   on(type, fn) {
@@ -259,11 +240,7 @@ export class GridSequencer {
     if (this.sequencer && this.sequencer.matrix && this.sequencer.matrix.toggle) {
       this.sequencer.matrix.toggle(row, column);
     }
-    console.log("toggle method", {
-      row,
-      column,
-      state: this.matrix[row][column],
-    });
+    // debug logs removed
   }
 
   step() {

@@ -22,9 +22,15 @@ function getConnectionPoint(node, useHandle) {
     typeof useHandle === 'number' &&
     (node.type === 'grid_sequencer' || node.type === 'pulsar_grid')
   ) {
-    const rows = node.rows || 4;
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
+    // Special handle -1 for grid_sequencer left input
+    if (node.type === 'grid_sequencer' && useHandle < 0) {
+      const cyMid = rectY + node.height / 2;
+      const cxLeft = rectX - 10;
+      return { x: cxLeft, y: cyMid };
+    }
+    const rows = node.rows || 4;
     const cy = rectY + (useHandle + 0.5) * node.height / rows;
     const cx =
       node.type === 'grid_sequencer'
