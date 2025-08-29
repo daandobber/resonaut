@@ -6119,6 +6119,21 @@ function propagateTrigger(
       currentNode.audioParams &&
       currentNode.audioParams.advanceOnPulse
     ) {
+      // Only accept pulses coming into the left input (-1 handle). Reject others.
+      if (!incomingConnection) {
+        playPrimaryAudioEffect = false;
+        canPropagateOriginalPulseFurther = false;
+        return;
+      }
+      const isTargetSideA = incomingConnection.nodeAId === currentNode.id;
+      const handleAtSequencer = isTargetSideA
+        ? incomingConnection.nodeAHandle
+        : incomingConnection.nodeBHandle;
+      if (handleAtSequencer !== -1) {
+        playPrimaryAudioEffect = false;
+        canPropagateOriginalPulseFurther = false;
+        return;
+      }
       // Pulse-driven Grid Sequencer: advance on incoming pulse and emit row triggers
       playPrimaryAudioEffect = false;
       canPropagateOriginalPulseFurther = false;
@@ -17007,7 +17022,6 @@ function handleMouseUp(event) {
             nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE ||
             nodeUnderCursorOnUp.type === "pulsar_grid"
           ) {
-            const rectX = nodeUnderCursorOnUp.x - nodeUnderCursorOnUp.width / 2;
             const rectY = nodeUnderCursorOnUp.y - nodeUnderCursorOnUp.height / 2;
             const isGridSeq = nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE;
             const rows =
@@ -17015,10 +17029,9 @@ function handleMouseUp(event) {
               (isGridSeq
                 ? GRID_SEQUENCER_DEFAULT_ROWS
                 : GRID_PULSAR_DEFAULT_ROWS);
-            // If target is a Grid Sequencer in pulse-advance mode and user is on left side, snap to single input handle
             const advanceOnPulse = !!(nodeUnderCursorOnUp.audioParams && nodeUnderCursorOnUp.audioParams.advanceOnPulse);
-            const leftThresholdX = rectX + GRID_SEQUENCER_DRAG_BORDER * (isGridSeq ? 1 : 0) + 12;
-            if (isGridSeq && advanceOnPulse && mousePos.x <= leftThresholdX) {
+            // If target is a Grid Sequencer in pulse-advance mode, always connect to the single left input
+            if (isGridSeq && advanceOnPulse) {
               connectToGridHandle = -1; // special left input
             } else {
               connectToGridHandle = Math.max(
