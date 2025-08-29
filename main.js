@@ -64,6 +64,7 @@ import { patchConsole } from './utils/loggingUtils.js';
 import { createDailyTipManager } from './utils/dailyTips.js';
 import * as el from './utils/domElements.js';
 import { ONE_WAY_TYPE, drawArrow, getArrowPosition } from './connectors.js';
+import { CIRCLE_FIFTHS_TYPE, applyZodiacPresetToCircle, initCircleNode as initCircleFifthsNode, handleCirclePulse as handleCircleFifthsPulse, buildCenterInstrumentPanel as buildCircleCenterPanel } from './orbs/circle-fifths.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
 import { generateWaveformPath } from "./utils/waveformUtils.js";
 import { SAMPLER_DEFINITIONS } from './samplers.js';
@@ -397,7 +398,42 @@ const TIMELINE_GRID_TYPE = "timeline_grid";
 const SPACERADAR_TYPE = "spaceradar";
 const CRANK_RADAR_TYPE = "crank_radar";
 const GRID_SEQUENCER_TYPE = "grid_sequencer";
-const CIRCLE_FIFTHS_TYPE = "circle_fifths";
+// Circle-of-Fifths type imported from module
+// Zodiac presets: hidden mapping from sign -> movement/degree patterns
+const ZODIAC_SIGNS = [
+  'Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'
+];
+const ZODIAC_GLYPHS = {
+  Aries: '♈',
+  Taurus: '♉',
+  Gemini: '♊',
+  Cancer: '♋',
+  Leo: '♌',
+  Virgo: '♍',
+  Libra: '♎',
+  Scorpio: '♏',
+  Sagittarius: '♐',
+  Capricorn: '♑',
+  Aquarius: '♒',
+  Pisces: '♓',
+};
+const ZODIAC_PRESETS = {
+  Aries:        { sequenceMode:'step',   direction:'clockwise',       stepPattern:'2,1,1' },
+  // Taurus intentionally holds the root (repeats), as requested
+  Taurus:       { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1', holdRoot:true },
+  Gemini:       { sequenceMode:'step',   direction:'clockwise',       stepPattern:'1,1,2' },
+  Cancer:       { sequenceMode:'step',   direction:'counterclockwise',stepPattern:'2,1,2' },
+  Leo:          { sequenceMode:'step',   direction:'clockwise',       stepPattern:'2,2,1' },
+  Virgo:        { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1,2,3,4' },
+  Libra:        { sequenceMode:'step',   direction:'counterclockwise',stepPattern:'1,2,1,2' },
+  Scorpio:      { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1,4,2,5' },
+  Sagittarius:  { sequenceMode:'step',   direction:'clockwise',       stepPattern:'3,1' },
+  Capricorn:    { sequenceMode:'degree', direction:'counterclockwise',degreePattern:'1,2,1,2,3,2' },
+  Aquarius:     { sequenceMode:'step',   direction:'counterclockwise',stepPattern:'2,2,1' },
+  Pisces:       { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1,2,3,2,1' },
+};
+
+
 const MIDI_ORB_TYPE = "midi_orb";
 const RESONAUTER_TYPE = "resonauter";
 const RADIO_ORB_TYPE = "radio_orb";
@@ -1456,6 +1492,7 @@ function updateAllConnectionLengths() {
 function findNodeAt(worldX, worldY) {
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
+    if (n && n.isEmbeddedInCircleId) continue; // embedded center instruments are not selectable
     if (n.type === TIMELINE_GRID_TYPE || n.type === GRID_SEQUENCER_TYPE || n.type === "pulsar_grid") {
       const rectX1 = n.x - n.width / 2;
       const rectY1 = n.y - n.height / 2;
@@ -6206,69 +6243,18 @@ function propagateTrigger(
     } else if (
       currentNode.type === CIRCLE_FIFTHS_TYPE
     ) {
-      // Only accept pulses coming into the left input (-1 handle). Reject others.
-      if (!incomingConnection) {
-        playPrimaryAudioEffect = false;
-        canPropagateOriginalPulseFurther = false;
-        return;
-      }
-      const isTargetSideA = incomingConnection.nodeAId === currentNode.id;
-      const handleAtSequencer = isTargetSideA
-        ? incomingConnection.nodeAHandle
-        : incomingConnection.nodeBHandle;
-      if (handleAtSequencer !== -1) {
-        playPrimaryAudioEffect = false;
-        canPropagateOriginalPulseFurther = false;
-        return;
-      }
-      // Pulse-driven Circle of Fifths: advance on incoming pulse and emit triggers from center output (handle 0)
+      // Delegate pulse handling to module
       playPrimaryAudioEffect = false;
       canPropagateOriginalPulseFurther = false;
-      currentNode.animationState = 1;
-      const segments = currentNode.segments || 12;
-      const k = ((currentNode.segmentIndex || 0) % segments + segments) % segments;
-      // Diatonic degree pattern approximating cycle of fifths over 12 steps
-      const baseDeg = [0, 4, 1, 5, 2, 6, 3];
-      const stepDegree = baseDeg[k % 7] + (k >= 7 ? 7 : 0);
-      const ap = currentNode.audioParams || {};
-      // Decide note vs chord
-      const mode = ap.mode || 'random';
-      const chordProb = ap.randomChordProbability === undefined ? 0.6 : ap.randomChordProbability;
-      const isChord = mode === 'chord' || (mode === 'random' && Math.random() < chordProb);
-      const chordSize = Math.max(2, Math.min(4, ap.chordSize || 3));
-      const degOffsets = isChord ? (chordSize === 4 ? [0, 2, 4, 6] : [0, 2, 4]) : [0];
-      const pulseIntensity = ap.pulseIntensity ?? DEFAULT_PULSE_INTENSITY;
-
-      connections.forEach((c) => {
-        const isOut =
-          (c.nodeAId === currentNode.id && c.nodeAHandle === 0) ||
-          (!c.directional && c.nodeBId === currentNode.id && c.nodeBHandle === 0);
-        if (!isOut) return;
-        const targetId = c.nodeAId === currentNode.id ? c.nodeBId : c.nodeAId;
-        const neighborNode = findNodeById(targetId);
-        if (!neighborNode) return;
-        const baseIndex = (neighborNode.audioParams && typeof neighborNode.audioParams.scaleIndex === 'number')
-          ? neighborNode.audioParams.scaleIndex
-          : 0;
-        const travelTime = c.length * DELAY_FACTOR;
-        createVisualPulse(c.id, travelTime, currentNode.id, Infinity, "trigger", null, pulseIntensity);
-        const basePulse = {
-          intensity: pulseIntensity,
-          color: currentNode.color ?? null,
-          particleMultiplier: isChord ? 0.7 : 0.9,
-        };
-        degOffsets.forEach((off) => {
-          const override = {
-            scaleIndexOverride: Math.max(
-              MIN_SCALE_INDEX,
-              Math.min(MAX_SCALE_INDEX, baseIndex + stepDegree + off),
-            ),
-          };
-          triggerNodeEffect(neighborNode, basePulse, null, 0.3, override);
-        });
+      handleCircleFifthsPulse(currentNode, incomingConnection, {
+        findNodeById,
+        triggerNodeEffect,
+        MIN_SCALE_INDEX,
+        MAX_SCALE_INDEX,
+        DELAY_FACTOR,
+        highlightCircleDegreeBars,
       });
-      currentNode.segmentIndex = ((currentNode.segmentIndex || 0) + 1) % segments;
-    } else if (currentNode.type === "pitchShift") {
+      } else if (currentNode.type === "pitchShift") {
       currentNode.animationState = 1;
       playPrimaryAudioEffect = false;
       const shiftIndex =
@@ -7464,6 +7450,159 @@ function highlightOrbitoneBar(nodeId, index, delayMs = 0) {
       setTimeout(() => bar.classList.remove("playing"), 150);
     }
   }, Math.max(0, delayMs));
+}
+
+// Circle of Fifths: lightweight degree visualizer using NexusUI Piano
+let __NexusLibCircle = null;
+function getNexusForCircle() {
+  if (typeof window === 'undefined') return Promise.resolve(null);
+  if (__NexusLibCircle) return Promise.resolve(__NexusLibCircle);
+  return import('nexusui').then(({ default: Nexus }) => {
+    __NexusLibCircle = Nexus;
+    return Nexus;
+  }).catch(() => null);
+}
+
+const circleDegreeDisplays = new Map(); // nodeId -> { piano, container, decayTimers: number[], low, high }
+
+function createCircleDegreeDisplay(node) {
+  const wrap = document.createElement('div');
+  wrap.style.marginTop = '6px';
+  const label = document.createElement('label');
+  label.textContent = 'Triggered Notes (Piano)';
+  label.style.display = 'block';
+  label.style.marginBottom = '4px';
+  wrap.appendChild(label);
+  const target = document.createElement('div');
+  target.id = `cof-degdisplay-${node.id}`;
+  target.style.width = '220px';
+  target.style.height = '64px';
+  target.style.border = '1px solid rgba(255,255,255,0.15)';
+  target.style.borderRadius = '4px';
+  wrap.appendChild(target);
+
+  // Initialize Nexus Multislider lazily
+  getNexusForCircle().then((Nexus) => {
+    if (!Nexus) return;
+    // Guard if node/editor disappeared
+    const el = document.getElementById(target.id);
+    if (!el) return;
+    // Fixed one-octave piano C4..C5 (inclusive)
+    const low = 60;  // C4
+    const high = 72; // C5
+    const piano = new Nexus.Piano(el, { size: [220, 64], mode: 'button', lowNote: low, highNote: high });
+    el.style.pointerEvents = 'none';
+
+    // Theme sync similar to gridSequencer
+    const style = getComputedStyle(document.body || document.documentElement);
+    const parseColor = (value, fallback = '#222') => {
+      if (!value) return { hex: fallback, alpha: 1 };
+      const val = value.trim();
+      if (val.startsWith('rgba')) {
+        const parts = val.substring(val.indexOf('(')+1, val.lastIndexOf(')')).split(',');
+        const r = parseFloat(parts[0]);
+        const g = parseFloat(parts[1]);
+        const b = parseFloat(parts[2]);
+        const a = parseFloat(parts[3] ?? '1');
+        const toHex = (n)=> ('0'+Math.max(0,Math.min(255,Math.round(n))).toString(16)).slice(-2);
+        return { hex: `#${toHex(r)}${toHex(g)}${toHex(b)}`, alpha: a };
+      }
+      if (val.startsWith('rgb')) {
+        const parts = val.substring(val.indexOf('(')+1, val.lastIndexOf(')')).split(',');
+        const r = parseFloat(parts[0]);
+        const g = parseFloat(parts[1]);
+        const b = parseFloat(parts[2]);
+        const toHex = (n)=> ('0'+Math.max(0,Math.min(255,Math.round(n))).toString(16)).slice(-2);
+        return { hex: `#${toHex(r)}${toHex(g)}${toHex(b)}`, alpha: 1 };
+      }
+      return { hex: val, alpha: 1 };
+    };
+    const inactive = parseColor(style.getPropertyValue('--grid-color') || '#222');
+    const active = parseColor(style.getPropertyValue('--start-node-color') || '#ffd700');
+    // Background behind keys defines the visible gaps between keys
+    try { el.style.background = inactive.hex; } catch {}
+    try { piano.colorize('fill', inactive.hex); piano.colorize('accent', active.hex); } catch {}
+
+    const stylePianoKeys = () => {
+      const borderDark = 'rgba(0,0,0,0.35)';
+      const borderLight = 'rgba(255,255,255,0.15)';
+      try {
+        // Add clear separators; white keys get right border, black keys outlined slightly
+        (piano.keys || []).forEach((k) => {
+          const container = k && k.parent ? k.parent : null;
+          if (!container) return;
+          container.style.boxSizing = 'border-box';
+          if (k.color === 'w') {
+            container.style.borderRight = `1px solid ${borderDark}`;
+            container.style.borderLeft = '';
+            container.style.borderTop = '';
+            container.style.borderBottom = '';
+          } else {
+            container.style.border = `1px solid ${borderDark}`;
+            container.style.boxShadow = `inset 0 0 0 1px ${borderLight}`;
+            container.style.borderRadius = '2px';
+          }
+        });
+      } catch {}
+    };
+    stylePianoKeys();
+
+    const entry = { piano, container: wrap, decayTimers: [], low, high };
+    circleDegreeDisplays.set(node.id, entry);
+
+    window.addEventListener('scale-changed', () => {
+      // Keep colors synced with theme, but keep fixed range C4..C5
+      entry.low = 60; entry.high = 72;
+      try { if (typeof piano.setRange === 'function') piano.setRange(60,72); } catch {}
+      try {
+        const st = getComputedStyle(document.body);
+        const fillCol = (st.getPropertyValue('--grid-color')||'#222').trim();
+        const accCol = (st.getPropertyValue('--start-node-color')||'#ffd700').trim();
+        if (el) el.style.background = fillCol;
+        piano.colorize('fill', fillCol);
+        piano.colorize('accent', accCol);
+        stylePianoKeys();
+      } catch {}
+    });
+  });
+  return wrap;
+}
+
+function highlightCircleDegreeBars(nodeId, payload = [], intensity = 1.0) {
+  const entry = circleDegreeDisplays.get(nodeId);
+  if (!entry || !entry.piano) return;
+  const len = (currentScale && currentScale.notes ? currentScale.notes.length : 7) || 7;
+  const midiOn = [];
+  if (payload && typeof payload === 'object' && Array.isArray(payload.scaleIndices)) {
+    // Payload is absolute diatonic scale indices
+    payload.scaleIndices.forEach((si) => {
+      const freq = getFrequency(currentScale, si, 0, currentRootNote, globalTransposeOffset);
+      const midi = Math.round(frequencyToMidi(freq));
+      if (Number.isFinite(midi)) {
+        const mod = ((midi % 12) + 12) % 12;
+        const folded = mod === 0 ? 72 : 60 + mod; // map C to top C5, others into C4..B4
+        if (folded >= entry.low && folded <= entry.high) midiOn.push(folded);
+      }
+    });
+  } else {
+    // Backward compatibility: payload as degree offsets array
+    const degreeOffsets = Array.isArray(payload) ? payload : [];
+    degreeOffsets.forEach((off) => {
+      const oct = Math.floor(off / len);
+      let idx = off % len; if (idx < 0) idx += len;
+      const semitone = (currentScale.notes && currentScale.notes[idx] !== undefined) ? currentScale.notes[idx] : [0,2,4,5,7,9,11][idx % 7];
+      const rawMidi = currentRootNote + semitone + 12 * oct;
+      const mod = ((rawMidi % 12) + 12) % 12;
+      const folded = mod === 0 ? 72 : 60 + mod;
+      if (folded >= entry.low && folded <= entry.high) midiOn.push(folded);
+    });
+  }
+  const dur = Math.max(120, Math.min(400, Math.round(120 + intensity * 140)));
+  midiOn.forEach((m) => { try { entry.piano.toggleKey(m, true); } catch {} });
+  const timer = setTimeout(() => {
+    midiOn.forEach((m) => { try { entry.piano.toggleKey(m, false); } catch {} });
+  }, dur);
+  entry.decayTimers.push(timer);
 }
 
 function updateAndDrawParticles(deltaTime, now) {
@@ -11952,16 +12091,91 @@ function drawNode(node) {
         ctx.stroke();
       }
     }
-    // Center output connector dot (handle 0)
-    ctx.fillStyle = border;
+    // Pulse glow on recently triggered segment
+    try {
+      const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const glowSeg = Number.isFinite(node.lastGlowSeg) ? node.lastGlowSeg : null;
+      const glowAt = node.lastGlowAt || 0;
+      const life = 750; // ms
+      const age = nowMs - glowAt;
+      if (glowSeg !== null && age >= 0 && age < life) {
+        const t = 1 - age / life; // 1..0
+        const a0 = -Math.PI / 2 + glowSeg * step;
+        const a1 = a0 + step;
+        const midR = radius - ringWidth * 0.5;
+        const lw = Math.max(5 / viewScale, ringWidth * (0.8 + 0.5 * t) / viewScale);
+        ctx.save();
+        ctx.globalAlpha = 0.6 * t + 0.25;
+        ctx.shadowBlur = 36 * t / viewScale;
+        ctx.shadowColor = colorWithAlpha(accent, 0.9);
+        ctx.strokeStyle = colorWithAlpha(accent, 0.9);
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.arc(cx, cy, midR, a0 + 0.10, a1 - 0.10);
+        ctx.stroke();
+        // outer spread pass for extra glow
+        ctx.globalAlpha = Math.max(0, 0.35 * t);
+        ctx.lineWidth = lw * 1.4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, midR, a0 + 0.08, a1 - 0.08);
+        ctx.stroke();
+        ctx.restore();
+      }
+    } catch {}
+    // Center attachment visual (or connector if none)
     const cr = 4 / viewScale;
-    ctx.beginPath();
-    ctx.arc(cx + 12, cy, cr, 0, Math.PI * 2);
-    ctx.fill();
+    if (node.audioParams?.centerAttachedNodeId) {
+      const att = findNodeById(node.audioParams.centerAttachedNodeId);
+      const coreR = Math.max(10 / viewScale, ringWidth * 0.5);
+      const coreFill = colorWithAlpha(accent, 0.35);
+      const coreStroke = colorWithAlpha(accent, 0.9);
+      ctx.fillStyle = coreFill;
+      ctx.strokeStyle = coreStroke;
+      ctx.lineWidth = Math.max(2 / viewScale, 1.5 / viewScale);
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // subtle inner dot
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = colorWithAlpha(accent, 0.8);
+      ctx.fill();
+      // Anchor attached node at center and flag as embedded
+      if (att) {
+        att.x = cx;
+        att.y = cy;
+        att.isEmbeddedInCircleId = node.id;
+      }
+    } else {
+      // fallback: show center output connector dot (handle 0)
+      ctx.fillStyle = border;
+      ctx.beginPath();
+      ctx.arc(cx + 12, cy, cr, 0, Math.PI * 2);
+      ctx.fill();
+    }
     // Left input connector dot (handle -1)
     ctx.beginPath();
     ctx.arc(cx - 12, cy, cr, 0, Math.PI * 2);
     ctx.fill();
+    // Stylized inner sun
+    try {
+      const sunR = Math.max(8, ringWidth * 0.8);
+      ctx.strokeStyle = border;
+      ctx.lineWidth = Math.max(1 / viewScale, 1 / viewScale);
+      for (let r = 0; r < 12; r++) {
+        const ang = (r * Math.PI * 2) / 12;
+        const r1 = sunR * 0.6;
+        const r2 = sunR;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+        ctx.lineTo(cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, sunR * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    } catch {}
     return;
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
     const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
@@ -16177,8 +16391,7 @@ function handleMouseDown(event) {
           connectingNode = node;
           if (
             node.type === GRID_SEQUENCER_TYPE ||
-            node.type === "pulsar_grid" ||
-            node.type === CIRCLE_FIFTHS_TYPE
+            node.type === "pulsar_grid"
           ) {
             const rows =
               node.rows ||
@@ -17206,7 +17419,8 @@ function handleMouseUp(event) {
             if (isGridSeq && advanceOnPulse) {
               connectToGridHandle = -1; // special left input
             } else if (nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE) {
-              connectToGridHandle = -1; // single left input
+              // Only allow left input (-1). No outputs from circle.
+              connectToGridHandle = -1;
             } else {
               connectToGridHandle = Math.max(
                 0,
@@ -19698,6 +19912,398 @@ function populateEditPanel() {
                     );
                     section.appendChild(intervalSlider);
                 }
+
+    fragment.appendChild(section);
+
+            } else if (node && node.type === CIRCLE_FIFTHS_TYPE) {
+                const section = document.createElement("div");
+                section.classList.add("panel-section");
+
+                // Pattern Source
+                const sourceLabel = document.createElement('label');
+                sourceLabel.htmlFor = `edit-cof-src-${node.id}`;
+                sourceLabel.textContent = 'Pattern Source:';
+                sourceLabel.style.marginRight = '6px';
+                const sourceSelect = document.createElement('select');
+                sourceSelect.id = `edit-cof-src-${node.id}`;
+                const curSource = node.audioParams?.patternSource || 'zodiac';
+                [{v:'zodiac',t:'Zodiac'},{v:'custom',t:'Custom'}].forEach(opt=>{
+                  const o=document.createElement('option'); o.value=opt.v; o.textContent=opt.t; if(opt.v===curSource) o.selected=true; sourceSelect.appendChild(o);
+                });
+                sourceSelect.addEventListener('change',(e)=>{
+                  selectedArray.forEach(el=>{
+                    const n=findNodeById(el.id);
+                    if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.patternSource = e.target.value; if(n.audioParams.patternSource==='zodiac'){ applyZodiacPresetToCircle(n, n.audioParams.zodiacSign || 'Aries'); } }
+                  });
+                  saveState(); populateEditPanel();
+                });
+                section.appendChild(sourceLabel);
+                section.appendChild(sourceSelect);
+                section.appendChild(document.createElement('br'));
+
+                // Zodiac select (only when source = zodiac)
+                const zodiacWrap = document.createElement('div');
+                const zodiacLabel = document.createElement('label');
+                zodiacLabel.htmlFor = `edit-cof-zodiac-${node.id}`;
+                zodiacLabel.textContent = 'Zodiac:';
+                zodiacWrap.appendChild(zodiacLabel);
+                const zodiacSelect = document.createElement('select');
+                zodiacSelect.id = `edit-cof-zodiac-${node.id}`;
+                const curSign = node.audioParams?.zodiacSign || 'Aries';
+                ZODIAC_SIGNS.forEach(name=>{ const o=document.createElement('option'); o.value=name; o.textContent=name; if(name===curSign) o.selected=true; zodiacSelect.appendChild(o); });
+                zodiacSelect.addEventListener('change',(e)=>{
+                  selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.zodiacSign = e.target.value; applyZodiacPresetToCircle(n, n.audioParams.zodiacSign); } });
+                  saveState();
+                });
+                if ((node.audioParams?.patternSource || 'zodiac') !== 'zodiac') zodiacWrap.style.display='none';
+                zodiacWrap.appendChild(zodiacSelect);
+                section.appendChild(zodiacWrap);
+
+                // Mode select
+                const modeLabel = document.createElement("label");
+                modeLabel.htmlFor = `edit-cof-mode-${node.id}`;
+                modeLabel.textContent = "Mode:";
+                modeLabel.style.marginRight = "6px";
+                const modeSelect = document.createElement("select");
+                modeSelect.id = `edit-cof-mode-${node.id}`;
+                const modes = [
+                  { v: 'note', t: 'Note' },
+                  { v: 'chord', t: 'Chord' },
+                  { v: 'random', t: 'Random' },
+                ];
+                const curMode = node.audioParams?.mode || 'random';
+                modes.forEach(opt => {
+                  const o = document.createElement('option');
+                  o.value = opt.v; o.textContent = opt.t;
+                  if (opt.v === curMode) o.selected = true;
+                  modeSelect.appendChild(o);
+                });
+                modeSelect.addEventListener('change', (e) => {
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.mode = e.target.value;
+                    }
+                  });
+                  saveState();
+                });
+                section.appendChild(modeLabel);
+                section.appendChild(modeSelect);
+                section.appendChild(document.createElement('br'));
+
+                // Chord size slider (2..4)
+                const curSize = Math.max(2, Math.min(4, node.audioParams?.chordSize || 3));
+                const sizeSlider = createSlider(
+                  `edit-cof-chordsize-${node.id}`,
+                  `Chord Size (${curSize}):`,
+                  2,
+                  4,
+                  1,
+                  curSize,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(2, Math.min(4, parseInt(e_input.target.value, 10)));
+                    selectedArray.forEach((elData) => {
+                      const n = findNodeById(elData.id);
+                      if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                        if (!n.audioParams) n.audioParams = {};
+                        n.audioParams.chordSize = newVal;
+                      }
+                    });
+                    e_input.target.previousElementSibling.textContent = `Chord Size (${newVal}):`;
+                  },
+                );
+                section.appendChild(sizeSlider);
+
+                // Random chord probability slider
+                const curProb = node.audioParams?.randomChordProbability;
+                const probVal = typeof curProb === 'number' ? curProb : 0.6;
+                const probSlider = createSlider(
+                  `edit-cof-prob-${node.id}`,
+                  `Chord Probability (${probVal.toFixed(2)}):`,
+                  0,
+                  1,
+                  0.01,
+                  probVal,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach((elData) => {
+                      const n = findNodeById(elData.id);
+                      if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                        if (!n.audioParams) n.audioParams = {};
+                        n.audioParams.randomChordProbability = newVal;
+                      }
+                    });
+                    e_input.target.previousElementSibling.textContent = `Chord Probability (${newVal.toFixed(2)}):`;
+                  },
+                );
+                section.appendChild(probSlider);
+
+                // Chord type select
+                const chordTypeLabel = document.createElement('label');
+                chordTypeLabel.htmlFor = `edit-cof-chordtype-${node.id}`;
+                chordTypeLabel.textContent = 'Chord Type:';
+                chordTypeLabel.style.marginRight = '6px';
+                const chordTypeSelect = document.createElement('select');
+                chordTypeSelect.id = `edit-cof-chordtype-${node.id}`;
+                const curChordType = node.audioParams?.chordType || 'auto';
+                [
+                  { v: 'auto', t: 'Auto (uses Size)' },
+                  { v: 'triad', t: 'Triad' },
+                  { v: 'seventh', t: 'Seventh' },
+                  { v: 'sus2', t: 'Sus2' },
+                  { v: 'sus4', t: 'Sus4' },
+                  { v: 'power', t: 'Power (5th)' },
+                  { v: 'random', t: 'Random among types' },
+                ].forEach(opt => { const o=document.createElement('option'); o.value=opt.v; o.textContent=opt.t; if(opt.v===curChordType) o.selected=true; chordTypeSelect.appendChild(o); });
+                chordTypeSelect.addEventListener('change', (e) => {
+                  selectedArray.forEach((elData)=>{
+                    const n=findNodeById(elData.id);
+                    if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.chordType = e.target.value; }
+                  });
+                  saveState();
+                });
+                section.appendChild(chordTypeLabel);
+                section.appendChild(chordTypeSelect);
+                section.appendChild(document.createElement('br'));
+
+                // Velocity jitter slider (0..1)
+                const curVelJitter = node.audioParams?.velocityJitter ?? 0.2;
+                const velJitterSlider = createSlider(
+                  `edit-cof-veljitter-${node.id}`,
+                  `Velocity Jitter (${curVelJitter.toFixed(2)}):`,
+                  0,
+                  1,
+                  0.01,
+                  curVelJitter,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach((elData)=>{
+                      const n=findNodeById(elData.id);
+                      if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.velocityJitter = newVal; }
+                    });
+                    e_input.target.previousElementSibling.textContent = `Velocity Jitter (${newVal.toFixed(2)}):`;
+                  }
+                );
+                section.appendChild(velJitterSlider);
+
+                // Voicing spread probability (lift chord tones by an octave)
+                const curSpread = node.audioParams?.chordSpreadProb ?? 0.0;
+                const spreadSlider = createSlider(
+                  `edit-cof-voicingspread-${node.id}`,
+                  `Voicing Spread (${curSpread.toFixed(2)}):`,
+                  0,
+                  1,
+                  0.01,
+                  curSpread,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach((elData)=>{
+                      const n=findNodeById(elData.id);
+                      if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.chordSpreadProb = newVal; }
+                    });
+                    e_input.target.previousElementSibling.textContent = `Voicing Spread (${newVal.toFixed(2)}):`;
+                  }
+                );
+                section.appendChild(spreadSlider);
+
+                // Sequence Mode select (step vs degree)
+                const seqModeLabel = document.createElement('label');
+                seqModeLabel.htmlFor = `edit-cof-seqmode-${node.id}`;
+                seqModeLabel.textContent = 'Sequence:';
+                seqModeLabel.style.marginRight = '6px';
+                const seqModeSelect = document.createElement('select');
+                seqModeSelect.id = `edit-cof-seqmode-${node.id}`;
+                const curSeqMode = node.audioParams?.sequenceMode || 'step';
+                [{v:'step',t:'Step (around circle)'},{v:'degree',t:'Degree Pattern'}].forEach(opt=>{
+                  const o=document.createElement('option'); o.value=opt.v; o.textContent=opt.t; if(opt.v===curSeqMode) o.selected=true; seqModeSelect.appendChild(o);
+                });
+                seqModeSelect.addEventListener('change',(e)=>{
+                  selectedArray.forEach((elData)=>{
+                    const n=findNodeById(elData.id);
+                    if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.sequenceMode = e.target.value; n.patternIndex = 0; }
+                  });
+                  saveState(); populateEditPanel();
+                });
+                section.appendChild(seqModeLabel);
+                section.appendChild(seqModeSelect);
+                section.appendChild(document.createElement('br'));
+
+                // Direction select
+                const dirLabel = document.createElement('label');
+                dirLabel.htmlFor = `edit-cof-dir-${node.id}`;
+                dirLabel.textContent = 'Direction:';
+                dirLabel.style.marginRight = '6px';
+                dirLabel.style.marginLeft = '8px';
+                const dirSelect = document.createElement('select');
+                dirSelect.id = `edit-cof-dir-${node.id}`;
+                const curDir = node.audioParams?.direction || 'clockwise';
+                [{v:'clockwise',t:'Clockwise'},{v:'counterclockwise',t:'Counterclockwise'}].forEach(opt => {
+                  const o = document.createElement('option'); o.value=opt.v; o.textContent=opt.t; if(opt.v===curDir) o.selected=true; dirSelect.appendChild(o);
+                });
+                dirSelect.addEventListener('change', (e) => {
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.direction = e.target.value;
+                    }
+                  });
+                  saveState();
+                });
+                // Hide direction when in zodiac source
+                if ((node.audioParams?.patternSource || 'zodiac') !== 'zodiac') {
+                  section.appendChild(dirLabel);
+                  section.appendChild(dirSelect);
+                }
+                section.appendChild(document.createElement('br'));
+
+                // Step pattern input
+                const pattWrap = document.createElement('div');
+                const pattLabel = document.createElement('label');
+                pattLabel.htmlFor = `edit-cof-pattern-${node.id}`;
+                pattLabel.textContent = 'Step Pattern (e.g. 1,2):';
+                pattWrap.appendChild(pattLabel);
+                const pattInput = document.createElement('input');
+                pattInput.type = 'text';
+                pattInput.id = `edit-cof-pattern-${node.id}`;
+                pattInput.placeholder = '1 or 2,1';
+                pattInput.value = (node.audioParams?.stepPattern ?? '1');
+                pattInput.style.marginLeft = '6px';
+                pattInput.size = 10;
+                pattInput.addEventListener('change', (e) => {
+                  let val = String(e.target.value || '').trim();
+                  const parts = (val.match(/-?\d+/g) || []).map(s=>parseInt(s,10)).filter(n=>Number.isFinite(n) && n!==0);
+                  if (parts.length === 0) { val = '1'; e.target.value = '1'; }
+                  else { val = parts.join(','); e.target.value = val; }
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.stepPattern = val;
+                      n.patternIndex = 0; // reset cycle to start
+                    }
+                  });
+                  saveState();
+                  if (typeof rebuildStepEditors === 'function') rebuildStepEditors();
+                });
+                pattWrap.appendChild(pattInput);
+
+                // Step-by-step editor with +/- controls for per-step forward/backwards
+                const stepEditorWrap = document.createElement('div');
+                stepEditorWrap.style.margin = '6px 0 0 0';
+                const parseSteps = (val) => (String(val||'1').match(/-?\d+/g)||['1']).map(x=>parseInt(x,10)).filter(n=>Number.isFinite(n) && n!==0);
+                const stringify = (arr) => arr.join(',');
+                const applySteps = (arr) => {
+                  const val = stringify(arr);
+                  pattInput.value = val;
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.stepPattern = val;
+                      n.patternIndex = 0; // reset to start
+                    }
+                  });
+                  saveState();
+                };
+                const buildButton = (txt, title) => { const b=document.createElement('button'); b.type='button'; b.textContent=txt; if(title) b.title=title; b.style.marginRight='4px'; b.style.minWidth='24px'; return b; };
+                const buildStepRow = (arr) => {
+                  stepEditorWrap.innerHTML='';
+                  const row = document.createElement('div');
+                  row.style.display='flex'; row.style.flexWrap='wrap'; row.style.gap='8px';
+                  arr.forEach((v, idx)=>{
+                    const col = document.createElement('div');
+                    col.style.display='flex'; col.style.flexDirection='column'; col.style.alignItems='center'; col.style.gap='2px';
+                    col.style.width = '26px';
+                    const plus=buildButton('+','Increase'); plus.style.minWidth='22px'; plus.style.padding='0';
+                    const disp=document.createElement('span');
+                    disp.textContent=String(v);
+                    disp.style.display='inline-block';
+                    disp.style.minWidth='22px';
+                    disp.style.height='18px';
+                    disp.style.lineHeight='18px';
+                    disp.style.textAlign='center';
+                    disp.style.border='1px solid rgba(255,255,255,0.25)';
+                    disp.style.borderRadius='3px';
+                    const minus=buildButton('−','Decrease'); minus.style.minWidth='22px'; minus.style.padding='0';
+                    minus.addEventListener('click',()=>{ const cur=parseSteps(pattInput.value); cur[idx]=Math.max(-12, Math.min(12, (cur[idx]||1) - 1)); if(cur[idx]===0) cur[idx]=-1; applySteps(cur); buildStepRow(cur); });
+                    plus.addEventListener('click',()=>{ const cur=parseSteps(pattInput.value); cur[idx]=Math.max(-12, Math.min(12, (cur[idx]||1) + 1)); if(cur[idx]===0) cur[idx]=1; applySteps(cur); buildStepRow(cur); });
+                    col.appendChild(plus); col.appendChild(disp); col.appendChild(minus);
+                    row.appendChild(col);
+                  });
+                  const controls = document.createElement('div'); controls.style.marginTop='6px';
+                  const addBtn = buildButton('＋ step','Add step');
+                  const remBtn = buildButton('⌫','Remove last');
+                  addBtn.addEventListener('click',()=>{ const cur=parseSteps(pattInput.value); cur.push(1); applySteps(cur); buildStepRow(cur); });
+                  remBtn.addEventListener('click',()=>{ const cur=parseSteps(pattInput.value); if(cur.length>1){ cur.pop(); applySteps(cur); buildStepRow(cur); }});
+                  stepEditorWrap.appendChild(row);
+                  stepEditorWrap.appendChild(controls);
+                  controls.appendChild(addBtn);
+                  controls.appendChild(remBtn);
+                };
+                const rebuildStepEditors = () => buildStepRow(parseSteps(pattInput.value));
+                rebuildStepEditors();
+                pattWrap.appendChild(stepEditorWrap);
+
+                if ((node.audioParams?.patternSource || 'zodiac') !== 'zodiac') section.appendChild(pattWrap);
+
+                // Degree pattern input (enabled when sequenceMode === 'degree')
+                const degWrap = document.createElement('div');
+                degWrap.style.marginTop = '6px';
+                const degLabel = document.createElement('label');
+                degLabel.htmlFor = `edit-cof-degpattern-${node.id}`;
+                degLabel.textContent = 'Degree Pattern (1..7, e.g. 1,2,3,2,2):';
+                degWrap.appendChild(degLabel);
+                const degInput = document.createElement('input');
+                degInput.type = 'text';
+                degInput.id = `edit-cof-degpattern-${node.id}`;
+                degInput.placeholder = '1,2,3,2,2';
+                degInput.value = (node.audioParams?.degreePattern ?? '');
+                degInput.style.marginLeft = '6px';
+                degInput.size = 14;
+                degInput.addEventListener('change', (e) => {
+                  let val = String(e.target.value || '').trim();
+                  const parts = val.split(/[^\d]+/).map(s=>parseInt(s,10)).filter(n=>Number.isFinite(n) && n>0);
+                  if (parts.length === 0) { val = ''; e.target.value = ''; }
+                  selectedArray.forEach((elData)=>{
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) { if(!n.audioParams) n.audioParams={}; n.audioParams.degreePattern = val; n.patternIndex = 0; }
+                  });
+                  saveState();
+                });
+                // Show/hide depending on mode
+                if ((node.audioParams?.sequenceMode || 'step') !== 'degree' || (node.audioParams?.patternSource || 'zodiac') === 'zodiac') {
+                  degWrap.style.display = 'none';
+                }
+                section.appendChild(degWrap);
+
+                // Center Instrument UI via module
+                const centerSec = buildCircleCenterPanel(node, {
+                  document,
+                  fmSynthPresets,
+                  analogWaveformPresets,
+                  samplerWaveformTypes,
+                  SAMPLER_DEFINITIONS,
+                  addNode,
+                  findNodeById,
+                  stopNodeAudio,
+                  createAudioNodesForNode,
+                  updateNodeAudioParams,
+                  saveState,
+                  draw,
+                });
+                section.appendChild(centerSec);
+
+                // Notes visualizer (Nexus Multislider)
+                try {
+                  const viz = createCircleDegreeDisplay(node);
+                  section.appendChild(viz);
+                } catch (e) { /* noop */ }
 
                 fragment.appendChild(section);
 
@@ -24212,19 +24818,14 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 240;
     newNode.width = size;
     newNode.height = size;
-    newNode.segments = 12;
-    newNode.segmentIndex = 0;
-    if (!newNode.audioParams) newNode.audioParams = {};
-    newNode.audioParams.pulseIntensity = newNode.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY;
-    // Circle is pulse-driven; no own timing
-    newNode.audioParams.ignoreGlobalSync = true;
-    newNode.audioParams.syncSubdivisionIndex = DEFAULT_SUBDIVISION_INDEX;
-    newNode.audioParams.triggerInterval = DEFAULT_TRIGGER_INTERVAL;
-    // Chord/note settings
-    newNode.audioParams.mode = newNode.audioParams.mode || 'random'; // 'note' | 'chord' | 'random'
-    newNode.audioParams.chordSize = newNode.audioParams.chordSize || 3; // 3 or 4
-    newNode.audioParams.randomChordProbability =
-      newNode.audioParams.randomChordProbability === undefined ? 0.6 : newNode.audioParams.randomChordProbability;
+    initCircleFifthsNode(newNode, {
+      DEFAULT_PULSE_INTENSITY,
+      DEFAULT_SUBDIVISION_INDEX,
+      DEFAULT_TRIGGER_INTERVAL,
+      samplerWaveformTypes,
+      SAMPLER_DEFINITIONS,
+      addNode,
+    });
     newNode.isStartNode = false;
     delete newNode.starPoints;
     delete newNode.baseHue;
@@ -26260,6 +26861,18 @@ function setRootNote(newRootNote, preventSave = false) {
       return;
   }
   currentRootNote = newRootMod;
+
+  // Ensure Circle of Fifths embedded instruments follow the project root (degree 0)
+  try {
+    nodes.forEach((n)=>{
+      if (n && n.type === CIRCLE_FIFTHS_TYPE && n.audioParams?.centerAttachedNodeId) {
+        const child = findNodeById(n.audioParams.centerAttachedNodeId);
+        if (child && child.audioParams) {
+          child.audioParams.scaleIndex = 0;
+        }
+      }
+    });
+  } catch {}
 
   updateAllPitchesAndUI();
 

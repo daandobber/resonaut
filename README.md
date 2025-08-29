@@ -118,3 +118,48 @@ Referenties
 Tips
 - Bij synths met meerdere carriers (bv. FM) dupliceer je de carrier‑keten per Orbitone en mix je outputs in dezelfde pre‑FX bus.
 - Houd per‑stem ADSR kort als je lange timing‑offsets gebruikt; anders wordt het snel een pad.
+
+## Circle of Fifths Sequencer (Zodiac)
+
+The Circle of Fifths is a single, integrated sequencer + instrument. You do not patch an output: the circle embeds its own center instrument and triggers it directly. Only the left input (−1) accepts pulses to advance steps.
+
+How to use
+- Place: add the Circle of Fifths; it embeds a sampler in the center automatically.
+- Drive: send pulses into the left input; each pulse advances to the next segment.
+- Notes/Chords: on each step, the circle plays a note or chord according to the active pattern and the current scale/root. All notes are diatonic to the selected scale.
+- Zodiac presets: pick a sign to get a hidden movement pattern (direction + step/degree logic). Some signs (e.g., Taurus) intentionally hold the root.
+- Glow: the triggered segment lights up briefly using the theme’s accent color.
+
+UI
+- Center Instrument (two dropdowns in the circle’s edit panel):
+  - Engine: Sampler | FM Synth | Analog
+  - Preset: list depends on Engine (samplers, FM presets, analog waveforms)
+  - Changing Engine/Preset converts the embedded instrument in‑place (no extra nodes are created).
+- Sequencer controls:
+  - Pattern Source: Zodiac or Custom
+  - Sequence: Step (around the ring) or Degree (diatonic degrees 1..7)
+  - Direction (Step): clockwise/counterclockwise
+  - Step Pattern (Step): e.g., `2,1` (alternate two then one segment)
+  - Degree Pattern (Degree): e.g., `1,2,3,2,2` (diatonic degrees)
+  - Mode: Note | Chord | Random; Chord Size: 2–4; Chord Probability
+  - Chord Type: Auto (uses Size) | Triad | Seventh | Sus2 | Sus4 | Power | Random
+  - Velocity Jitter: adds subtle, random per‑note velocity (0..1)
+  - Voicing Spread: probability to lift chord tones by an octave (0..1)
+  - Step Editor: per‑step +/− controls; negative steps move counterclockwise (e.g., `2, -1, 1`). A text input remains for quick edits.
+  - Triggered Notes: compact Nexus Piano flashes the notes being played and adopts the current theme colours.
+
+Technical notes
+- Pulse flow: the circle advances by `stepPattern` + `direction`, or iterates the `degreePattern` when in Degree mode.
+- Degree → frequency: the circle computes a scale‑index offset (e.g., 0, 2, 4) and triggers the center instrument using a `scaleIndexOverride`, keeping everything in key.
+- Chords: triads use [0,2,4]; sevenths use [0,2,4,6] relative to the current degree.
+  - Additional types: sus2 [0,1,4], sus4 [0,3,4], power [0,4]. When set to Random, a type is chosen each pulse from these.
+  - Voicing: with Voicing Spread > 0, upper chord tones may be lifted +7 scale steps (one octave) randomly.
+- Velocity: each triggered note uses `intensity * (1 ± jitter)` where `jitter` is the Velocity Jitter amount; values are safely clamped.
+- Zodiac: presets set `sequenceMode`, `direction` and a hidden step/degree pattern; `holdRoot` forces the tonic.
+- Embedded instrument: a `sound` node is created and marked as embedded; it’s not selectable and is anchored to the center every frame. Triggers go directly to this node; there are no output connectors.
+- Rendering: twelve segments, a stylized sun center, and a theme‑colored glow that fades on the last triggered segment.
+
+Why no outputs?
+- The circle is meant to be a single “horoscope instrument”: one timing input, built‑in sound. Less cabling, faster results.
+
+Tip: if you need external processing, use the embedded instrument’s effect sends instead of patching from the circle.
