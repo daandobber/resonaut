@@ -77,7 +77,7 @@ async function createDial(id, labelText, min, max, step, value, onChange, format
   const target = document.createElement('div');
   target.id = id;
   wrap.appendChild(target);
-  const dial = new Nexus.Dial(target, { size: [30,30], interaction: 'radial', mode: 'absolute', min, max, step, value });
+  const dial = new Nexus.Dial(target, { size: [30,30], interaction: 'radial', mode: 'relative', min, max, step, value });
   applyDialTheme(dial); uiDials.add(dial); initThemeObserver();
   const label = document.createElement('div');
   label.textContent = labelText; label.style.fontSize = '10px';

@@ -50,7 +50,6 @@ export function initCircleNode(newNode, deps) {
   ap.ignoreGlobalSync = true;
   ap.syncSubdivisionIndex = deps.DEFAULT_SUBDIVISION_INDEX;
   ap.triggerInterval = deps.DEFAULT_TRIGGER_INTERVAL;
-  ap.mode = ap.mode || 'random';
   ap.chordSize = ap.chordSize || 3;
   ap.randomChordProbability = ap.randomChordProbability === undefined ? 0.6 : ap.randomChordProbability;
   // New: performance nuances
@@ -128,10 +127,9 @@ export function handleCirclePulse(currentNode, incomingConnection, deps) {
     stepDegree = baseDeg[k % 7] + (k >= 7 ? 7 : 0);
   }
 
-  // Note vs chord
-  const mode = ap.mode || 'random';
+  // Note vs chord: rely solely on probability dial (UI). Mode selector removed.
   const chordProb = ap.randomChordProbability === undefined ? 0.6 : ap.randomChordProbability;
-  const isChord = mode === 'chord' || (mode === 'random' && Math.random() < chordProb);
+  const isChord = Math.random() < chordProb;
   const chordSize = Math.max(2, Math.min(4, ap.chordSize || 3));
 
   // Resolve chord offsets based on chordType setting

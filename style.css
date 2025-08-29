@@ -261,6 +261,59 @@ body.theme-mixolydian {
   --meter-gain-indicator-color: rgba(238, 255, 221, 0.8);
 }
 
+/* Zodiac button grid for Circle of Fifths */
+.zodiac-wrap { margin: 8px 0; }
+.zodiac-grid {
+  --zodiac-btn-size: 26px;
+  --zodiac-gap: 6px;
+  display: inline-grid;
+  grid-template-columns: repeat(6, var(--zodiac-btn-size));
+  gap: var(--zodiac-gap);
+}
+.zodiac-btn {
+  background: transparent; /* avoid double button look over Nexus circle */
+  border: none;
+  color: var(--text-color);
+  border-radius: 0;
+  width: var(--zodiac-btn-size);
+  height: var(--zodiac-btn-size);
+  padding: 0;
+  font-size: 16px;
+  line-height: var(--zodiac-btn-size);
+  display: inline-block;
+  text-align: center;
+  vertical-align: middle;
+  cursor: pointer;
+  box-sizing: border-box;
+  font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji","Noto Emoji","Twemoji Mozilla",sans-serif;
+  position: relative;
+}
+/* no hover background for the 12 zodiac cells */
+.zodiac-btn:hover { background: transparent; }
+/* show subtle glow on selected sign but keep background transparent */
+.zodiac-btn.selected .zodiac-emoji { text-shadow: 0 0 4px rgba(255,255,255,0.35), 0 0 6px var(--button-active); }
+.zodiac-btn.custom {
+  grid-column: 1 / span 6;
+  width: auto;
+  height: var(--zodiac-btn-size);
+  font-size: 14px;
+  padding: 0 10px;
+  background: var(--button-bg);
+  border: 1px solid var(--button-bg);
+  border-radius: 6px;
+}
+
+/* Emoji overlay centered over Nexus button */
+.zodiac-btn .zodiac-emoji {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  line-height: 1;
+}
+
 body.theme-locrian {
   --bg-gradient-stop-1: #201020; --bg-gradient-stop-2: #402040;
   --panel-bg: rgba(40,25,50,0.95); --button-bg: #503070; --button-hover: #684080; --button-active: #8860a0;
@@ -1565,4 +1618,3 @@ margin-top: 6px;
 .canvas-timeline-item.active {
   outline: 2px solid #0af;
 }
-

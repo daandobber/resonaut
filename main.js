@@ -7463,9 +7463,31 @@ function getNexusForCircle() {
   }).catch(() => null);
 }
 
-const circleDegreeDisplays = new Map(); // nodeId -> { piano, container, decayTimers: number[], low, high }
+const circleDegreeDisplays = new Map(); // nodeId -> { piano, container, decayTimers: number[], low, high, scaleHandler }
+
+function destroyCircleDegreeDisplay(nodeId) {
+  const prev = circleDegreeDisplays.get(nodeId);
+  if (!prev) return;
+  try { (prev.decayTimers || []).forEach((t)=>clearTimeout(t)); } catch {}
+  try {
+    if (prev.scaleHandler) window.removeEventListener('scale-changed', prev.scaleHandler);
+  } catch {}
+  try {
+    if (prev.container && prev.container.parentNode) {
+      prev.container.parentNode.removeChild(prev.container);
+    }
+  } catch {}
+  try {
+    // Best-effort: remove any children inside target to avoid stray canvases
+    const target = prev.container && prev.container.querySelector ? prev.container.querySelector('[id^="cof-degdisplay-"]') : null;
+    if (target) target.innerHTML = '';
+  } catch {}
+  circleDegreeDisplays.delete(nodeId);
+}
 
 function createCircleDegreeDisplay(node) {
+  // Clean up any existing display for this node (prevents duplicates after reloads)
+  try { destroyCircleDegreeDisplay(node.id); } catch {}
   const wrap = document.createElement('div');
   wrap.style.marginTop = '6px';
   const label = document.createElement('label');
@@ -7547,10 +7569,10 @@ function createCircleDegreeDisplay(node) {
     };
     stylePianoKeys();
 
-    const entry = { piano, container: wrap, decayTimers: [], low, high };
+    const entry = { piano, container: wrap, decayTimers: [], low, high, scaleHandler: null };
     circleDegreeDisplays.set(node.id, entry);
 
-    window.addEventListener('scale-changed', () => {
+    entry.scaleHandler = () => {
       // Keep colors synced with theme, but keep fixed range C4..C5
       entry.low = 60; entry.high = 72;
       try { if (typeof piano.setRange === 'function') piano.setRange(60,72); } catch {}
@@ -7563,7 +7585,8 @@ function createCircleDegreeDisplay(node) {
         piano.colorize('accent', accCol);
         stylePianoKeys();
       } catch {}
-    });
+    };
+    window.addEventListener('scale-changed', entry.scaleHandler);
   });
   return wrap;
 }
@@ -19919,44 +19942,84 @@ function populateEditPanel() {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
 
-                // Pattern Source
-                const sourceLabel = document.createElement('label');
-                sourceLabel.htmlFor = `edit-cof-src-${node.id}`;
-                sourceLabel.textContent = 'Pattern Source:';
-                sourceLabel.style.marginRight = '6px';
-                const sourceSelect = document.createElement('select');
-                sourceSelect.id = `edit-cof-src-${node.id}`;
+                // Zodiac button grid + Custom (replaces dropdowns)
                 const curSource = node.audioParams?.patternSource || 'zodiac';
-                [{v:'zodiac',t:'Zodiac'},{v:'custom',t:'Custom'}].forEach(opt=>{
-                  const o=document.createElement('option'); o.value=opt.v; o.textContent=opt.t; if(opt.v===curSource) o.selected=true; sourceSelect.appendChild(o);
-                });
-                sourceSelect.addEventListener('change',(e)=>{
-                  selectedArray.forEach(el=>{
-                    const n=findNodeById(el.id);
-                    if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.patternSource = e.target.value; if(n.audioParams.patternSource==='zodiac'){ applyZodiacPresetToCircle(n, n.audioParams.zodiacSign || 'Aries'); } }
-                  });
-                  saveState(); populateEditPanel();
-                });
-                section.appendChild(sourceLabel);
-                section.appendChild(sourceSelect);
-                section.appendChild(document.createElement('br'));
-
-                // Zodiac select (only when source = zodiac)
-                const zodiacWrap = document.createElement('div');
-                const zodiacLabel = document.createElement('label');
-                zodiacLabel.htmlFor = `edit-cof-zodiac-${node.id}`;
-                zodiacLabel.textContent = 'Zodiac:';
-                zodiacWrap.appendChild(zodiacLabel);
-                const zodiacSelect = document.createElement('select');
-                zodiacSelect.id = `edit-cof-zodiac-${node.id}`;
                 const curSign = node.audioParams?.zodiacSign || 'Aries';
-                ZODIAC_SIGNS.forEach(name=>{ const o=document.createElement('option'); o.value=name; o.textContent=name; if(name===curSign) o.selected=true; zodiacSelect.appendChild(o); });
-                zodiacSelect.addEventListener('change',(e)=>{
-                  selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.zodiacSign = e.target.value; applyZodiacPresetToCircle(n, n.audioParams.zodiacSign); } });
+                const zodiacWrap = document.createElement('div');
+                zodiacWrap.classList.add('zodiac-wrap');
+                const grid = document.createElement('div');
+                grid.classList.add('zodiac-grid');
+                // Mapping of sign -> emoji
+                const ZODIAC_EMOJI = {
+                  Aries: '♈', Taurus: '♉', Gemini: '♊', Cancer: '♋',
+                  Leo: '♌', Virgo: '♍', Libra: '♎', Scorpio: '♏',
+                  Sagittarius: '♐', Capricorn: '♑', Aquarius: '♒', Pisces: '♓',
+                };
+                // Create 12 sign buttons in a 3x4 grid
+                const signButtons = {};
+                const EMOJI = { Aries:'♈️', Taurus:'♉️', Gemini:'♊️', Cancer:'♋️', Leo:'♌️', Virgo:'♍️', Libra:'♎️', Scorpio:'♏️', Sagittarius:'♐️', Capricorn:'♑️', Aquarius:'♒️', Pisces:'♓️' };
+                const sizePx = (() => { try { const s = getComputedStyle(grid).getPropertyValue('--zodiac-btn-size'); return Math.max(14, parseInt(s) || 26); } catch { return 26; } })();
+                ZODIAC_SIGNS.forEach((name) => {
+                  const wrapBtn = document.createElement('div');
+                  wrapBtn.className = 'zodiac-btn';
+                  wrapBtn.title = name;
+                  if (curSource === 'zodiac' && name === curSign) wrapBtn.classList.add('selected');
+                  const nxTarget = document.createElement('div');
+                  nxTarget.style.width = '100%';
+                  nxTarget.style.height = '100%';
+                  wrapBtn.appendChild(nxTarget);
+                  const label = document.createElement('span');
+                  label.className = 'zodiac-emoji';
+                  label.textContent = EMOJI[name] || name;
+                  wrapBtn.appendChild(label);
+                  grid.appendChild(wrapBtn);
+                  signButtons[name] = wrapBtn;
+                  getNexusForCircle().then((Nexus) => {
+                    if (!Nexus) return;
+                    const nxBtn = new Nexus.Button(nxTarget, { size: [sizePx, sizePx], mode: 'button', state: false });
+                    try {
+                      const st = getComputedStyle(document.body);
+                      nxBtn.colorize('fill', (st.getPropertyValue('--button-bg')||'#304070').trim());
+                      nxBtn.colorize('accent', (st.getPropertyValue('--button-active')||'#6075b0').trim());
+                    } catch {}
+                    nxBtn.on('change', (v) => {
+                      if (!v) return;
+                      selectedArray.forEach((el) => {
+                        const n = findNodeById(el.id);
+                        if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                          if (!n.audioParams) n.audioParams = {};
+                          n.audioParams.patternSource = 'zodiac';
+                          n.audioParams.zodiacSign = name;
+                          applyZodiacPresetToCircle(n, name);
+                        }
+                      });
+                      Object.values(signButtons).forEach(b => b.classList.remove('selected'));
+                      wrapBtn.classList.add('selected');
+                      if (customBtn) customBtn.classList.remove('selected');
+                      saveState();
+                      try { nxBtn.state = false; } catch {}
+                    });
+                  });
+                });
+                zodiacWrap.appendChild(grid);
+                // Custom full-width button
+                const customBtn = document.createElement('button');
+                customBtn.className = 'zodiac-btn custom';
+                customBtn.textContent = 'Custom';
+                if (curSource === 'custom') customBtn.classList.add('selected');
+                customBtn.addEventListener('click', () => {
+                  selectedArray.forEach((el) => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.patternSource = 'custom';
+                    }
+                  });
+                  Object.values(signButtons).forEach(b => b.classList.remove('selected'));
+                  customBtn.classList.add('selected');
                   saveState();
                 });
-                if ((node.audioParams?.patternSource || 'zodiac') !== 'zodiac') zodiacWrap.style.display='none';
-                zodiacWrap.appendChild(zodiacSelect);
+                zodiacWrap.appendChild(customBtn);
                 section.appendChild(zodiacWrap);
 
                 // Mode select
@@ -19988,60 +20051,79 @@ function populateEditPanel() {
                   });
                   saveState();
                 });
-                section.appendChild(modeLabel);
-                section.appendChild(modeSelect);
-                section.appendChild(document.createElement('br'));
+                // Mode selector removed: chord/note is now driven solely by probability dial.
 
-                // Chord size slider (2..4)
+                // Harmony section: compact grid with Nexus dials (fallback to sliders)
+                const harmonyTitle = document.createElement('div');
+                harmonyTitle.style.margin = '6px 0 2px 0';
+                harmonyTitle.style.fontWeight = '600';
+                harmonyTitle.textContent = 'Harmony';
+                section.appendChild(harmonyTitle);
+
+                const harmonyGrid = document.createElement('div');
+                harmonyGrid.style.display = 'grid';
+                harmonyGrid.style.gridTemplateColumns = 'repeat(8, 40px)';
+                harmonyGrid.style.gap = '4px';
+                section.appendChild(harmonyGrid);
+
+                const addDialOrSlider = (key, label, min, max, step, initValue, onChange, format) => {
+                  const wrap = document.createElement('div');
+                  wrap.style.display = 'flex';
+                  wrap.style.flexDirection = 'column';
+                  wrap.style.alignItems = 'center';
+                  wrap.style.width = '40px';
+                  const lab = document.createElement('div');
+                  lab.textContent = label; lab.style.fontSize = '10px';
+                  lab.style.marginTop = '2px';
+                  const target = document.createElement('div');
+                  target.style.width = '40px'; target.style.height = '40px';
+                  wrap.appendChild(target);
+                  getNexusForCircle().then((Nexus) => {
+                    if (Nexus && Nexus.Dial) {
+                      const dial = new Nexus.Dial(target, { size: [30,30], interaction: 'radial', mode: 'relative', min, max, step, value: initValue });
+                      try { const st=getComputedStyle(document.body); dial.colorize('fill',(st.getPropertyValue('--button-bg')||'#304070').trim()); dial.colorize('accent',(st.getPropertyValue('--button-active')||'#6075b0').trim()); } catch {}
+                      dial.on('change', (v) => onChange(v));
+                    } else {
+                      const input = document.createElement('input');
+                      input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = initValue;
+                      input.style.width = '40px';
+                      target.appendChild(input);
+                      input.addEventListener('input', (e) => onChange(parseFloat(e.target.value)));
+                    }
+                  });
+                  wrap.appendChild(lab);
+                  harmonyGrid.appendChild(wrap);
+                };
+
+                // Chord Probability (0..1)
+                const curProb = typeof node.audioParams?.randomChordProbability === 'number' ? node.audioParams.randomChordProbability : 0.6;
+                addDialOrSlider('prob', 'Prob', 0, 1, 0.01, curProb, (v) => {
+                  const newVal = Math.max(0, Math.min(1, v));
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.randomChordProbability = newVal;
+                    }
+                  });
+                  saveState();
+                });
+
+                // Chord Size (2..4)
                 const curSize = Math.max(2, Math.min(4, node.audioParams?.chordSize || 3));
-                const sizeSlider = createSlider(
-                  `edit-cof-chordsize-${node.id}`,
-                  `Chord Size (${curSize}):`,
-                  2,
-                  4,
-                  1,
-                  curSize,
-                  saveState,
-                  (e_input) => {
-                    const newVal = Math.max(2, Math.min(4, parseInt(e_input.target.value, 10)));
-                    selectedArray.forEach((elData) => {
-                      const n = findNodeById(elData.id);
-                      if (n && n.type === CIRCLE_FIFTHS_TYPE) {
-                        if (!n.audioParams) n.audioParams = {};
-                        n.audioParams.chordSize = newVal;
-                      }
-                    });
-                    e_input.target.previousElementSibling.textContent = `Chord Size (${newVal}):`;
-                  },
-                );
-                section.appendChild(sizeSlider);
+                addDialOrSlider('size', 'Size', 2, 4, 1, curSize, (v) => {
+                  const newVal = Math.round(Math.max(2, Math.min(4, v)));
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === CIRCLE_FIFTHS_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.chordSize = newVal;
+                    }
+                  });
+                  saveState();
+                });
 
-                // Random chord probability slider
-                const curProb = node.audioParams?.randomChordProbability;
-                const probVal = typeof curProb === 'number' ? curProb : 0.6;
-                const probSlider = createSlider(
-                  `edit-cof-prob-${node.id}`,
-                  `Chord Probability (${probVal.toFixed(2)}):`,
-                  0,
-                  1,
-                  0.01,
-                  probVal,
-                  saveState,
-                  (e_input) => {
-                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
-                    selectedArray.forEach((elData) => {
-                      const n = findNodeById(elData.id);
-                      if (n && n.type === CIRCLE_FIFTHS_TYPE) {
-                        if (!n.audioParams) n.audioParams = {};
-                        n.audioParams.randomChordProbability = newVal;
-                      }
-                    });
-                    e_input.target.previousElementSibling.textContent = `Chord Probability (${newVal.toFixed(2)}):`;
-                  },
-                );
-                section.appendChild(probSlider);
-
-                // Chord type select
+                // Chord type select (kept as compact select)
                 const chordTypeLabel = document.createElement('label');
                 chordTypeLabel.htmlFor = `edit-cof-chordtype-${node.id}`;
                 chordTypeLabel.textContent = 'Chord Type:';
@@ -20067,49 +20149,41 @@ function populateEditPanel() {
                 });
                 section.appendChild(chordTypeLabel);
                 section.appendChild(chordTypeSelect);
-                section.appendChild(document.createElement('br'));
+                // Keep it tight; skip extra line breaks
 
-                // Velocity jitter slider (0..1)
+                // Add remaining harmony controls as dials
                 const curVelJitter = node.audioParams?.velocityJitter ?? 0.2;
-                const velJitterSlider = createSlider(
-                  `edit-cof-veljitter-${node.id}`,
-                  `Velocity Jitter (${curVelJitter.toFixed(2)}):`,
-                  0,
-                  1,
-                  0.01,
-                  curVelJitter,
-                  saveState,
-                  (e_input) => {
-                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
-                    selectedArray.forEach((elData)=>{
-                      const n=findNodeById(elData.id);
-                      if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.velocityJitter = newVal; }
-                    });
-                    e_input.target.previousElementSibling.textContent = `Velocity Jitter (${newVal.toFixed(2)}):`;
-                  }
-                );
-                section.appendChild(velJitterSlider);
-
-                // Voicing spread probability (lift chord tones by an octave)
                 const curSpread = node.audioParams?.chordSpreadProb ?? 0.0;
-                const spreadSlider = createSlider(
-                  `edit-cof-voicingspread-${node.id}`,
-                  `Voicing Spread (${curSpread.toFixed(2)}):`,
-                  0,
-                  1,
-                  0.01,
-                  curSpread,
-                  saveState,
-                  (e_input) => {
-                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
-                    selectedArray.forEach((elData)=>{
-                      const n=findNodeById(elData.id);
-                      if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.chordSpreadProb = newVal; }
-                    });
-                    e_input.target.previousElementSibling.textContent = `Voicing Spread (${newVal.toFixed(2)}):`;
-                  }
-                );
-                section.appendChild(spreadSlider);
+                const addDialToExistingGrid = (label, min, max, step, initValue, onChange) => {
+                  const wrap = document.createElement('div');
+                  wrap.style.display = 'flex'; wrap.style.flexDirection = 'column'; wrap.style.alignItems = 'center'; wrap.style.width = '40px';
+                  const target = document.createElement('div'); target.style.width='40px'; target.style.height='40px'; wrap.appendChild(target);
+                  const lab = document.createElement('div'); lab.textContent = label; lab.style.fontSize='10px'; wrap.appendChild(lab);
+                  getNexusForCircle().then((Nexus)=>{
+                    if (Nexus && Nexus.Dial){
+                      const dial = new Nexus.Dial(target, { size:[30,30], interaction:'radial', mode:'relative', min, max, step, value:initValue });
+                      try { const st=getComputedStyle(document.body); dial.colorize('fill',(st.getPropertyValue('--button-bg')||'#304070').trim()); dial.colorize('accent',(st.getPropertyValue('--button-active')||'#6075b0').trim()); } catch {}
+                      dial.on('change', (v)=> onChange(v));
+                    } else {
+                      const input=document.createElement('input'); input.type='range'; input.min=min; input.max=max; input.step=step; input.value=initValue; input.style.width='40px'; target.appendChild(input);
+                      input.addEventListener('input',(e)=> onChange(parseFloat(e.target.value)));
+                    }
+                  });
+                  // Append to the harmony grid added above (previous sibling)
+                  const grids = section.querySelectorAll('div');
+                  const grid = Array.from(grids).reverse().find(el => el.style && el.style.display === 'grid');
+                  (grid || section).appendChild(wrap);
+                };
+                addDialToExistingGrid('Vel', 0, 1, 0.01, curVelJitter, (v) => {
+                  const newVal = Math.max(0, Math.min(1, v));
+                  selectedArray.forEach((elData)=>{ const n=findNodeById(elData.id); if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.velocityJitter = newVal; }});
+                  saveState();
+                });
+                addDialToExistingGrid('Spread', 0, 1, 0.01, curSpread, (v) => {
+                  const newVal = Math.max(0, Math.min(1, v));
+                  selectedArray.forEach((elData)=>{ const n=findNodeById(elData.id); if(n && n.type===CIRCLE_FIFTHS_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.chordSpreadProb = newVal; }});
+                  saveState();
+                });
 
                 // Sequence Mode select (step vs degree)
                 const seqModeLabel = document.createElement('label');

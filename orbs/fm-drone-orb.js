@@ -338,8 +338,8 @@ export async function showFmDroneOrbMenu(node) {
     if (Nexus) {
       pad = new Nexus.Position(target, { size: [80, 80] });
       applyPadTheme(pad);
-      const leftDial = new Nexus.Dial(leftTarget, { size: [30, 30], min: 0, max: 1, value: 0 });
-      const rightDial = new Nexus.Dial(rightTarget, { size: [30, 30], min: 0, max: 1, value: 0 });
+      const leftDial = new Nexus.Dial(leftTarget, { size: [30, 30], interaction: 'radial', mode: 'relative', min: 0, max: 1, value: 0 });
+      const rightDial = new Nexus.Dial(rightTarget, { size: [30, 30], interaction: 'radial', mode: 'relative', min: 0, max: 1, value: 0 });
       applyPadTheme(leftDial);
       applyPadTheme(rightDial);
       pad.basePos = { x: 0.5, y: 0.5 };

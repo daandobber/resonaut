@@ -87,7 +87,7 @@ async function createDial(id, labelText, min, max, step, value, onChange, format
   const dial = new Nexus.Dial(target, {
     size: [30, 30],
     interaction: 'radial',
-    mode: 'absolute',
+    mode: 'relative',
     min,
     max,
     step,
@@ -335,4 +335,3 @@ export async function showToneFmSynthMenu(node) {
 
   positionTonePanel(node);
 }
-
