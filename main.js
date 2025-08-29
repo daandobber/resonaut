@@ -397,6 +397,7 @@ const TIMELINE_GRID_TYPE = "timeline_grid";
 const SPACERADAR_TYPE = "spaceradar";
 const CRANK_RADAR_TYPE = "crank_radar";
 const GRID_SEQUENCER_TYPE = "grid_sequencer";
+const CIRCLE_FIFTHS_TYPE = "circle_fifths";
 const MIDI_ORB_TYPE = "midi_orb";
 const RESONAUTER_TYPE = "resonauter";
 const RADIO_ORB_TYPE = "radio_orb";
@@ -489,6 +490,28 @@ if (addGridSequencerBtn) {
   });
 } else {
   console.warn("#addGridSequencerBtn not found in DOM!");
+}
+// Inject Circle of Fifths button into toolbar if present
+const toolbarPulsars =
+  typeof document !== 'undefined' && typeof document.getElementById === 'function'
+    ? document.getElementById("toolbar-pulsars")
+    : null;
+if (toolbarPulsars && typeof document.createElement === 'function') {
+  const btn = document.createElement('button');
+  btn.id = 'addCircleFifthsBtn';
+  btn.title = 'Add Circle of Fifths Sequencer';
+  btn.textContent = '♌︎';
+  btn.addEventListener('click', (e) => {
+    setupAddTool(e.currentTarget, CIRCLE_FIFTHS_TYPE, false);
+  });
+  try {
+    const after = document.getElementById('addGridSequencerBtn');
+    if (after && after.parentElement === toolbarPulsars) {
+      toolbarPulsars.insertBefore(btn, after.nextSibling);
+    } else {
+      toolbarPulsars.appendChild(btn);
+    }
+  } catch { toolbarPulsars.appendChild(btn); }
 }
 const addTimelineGridBtn =
   typeof document !== 'undefined' && typeof document.getElementById === 'function'
@@ -1502,8 +1525,13 @@ function getCrankRadarHandleGripPos(n) {
 function getConnectionPoint(node, useHandle) {
   if (
     typeof useHandle === 'number' &&
-    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid')
+    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid' || node.type === CIRCLE_FIFTHS_TYPE)
   ) {
+    if (node.type === CIRCLE_FIFTHS_TYPE) {
+      const offset = 12;
+      if (useHandle < 0) return { x: node.x - offset, y: node.y };
+      return { x: node.x + offset, y: node.y };
+    }
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
     // Special: left single input handle for grid sequencer when useHandle < 0
@@ -6175,6 +6203,71 @@ function propagateTrigger(
         }
       }
       currentNode.column = ((currentNode.column || 0) + 1) % cols;
+    } else if (
+      currentNode.type === CIRCLE_FIFTHS_TYPE
+    ) {
+      // Only accept pulses coming into the left input (-1 handle). Reject others.
+      if (!incomingConnection) {
+        playPrimaryAudioEffect = false;
+        canPropagateOriginalPulseFurther = false;
+        return;
+      }
+      const isTargetSideA = incomingConnection.nodeAId === currentNode.id;
+      const handleAtSequencer = isTargetSideA
+        ? incomingConnection.nodeAHandle
+        : incomingConnection.nodeBHandle;
+      if (handleAtSequencer !== -1) {
+        playPrimaryAudioEffect = false;
+        canPropagateOriginalPulseFurther = false;
+        return;
+      }
+      // Pulse-driven Circle of Fifths: advance on incoming pulse and emit triggers from center output (handle 0)
+      playPrimaryAudioEffect = false;
+      canPropagateOriginalPulseFurther = false;
+      currentNode.animationState = 1;
+      const segments = currentNode.segments || 12;
+      const k = ((currentNode.segmentIndex || 0) % segments + segments) % segments;
+      // Diatonic degree pattern approximating cycle of fifths over 12 steps
+      const baseDeg = [0, 4, 1, 5, 2, 6, 3];
+      const stepDegree = baseDeg[k % 7] + (k >= 7 ? 7 : 0);
+      const ap = currentNode.audioParams || {};
+      // Decide note vs chord
+      const mode = ap.mode || 'random';
+      const chordProb = ap.randomChordProbability === undefined ? 0.6 : ap.randomChordProbability;
+      const isChord = mode === 'chord' || (mode === 'random' && Math.random() < chordProb);
+      const chordSize = Math.max(2, Math.min(4, ap.chordSize || 3));
+      const degOffsets = isChord ? (chordSize === 4 ? [0, 2, 4, 6] : [0, 2, 4]) : [0];
+      const pulseIntensity = ap.pulseIntensity ?? DEFAULT_PULSE_INTENSITY;
+
+      connections.forEach((c) => {
+        const isOut =
+          (c.nodeAId === currentNode.id && c.nodeAHandle === 0) ||
+          (!c.directional && c.nodeBId === currentNode.id && c.nodeBHandle === 0);
+        if (!isOut) return;
+        const targetId = c.nodeAId === currentNode.id ? c.nodeBId : c.nodeAId;
+        const neighborNode = findNodeById(targetId);
+        if (!neighborNode) return;
+        const baseIndex = (neighborNode.audioParams && typeof neighborNode.audioParams.scaleIndex === 'number')
+          ? neighborNode.audioParams.scaleIndex
+          : 0;
+        const travelTime = c.length * DELAY_FACTOR;
+        createVisualPulse(c.id, travelTime, currentNode.id, Infinity, "trigger", null, pulseIntensity);
+        const basePulse = {
+          intensity: pulseIntensity,
+          color: currentNode.color ?? null,
+          particleMultiplier: isChord ? 0.7 : 0.9,
+        };
+        degOffsets.forEach((off) => {
+          const override = {
+            scaleIndexOverride: Math.max(
+              MIN_SCALE_INDEX,
+              Math.min(MAX_SCALE_INDEX, baseIndex + stepDegree + off),
+            ),
+          };
+          triggerNodeEffect(neighborNode, basePulse, null, 0.3, override);
+        });
+      });
+      currentNode.segmentIndex = ((currentNode.segmentIndex || 0) + 1) % segments;
     } else if (currentNode.type === "pitchShift") {
       currentNode.animationState = 1;
       playPrimaryAudioEffect = false;
@@ -11816,6 +11909,60 @@ function drawNode(node) {
       ctx.fill();
     }
     return;
+  } else if (node.type === CIRCLE_FIFTHS_TYPE) {
+    // Draw a 12-segment circle with scan highlight and a center connector
+    const currentStyles = getComputedStyle(document.body || document.documentElement);
+    const border = (currentStyles.getPropertyValue("--timeline-grid-default-border-color").trim() || "rgba(220,220,220,0.8)");
+    const accent = (currentStyles.getPropertyValue("--start-node-color").trim() || "rgba(255,255,200,0.9)");
+    const internal = (currentStyles.getPropertyValue("--timeline-grid-internal-lines-color").trim() || border.replace(/[\d\.]+\)$/g, "0.3)"));
+    const radius = Math.min(node.width, node.height) / 2 - 6 / viewScale;
+    const cx = node.x;
+    const cy = node.y;
+    const segments = node.segments || 12;
+    const segIndex = (Number.isFinite(node.segmentIndex) ? node.segmentIndex : 0) % segments;
+    const ringWidth = Math.max(10, Math.min(24, radius * 0.35));
+    // Outer ring
+    ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
+    ctx.strokeStyle = border;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    // Inner fill slight
+    ctx.fillStyle = colorWithAlpha(border, 0.06);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - ringWidth, 0, Math.PI * 2);
+    ctx.fill();
+    // Segments
+    const step = (Math.PI * 2) / segments;
+    for (let i = 0; i < segments; i++) {
+      const a0 = -Math.PI / 2 + i * step;
+      const a1 = a0 + step;
+      ctx.beginPath();
+      ctx.strokeStyle = internal;
+      ctx.lineWidth = Math.max(1 / viewScale, 1 / viewScale);
+      ctx.moveTo(cx + Math.cos(a0) * (radius - ringWidth), cy + Math.sin(a0) * (radius - ringWidth));
+      ctx.lineTo(cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius);
+      ctx.stroke();
+      if (i === segIndex) {
+        // highlight segment arc
+        ctx.strokeStyle = colorWithAlpha(accent, 0.4);
+        ctx.lineWidth = Math.max(3 / viewScale, ringWidth * 0.6 / viewScale);
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius - ringWidth * 0.5, a0 + 0.08, a1 - 0.08);
+        ctx.stroke();
+      }
+    }
+    // Center output connector dot (handle 0)
+    ctx.fillStyle = border;
+    const cr = 4 / viewScale;
+    ctx.beginPath();
+    ctx.arc(cx + 12, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+    // Left input connector dot (handle -1)
+    ctx.beginPath();
+    ctx.arc(cx - 12, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+    return;
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
     const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
     const radarStroke =
@@ -11843,7 +11990,7 @@ function drawNode(node) {
         node.type === "reflector" ||
         node.type === "switch"
       ? 1.0
-      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === PRORB_TYPE
+      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === PRORB_TYPE
         ? 2.0
         : 1.5;
   ctx.lineWidth = Math.max(
@@ -14062,6 +14209,25 @@ function drawAddPreview() {
         },
       };
       drawNode(previewNode);
+    } else if (nodeTypeToAdd === CIRCLE_FIFTHS_TYPE) {
+      const size = 240;
+      const previewNode = {
+        id: -1,
+        x: mousePos.x,
+        y: mousePos.y,
+        width: size,
+        height: size,
+        segments: 12,
+        segmentIndex: 0,
+        type: CIRCLE_FIFTHS_TYPE,
+        audioParams: {
+          pulseIntensity: DEFAULT_PULSE_INTENSITY,
+          ignoreGlobalSync: false,
+          syncSubdivisionIndex: DEFAULT_SUBDIVISION_INDEX,
+          triggerInterval: DEFAULT_TRIGGER_INTERVAL,
+        },
+      };
+      drawNode(previewNode);
     } else {
       const previewNode = {
         id: -1,
@@ -16011,7 +16177,8 @@ function handleMouseDown(event) {
           connectingNode = node;
           if (
             node.type === GRID_SEQUENCER_TYPE ||
-            node.type === "pulsar_grid"
+            node.type === "pulsar_grid" ||
+            node.type === CIRCLE_FIFTHS_TYPE
           ) {
             const rows =
               node.rows ||
@@ -16019,15 +16186,19 @@ function handleMouseDown(event) {
                 ? GRID_SEQUENCER_DEFAULT_ROWS
                 : GRID_PULSAR_DEFAULT_ROWS);
             const rectY = node.y - node.height / 2;
-            connectFromGridHandle = Math.max(
-              0,
-              Math.min(
-                rows - 1,
-                Math.floor(
-                  (mousePos.y - rectY) / (node.height / rows),
+            if (node.type === CIRCLE_FIFTHS_TYPE) {
+              connectFromGridHandle = 0; // single center output
+            } else {
+              connectFromGridHandle = Math.max(
+                0,
+                Math.min(
+                  rows - 1,
+                  Math.floor(
+                    (mousePos.y - rectY) / (node.height / rows),
+                  ),
                 ),
-              ),
-            );
+              );
+            }
           } else {
             connectFromGridHandle = null;
           }
@@ -17020,7 +17191,8 @@ function handleMouseUp(event) {
           let connectToGridHandle = null;
           if (
             nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE ||
-            nodeUnderCursorOnUp.type === "pulsar_grid"
+            nodeUnderCursorOnUp.type === "pulsar_grid" ||
+            nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE
           ) {
             const rectY = nodeUnderCursorOnUp.y - nodeUnderCursorOnUp.height / 2;
             const isGridSeq = nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE;
@@ -17033,6 +17205,8 @@ function handleMouseUp(event) {
             // If target is a Grid Sequencer in pulse-advance mode, always connect to the single left input
             if (isGridSeq && advanceOnPulse) {
               connectToGridHandle = -1; // special left input
+            } else if (nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE) {
+              connectToGridHandle = -1; // single left input
             } else {
               connectToGridHandle = Math.max(
                 0,
@@ -24034,6 +24208,29 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
   }
 
+  if (type === CIRCLE_FIFTHS_TYPE) {
+    const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 240;
+    newNode.width = size;
+    newNode.height = size;
+    newNode.segments = 12;
+    newNode.segmentIndex = 0;
+    if (!newNode.audioParams) newNode.audioParams = {};
+    newNode.audioParams.pulseIntensity = newNode.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY;
+    // Circle is pulse-driven; no own timing
+    newNode.audioParams.ignoreGlobalSync = true;
+    newNode.audioParams.syncSubdivisionIndex = DEFAULT_SUBDIVISION_INDEX;
+    newNode.audioParams.triggerInterval = DEFAULT_TRIGGER_INTERVAL;
+    // Chord/note settings
+    newNode.audioParams.mode = newNode.audioParams.mode || 'random'; // 'note' | 'chord' | 'random'
+    newNode.audioParams.chordSize = newNode.audioParams.chordSize || 3; // 3 or 4
+    newNode.audioParams.randomChordProbability =
+      newNode.audioParams.randomChordProbability === undefined ? 0.6 : newNode.audioParams.randomChordProbability;
+    newNode.isStartNode = false;
+    delete newNode.starPoints;
+    delete newNode.baseHue;
+    delete newNode.color;
+  }
+
   if (type === TIMELINE_GRID_TYPE) {
     newNode.width = optionalDimensions ?
       optionalDimensions.width :
@@ -24174,12 +24371,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
   }
 
-  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
+  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
     newNode.audioNodes = createAudioNodesForNode(newNode);
     if (newNode.audioNodes) {
       updateNodeAudioParams(newNode);
     }
-  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
+  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
     newNode.audioNodes = null;
   }
 
