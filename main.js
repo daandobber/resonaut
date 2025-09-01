@@ -3759,17 +3759,42 @@ export function updateNodeAudioParams(node) {
       });
     }
 
+    // Update waveforms for Tone FM synth - force type changes to ensure they take effect
     if (oscillator1 && params.carrierWaveform) {
-      oscillator1.type = sanitizeWaveformType(params.carrierWaveform);
+      const newType = sanitizeWaveformType(params.carrierWaveform);
+      console.log('[ToneFM] Setting carrier waveform to:', newType);
+      try {
+        oscillator1.type = newType;
+      } catch (e) {
+        console.log('[ToneFM] Failed to set carrier waveform:', e);
+      }
     }
     if (modulatorOsc1 && params.modulatorWaveform) {
-      modulatorOsc1.type = sanitizeWaveformType(params.modulatorWaveform);
+      const newType = sanitizeWaveformType(params.modulatorWaveform);
+      console.log('[ToneFM] Setting modulator1 waveform to:', newType);
+      try {
+        modulatorOsc1.type = newType;
+      } catch (e) {
+        console.log('[ToneFM] Failed to set modulator1 waveform:', e);
+      }
     }
     if (modulatorOsc2 && params.modulator2Waveform) {
-      modulatorOsc2.type = sanitizeWaveformType(params.modulator2Waveform);
+      const newType = sanitizeWaveformType(params.modulator2Waveform);
+      console.log('[ToneFM] Setting modulator2 waveform to:', newType);
+      try {
+        modulatorOsc2.type = newType;
+      } catch (e) {
+        console.log('[ToneFM] Failed to set modulator2 waveform:', e);
+      }
     }
     if (modulatorOsc3 && params.modulator3Waveform) {
-      modulatorOsc3.type = sanitizeWaveformType(params.modulator3Waveform);
+      const newType = sanitizeWaveformType(params.modulator3Waveform);
+      console.log('[ToneFM] Setting modulator3 waveform to:', newType);
+      try {
+        modulatorOsc3.type = newType;
+      } catch (e) {
+        console.log('[ToneFM] Failed to set modulator3 waveform:', e);
+      }
     }
     if (modulatorOsc1 && params.modulatorRatio !== undefined && oscillator1 && oscillator1.frequency) {
       const base = oscillator1.frequency.value;
@@ -3784,7 +3809,10 @@ export function updateNodeAudioParams(node) {
       modulatorOsc3.frequency.setTargetAtTime(base * params.modulator3Ratio, now, generalUpdateTimeConstant);
     }
 
+    // Check for Tone FM synth parameters
+    const isSampler = params.waveform && params.waveform.startsWith('sampler_');
     if (!isSampler && node.audioParams && node.audioParams.engine === 'tonefm') {
+      console.log('[ToneFM] Updating FM synth parameters:', params);
       if (modulatorGain1 && params.modulatorDepthScale !== undefined) {
         modulatorGain1.gain.setTargetAtTime(
           params.modulatorDepthScale * 10,
@@ -3871,6 +3899,7 @@ export function updateNodeAudioParams(node) {
         );
       }
       if (setAlgorithm && params.algorithm !== undefined) {
+        console.log('[ToneFM] Setting algorithm to:', params.algorithm);
         setAlgorithm(params.algorithm);
       }
       if (carrierEnv) {

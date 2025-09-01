@@ -186,12 +186,8 @@ export async function showToneFmSynthMenu(node) {
     }
   }
 
-  const dialsGrid = document.createElement('div');
-  dialsGrid.style.display = 'grid';
-  dialsGrid.style.gap = '4px';
-  container.appendChild(dialsGrid);
-
   function createSelect(labelText, options, value, onChange) {
+    console.log('[ToneFM UI] createSelect called:', { labelText, options, value });
     const wrap = document.createElement('div');
     wrap.style.display = 'flex';
     wrap.style.flexDirection = 'column';
@@ -202,6 +198,7 @@ export async function showToneFmSynthMenu(node) {
     label.style.fontSize = '10px';
     const sel = document.createElement('select');
     sel.style.width = '40px';
+    sel.style.fontSize = '9px';
     options.forEach(optVal => {
       const opt = document.createElement('option');
       opt.value = optVal;
@@ -209,9 +206,13 @@ export async function showToneFmSynthMenu(node) {
       if (value === optVal) opt.selected = true;
       sel.appendChild(opt);
     });
-    sel.addEventListener('change', e => onChange(e.target.value));
+    sel.addEventListener('change', e => {
+      console.log('[ToneFM UI] Select changed:', e.target.value);
+      onChange(e.target.value);
+    });
     wrap.appendChild(sel);
     wrap.appendChild(label);
+    console.log('[ToneFM UI] Created select element:', sel, 'in wrapper:', wrap);
     return wrap;
   }
 
@@ -222,21 +223,39 @@ export async function showToneFmSynthMenu(node) {
     { prefix: 'modulator3', label: 'M3', envFallback: 'carrier' },
   ];
 
-  const columns = [
-    { suffix: 'EnvAttack', short: 'A', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
-    { suffix: 'EnvDecay', short: 'D', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
-    { suffix: 'EnvRelease', short: 'R', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
-    { suffix: 'Ratio', short: 'Rat', min: 0.1, max: 10, step: 0.1, format: v => v.toFixed(1) },
-    { suffix: 'DepthScale', short: 'Dep', min: 0, max: 10, step: 0.1, format: v => (v * 10).toFixed(1) },
-    { suffix: 'LfoRate', short: 'LR', min: 0, max: 10, step: 0.01, format: v => v.toFixed(2) },
-    { suffix: 'LfoDepth', short: 'LD', min: 0, max: 10, step: 0.1, format: v => (v * 10).toFixed(1) },
-    { suffix: 'Detune', short: 'Det', min: -1200, max: 1200, step: 1, format: v => v.toFixed(0) },
-    { suffix: 'Waveform', short: 'W', type: 'select', options: ['sine', 'square', 'triangle', 'sawtooth'] },
-  ];
-
-  dialsGrid.style.gridTemplateColumns = `repeat(${columns.length}, 40px)`;
-
+  // Create operator sections (each operator gets its own row)
   for (const op of operators) {
+    // Operator header
+    const opSection = document.createElement('div');
+    opSection.style.marginBottom = '8px';
+    
+    const opHeader = document.createElement('div');
+    opHeader.style.fontSize = '11px';
+    opHeader.style.fontWeight = 'bold';
+    opHeader.style.color = '#6075b0';
+    opHeader.style.marginBottom = '4px';
+    opHeader.textContent = `Operator ${op.label}`;
+    opSection.appendChild(opHeader);
+    
+    // Operator controls in a horizontal grid
+    const opGrid = document.createElement('div');
+    opGrid.style.display = 'grid';
+    opGrid.style.gridTemplateColumns = 'repeat(9, 40px)';
+    opGrid.style.gap = '4px';
+    opGrid.style.justifyContent = 'start';
+    
+    const columns = [
+      { suffix: 'Waveform', short: 'W', type: 'select', options: ['sine', 'square', 'triangle', 'sawtooth'] },
+      { suffix: 'Ratio', short: 'Rat', min: 0.1, max: 10, step: 0.1, format: v => v.toFixed(1) },
+      { suffix: 'DepthScale', short: 'Dep', min: 0, max: 10, step: 0.1, format: v => (v * 10).toFixed(1) },
+      { suffix: 'EnvAttack', short: 'A', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
+      { suffix: 'EnvDecay', short: 'D', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
+      { suffix: 'EnvRelease', short: 'R', min: 0, max: 4, step: 0.01, format: v => v.toFixed(2) },
+      { suffix: 'LfoRate', short: 'LR', min: 0, max: 10, step: 0.01, format: v => v.toFixed(2) },
+      { suffix: 'LfoDepth', short: 'LD', min: 0, max: 10, step: 0.1, format: v => (v * 10).toFixed(1) },
+      { suffix: 'Detune', short: 'Det', min: -1200, max: 1200, step: 1, format: v => v.toFixed(0) },
+    ];
+    
     for (const col of columns) {
       const key = `${op.prefix}${col.suffix}`;
       let val = node.audioParams[key];
@@ -244,14 +263,23 @@ export async function showToneFmSynthMenu(node) {
         const fbKey = `${op.envFallback}${col.suffix}`;
         val = node.audioParams[fbKey];
       }
+      
+      // Special handling for detune - use 0 as default instead of null
+      if (val == null && col.suffix === 'Detune') {
+        val = 0;
+      }
+
+      console.log(`[ToneFM UI] Creating control for ${key}, type: ${col.type || 'dial'}, value:`, val);
 
       let wrap;
       if (col.type === 'select') {
+        console.log(`[ToneFM UI] Creating waveform selector for ${key} with options:`, col.options);
         wrap = createSelect(
-          `${op.label}${col.short}`,
+          `${col.short}`,
           col.options,
           val || col.options[0],
           v => {
+            console.log(`[ToneFM UI] Waveform changed for ${key}:`, v);
             node.audioParams[key] = v;
             updateNodeAudioParams(node);
           }
@@ -259,7 +287,7 @@ export async function showToneFmSynthMenu(node) {
       } else {
         wrap = await createDial(
           `fm-${key}-${node.id}`,
-          `${op.label}${col.short}`,
+          `${col.short}`,
           col.min,
           col.max,
           col.step,
@@ -272,9 +300,35 @@ export async function showToneFmSynthMenu(node) {
           updateDisplay
         );
       }
-      dialsGrid.appendChild(wrap);
+      opGrid.appendChild(wrap);
     }
+    
+    opSection.appendChild(opGrid);
+    container.appendChild(opSection);
   }
+
+  // Filter and Algorithm section (side by side)
+  const filterAlgSection = document.createElement('div');
+  filterAlgSection.style.display = 'flex';
+  filterAlgSection.style.gap = '16px';
+  filterAlgSection.style.marginBottom = '8px';
+  
+  // Filter section
+  const filterSection = document.createElement('div');
+  
+  const filterHeader = document.createElement('div');
+  filterHeader.style.fontSize = '11px';
+  filterHeader.style.fontWeight = 'bold';
+  filterHeader.style.color = '#6075b0';
+  filterHeader.style.marginBottom = '4px';
+  filterHeader.textContent = 'Filter';
+  filterSection.appendChild(filterHeader);
+  
+  const filterGrid = document.createElement('div');
+  filterGrid.style.display = 'grid';
+  filterGrid.style.gridTemplateColumns = 'repeat(3, 40px)';
+  filterGrid.style.gap = '4px';
+  filterGrid.style.justifyContent = 'start';
 
   const extras = [
     { key: 'filterCutoff', label: 'Cut', min: 100, max: 20000, step: 100, format: v => Math.round(v) },
@@ -310,28 +364,174 @@ export async function showToneFmSynthMenu(node) {
         updateDisplay
       );
     }
-    dialsGrid.appendChild(wrap);
+    filterGrid.appendChild(wrap);
   }
+  
+  filterSection.appendChild(filterGrid);
+  filterAlgSection.appendChild(filterSection);
 
-  // Algorithm selection
+  // Algorithm section
+  const algSection = document.createElement('div');
+  
+  const algHeader = document.createElement('div');
+  algHeader.style.fontSize = '11px';
+  algHeader.style.fontWeight = 'bold';
+  algHeader.style.color = '#6075b0';
+  algHeader.style.marginBottom = '4px';
+  algHeader.textContent = 'Algorithm';
+  algSection.appendChild(algHeader);
+  
+  // Algorithm visualization
+  const algVisualContainer = document.createElement('div');
+  algVisualContainer.style.display = 'flex';
+  algVisualContainer.style.alignItems = 'center';
+  algVisualContainer.style.gap = '8px';
+  algVisualContainer.style.marginBottom = '4px';
+  
+  // Algorithm diagram
+  const algDiagram = document.createElement('div');
+  algDiagram.style.width = '120px';
+  algDiagram.style.height = '80px';
+  algDiagram.style.position = 'relative';
+  algDiagram.style.border = '1px solid #444';
+  algDiagram.style.borderRadius = '4px';
+  algDiagram.style.backgroundColor = '#2a2a2a';
+  
+  function drawAlgorithmDiagram(algorithmIndex) {
+    const alg = fmAlgorithms[algorithmIndex] || fmAlgorithms[0];
+    algDiagram.innerHTML = '';
+    
+    // Operator positions (4 operators in a 2x2 grid)
+    const positions = {
+      4: { x: 20, y: 15 },  // Top left
+      3: { x: 80, y: 15 },  // Top right  
+      2: { x: 20, y: 50 },  // Bottom left
+      1: { x: 80, y: 50 }   // Bottom right
+    };
+    
+    // Draw connections first (behind operators)
+    alg.connections.forEach(({ source, target }) => {
+      const line = document.createElement('div');
+      const sourcePos = positions[source];
+      const targetPos = positions[target];
+      
+      const dx = targetPos.x - sourcePos.x;
+      const dy = targetPos.y - sourcePos.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+      
+      line.style.position = 'absolute';
+      line.style.left = sourcePos.x + 8 + 'px';
+      line.style.top = sourcePos.y + 8 + 'px';
+      line.style.width = length + 'px';
+      line.style.height = '2px';
+      line.style.backgroundColor = '#6075b0';
+      line.style.transformOrigin = '0 1px';
+      line.style.transform = `rotate(${angle}rad)`;
+      line.style.zIndex = '1';
+      
+      // Add arrowhead
+      const arrow = document.createElement('div');
+      arrow.style.position = 'absolute';
+      arrow.style.right = '-4px';
+      arrow.style.top = '-2px';
+      arrow.style.width = '0';
+      arrow.style.height = '0';
+      arrow.style.borderLeft = '4px solid #6075b0';
+      arrow.style.borderTop = '2px solid transparent';
+      arrow.style.borderBottom = '2px solid transparent';
+      line.appendChild(arrow);
+      
+      algDiagram.appendChild(line);
+    });
+    
+    // Draw operators
+    [4, 3, 2, 1].forEach(opNum => {
+      const pos = positions[opNum];
+      const opDiv = document.createElement('div');
+      opDiv.style.position = 'absolute';
+      opDiv.style.left = pos.x + 'px';
+      opDiv.style.top = pos.y + 'px';
+      opDiv.style.width = '16px';
+      opDiv.style.height = '16px';
+      opDiv.style.borderRadius = '3px';
+      opDiv.style.fontSize = '10px';
+      opDiv.style.display = 'flex';
+      opDiv.style.alignItems = 'center';
+      opDiv.style.justifyContent = 'center';
+      opDiv.style.fontWeight = 'bold';
+      opDiv.style.zIndex = '2';
+      opDiv.textContent = opNum;
+      
+      // Color carriers differently
+      if (alg.carriers.includes(opNum)) {
+        opDiv.style.backgroundColor = '#6075b0';
+        opDiv.style.color = 'white';
+        opDiv.style.border = '2px solid #8090d0';
+      } else {
+        opDiv.style.backgroundColor = '#444';
+        opDiv.style.color = '#ccc';
+        opDiv.style.border = '1px solid #666';
+      }
+      
+      algDiagram.appendChild(opDiv);
+    });
+  }
+  
+  // Algorithm info text
+  const algInfo = document.createElement('div');
+  algInfo.style.fontSize = '11px';
+  algInfo.style.color = '#ccc';
+  algInfo.style.lineHeight = '1.3';
+  
+  function updateAlgorithmInfo(algorithmIndex) {
+    const alg = fmAlgorithms[algorithmIndex] || fmAlgorithms[0];
+    algInfo.innerHTML = `
+      <div style="font-weight: bold; color: #6075b0;">${alg.label}</div>
+      <div>Carriers: ${alg.carriers.join(', ')}</div>
+      <div>Connections: ${alg.connections.length}</div>
+    `;
+  }
+  
+  algVisualContainer.appendChild(algDiagram);
+  algVisualContainer.appendChild(algInfo);
+  algSection.appendChild(algVisualContainer);
+  
+  // Algorithm selection buttons
   const algRow = document.createElement('div');
   algRow.style.display = 'flex';
-  algRow.style.marginTop = '4px';
+  algRow.style.flexWrap = 'wrap';
+  algRow.style.gap = '4px';
+  
   fmAlgorithms.forEach((alg, idx) => {
     const btn = document.createElement('button');
-    btn.textContent = alg.label || `Alg ${idx + 1}`;
+    btn.textContent = `${idx + 1}`;  // Just show number, not "Alg 1"
     btn.className = 'waveform-button';
-    btn.style.marginRight = '4px';
+    btn.style.fontSize = '9px';
+    btn.style.padding = '2px 4px';
+    btn.style.width = '20px';
+    btn.style.height = '20px';
+    btn.style.minWidth = 'auto';
+    btn.style.boxSizing = 'border-box';
     if (node.audioParams.algorithm === idx) btn.classList.add('selected');
     btn.addEventListener('click', () => {
       node.audioParams.algorithm = idx;
       Array.from(algRow.children).forEach(c => c.classList.remove('selected'));
       btn.classList.add('selected');
+      drawAlgorithmDiagram(idx);
+      updateAlgorithmInfo(idx);
       updateNodeAudioParams(node);
     });
     algRow.appendChild(btn);
   });
-  container.appendChild(algRow);
+  
+  algSection.appendChild(algRow);
+  filterAlgSection.appendChild(algSection);
+  container.appendChild(filterAlgSection);
+  
+  // Initialize with current algorithm
+  drawAlgorithmDiagram(node.audioParams.algorithm ?? 0);
+  updateAlgorithmInfo(node.audioParams.algorithm ?? 0);
 
   positionTonePanel(node);
 }
