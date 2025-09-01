@@ -24,7 +24,7 @@ export class GridSequencer {
     this.matrix = Array.from({ length: rows }, () =>
       Array(columns).fill(false)
     );
-    this.handlers = { pulse: [] };
+    this.handlers = { pulse: [], columnPulse: [] };
     this.sequencer = null;
     this.scanlineColor = "#fff";
     this.scanlineAlpha = 1;
@@ -245,12 +245,27 @@ export class GridSequencer {
 
   step() {
     const column = this.position % this.columns;
+    // Emit row pulses for any active cells in current column
     for (let r = 0; r < this.rows; r++) {
       if (this.matrix[r][column]) {
         this._emit("pulse", { row: r, column });
         if (typeof this.onPulse === "function") {
           this.onPulse(r, column);
         }
+      }
+    }
+    // Also emit column pulse for any active cell in current column
+    let hasActiveCell = false;
+    for (let r = 0; r < this.rows; r++) {
+      if (this.matrix[r][column]) {
+        hasActiveCell = true;
+        break;
+      }
+    }
+    if (hasActiveCell) {
+      this._emit("columnPulse", { column });
+      if (typeof this.onColumnPulse === "function") {
+        this.onColumnPulse(column);
       }
     }
     if (this.sequencer && typeof this.sequencer.next === "function") {

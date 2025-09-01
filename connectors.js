@@ -39,6 +39,18 @@ function getConnectionPoint(node, useHandle) {
       const cxLeft = rectX - 10;
       return { x: cxLeft, y: cyMid };
     }
+    // Column handles for grid_sequencer (useHandle >= 1000)
+    if (node.type === 'grid_sequencer' && useHandle >= 1000) {
+      const colIndex = useHandle - 1000;
+      const cols = node.cols || 8; // GRID_SEQUENCER_DEFAULT_COLS
+      const border = 10; // GRID_SEQUENCER_DRAG_BORDER
+      const innerX = rectX + border;
+      const innerW = node.width - border * 2;
+      const cx = innerX + (colIndex + 0.5) * innerW / cols;
+      const cyBottom = rectY + node.height + 10;
+      return { x: cx, y: cyBottom };
+    }
+    // Row handles for grid_sequencer (useHandle >= 0)
     const rows = node.rows || 4;
     const cy = rectY + (useHandle + 0.5) * node.height / rows;
     const cx =

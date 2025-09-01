@@ -1497,7 +1497,13 @@ function findNodeAt(worldX, worldY) {
       const rectX1 = n.x - n.width / 2;
       const rectY1 = n.y - n.height / 2;
       const rectX2 = n.x + n.width / 2;
-      const rectY2 = n.y + n.height / 2;
+      let rectY2 = n.y + n.height / 2;
+      
+      // Extend hit area for grid sequencer to include bottom connector dots
+      if (n.type === GRID_SEQUENCER_TYPE) {
+        rectY2 += 15; // 15px tolerance for bottom connectors
+      }
+      
       if (
         worldX >= rectX1 &&
         worldX <= rectX2 &&
@@ -1577,6 +1583,18 @@ function getConnectionPoint(node, useHandle) {
       const cxLeft = rectX - 10;
       return { x: cxLeft, y: cyMid };
     }
+    // Column handles for grid sequencer (useHandle >= 1000)
+    if (node.type === GRID_SEQUENCER_TYPE && useHandle >= 1000) {
+      const colIndex = useHandle - 1000;
+      const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
+      const border = GRID_SEQUENCER_DRAG_BORDER;
+      const innerX = rectX + border;
+      const innerW = node.width - border * 2;
+      const cx = innerX + (colIndex + 0.5) * innerW / cols;
+      const cyBottom = rectY + node.height + 10;
+      return { x: cx, y: cyBottom };
+    }
+    // Row handles for grid sequencer (useHandle >= 0)
     const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
     const cy = rectY + (useHandle + 0.5) * node.height / rows;
     const cx =
@@ -6166,36 +6184,15 @@ function propagateTrigger(
     } else if (currentNode.type === "gate") {
       const counterBefore = currentNode.gateCounter || 0;
       currentNode.gateCounter = counterBefore + 1;
-      const modeIndex = currentNode.gateModeIndex || 0;
-      const mode = GATE_MODES[modeIndex];
+      const pulseCountNeeded = currentNode.audioParams?.gatePulseCount || 2;
       canPropagateOriginalPulseFurther = false;
-      switch (mode) {
-        case "1/2":
-          if (currentNode.gateCounter % 2 === 0)
-            canPropagateOriginalPulseFurther = true;
-          break;
-        case "1/3":
-          if (currentNode.gateCounter % 3 === 0)
-            canPropagateOriginalPulseFurther = true;
-          break;
-        case "1/4":
-          if (currentNode.gateCounter % 4 === 0)
-            canPropagateOriginalPulseFurther = true;
-          break;
-        case "2/3":
-          if (currentNode.gateCounter % 3 !== 0)
-            canPropagateOriginalPulseFurther = true;
-          break;
-        case "3/4":
-          if (currentNode.gateCounter % 4 !== 0)
-            canPropagateOriginalPulseFurther = true;
-          break;
-        case "RAND":
-          const randomCheck = Math.random() < GATE_RANDOM_THRESHOLD;
-          currentNode.lastRandomGateResult = randomCheck;
-          if (randomCheck) canPropagateOriginalPulseFurther = true;
-          break;
+      
+      // Gate opens when the required number of pulses have been received
+      if (currentNode.gateCounter >= pulseCountNeeded) {
+        canPropagateOriginalPulseFurther = true;
+        currentNode.gateCounter = 0; // Reset counter after opening
       }
+      
       currentNode.animationState = 1;
       playPrimaryAudioEffect = false;
     } else if (currentNode.type === "probabilityGate") {
@@ -6234,6 +6231,7 @@ function propagateTrigger(
       currentNode.animationState = 1;
       const cols = currentNode.cols || GRID_SEQUENCER_DEFAULT_COLS;
       const rows = currentNode.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+      // Emit row pulses for any active cells in current column
       for (let r = 0; r < rows; r++) {
         if (currentNode.grid && currentNode.grid[r] && currentNode.grid[r][currentNode.column]) {
           connections.forEach((c) => {
@@ -6267,6 +6265,47 @@ function propagateTrigger(
             }
           });
         }
+      }
+      // Also emit column pulse if any cell is active in current column
+      let hasActiveCell = false;
+      for (let r = 0; r < rows; r++) {
+        if (currentNode.grid && currentNode.grid[r] && currentNode.grid[r][currentNode.column]) {
+          hasActiveCell = true;
+          break;
+        }
+      }
+      if (hasActiveCell) {
+        const columnHandle = 1000 + currentNode.column;
+        connections.forEach((c) => {
+          if (
+            (c.nodeAId === currentNode.id && c.nodeAHandle === columnHandle) ||
+            (!c.directional && c.nodeBId === currentNode.id && c.nodeBHandle === columnHandle)
+          ) {
+            const targetId = c.nodeAId === currentNode.id ? c.nodeBId : c.nodeAId;
+            const neighborNode = findNodeById(targetId);
+            if (neighborNode) {
+              const travelTime = c.length * DELAY_FACTOR;
+              createVisualPulse(
+                c.id,
+                travelTime,
+                currentNode.id,
+                Infinity,
+                "trigger",
+                null,
+                currentNode.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY,
+              );
+              propagateTrigger(
+                neighborNode,
+                travelTime,
+                pulseId + Math.random(),
+                currentNode.id,
+                Infinity,
+                { type: "trigger", data: {} },
+                c,
+              );
+            }
+          }
+        });
       }
       currentNode.column = ((currentNode.column || 0) + 1) % cols;
     } else if (
@@ -10790,6 +10829,7 @@ function animationLoop() {
                 currentGlobalPulseId++;
                 const cols = node.cols || GRID_SEQUENCER_DEFAULT_COLS;
                 const rows = node.rows || GRID_SEQUENCER_DEFAULT_ROWS;
+                // Emit row pulses for any active cells in current column
                 for (let r = 0; r < rows; r++) {
                     if (node.grid && node.grid[r] && node.grid[r][node.column]) {
                         connections.forEach((c) => {
@@ -10823,6 +10863,47 @@ function animationLoop() {
                             }
                         });
                     }
+                }
+                // Also emit column pulse if any cell is active in current column
+                let hasActiveCell = false;
+                for (let r = 0; r < rows; r++) {
+                    if (node.grid && node.grid[r] && node.grid[r][node.column]) {
+                        hasActiveCell = true;
+                        break;
+                    }
+                }
+                if (hasActiveCell) {
+                    const columnHandle = 1000 + node.column;
+                    connections.forEach((c) => {
+                        if (
+                            (c.nodeAId === node.id && c.nodeAHandle === columnHandle) ||
+                            (!c.directional && c.nodeBId === node.id && c.nodeBHandle === columnHandle)
+                        ) {
+                            const targetId = c.nodeAId === node.id ? c.nodeBId : c.nodeAId;
+                            const neighborNode = findNodeById(targetId);
+                            if (neighborNode) {
+                                const travelTime = c.length * DELAY_FACTOR;
+                                createVisualPulse(
+                                    c.id,
+                                    travelTime,
+                                    node.id,
+                                    Infinity,
+                                    "trigger",
+                                    null,
+                                    node.audioParams.pulseIntensity ?? DEFAULT_PULSE_INTENSITY,
+                                );
+                                propagateTrigger(
+                                    neighborNode,
+                                    travelTime,
+                                    currentGlobalPulseId,
+                                    node.id,
+                                    Infinity,
+                                    { type: "trigger", data: {} },
+                                    c,
+                                );
+                            }
+                        }
+                    });
                 }
                 node.column = (node.column + 1) % cols;
                 // log removed: scanline step
@@ -12089,6 +12170,16 @@ function drawNode(node) {
       const cxRight = rectX + node.width + connectorRadius * 2;
       ctx.beginPath();
       ctx.arc(cxRight, cy, connectorRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Bottom-side output connectors for columns (XY sequencing)
+    for (let c = 0; c < cols; c++) {
+      const cx =
+        innerX +
+        (c + 0.5) * innerW / cols;
+      const cyBottom = rectY + node.height + connectorRadius * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cyBottom, connectorRadius, 0, Math.PI * 2);
       ctx.fill();
     }
     // Left-side single input connector (only in pulse-advance mode)
@@ -13533,29 +13624,11 @@ function drawNode(node) {
     ctx.closePath();
     ctx.fill();
     let shouldPassVisual = false;
-    const mode = GATE_MODES[params?.gateModeIndex || 0];
-    if (mode === "RAND") {
-      shouldPassVisual = node.lastRandomGateResult;
-    } else {
-      const counterCheck = node.gateCounter || 0;
-      switch (mode) {
-        case "1/2":
-          if (counterCheck % 2 === 0) shouldPassVisual = true;
-          break;
-        case "1/3":
-          if (counterCheck % 3 === 0) shouldPassVisual = true;
-          break;
-        case "1/4":
-          if (counterCheck % 4 === 0) shouldPassVisual = true;
-          break;
-        case "2/3":
-          if (counterCheck % 3 !== 0) shouldPassVisual = true;
-          break;
-        case "3/4":
-          if (counterCheck % 4 !== 0) shouldPassVisual = true;
-          break;
-      }
-    }
+    const pulseCountNeeded = params?.gatePulseCount || 2;
+    const counterCheck = node.gateCounter || 0;
+    
+    // Visual shows if gate would open on next pulse
+    shouldPassVisual = (counterCheck + 1) >= pulseCountNeeded;
     if (node.animationState > 0 && shouldPassVisual) {
       ctx.save();
       ctx.strokeStyle =
@@ -14275,7 +14348,9 @@ function drawNode(node) {
       labelText = DRUM_ELEMENT_DEFAULTS[node.type]?.label || "Drum";
       labelYOffset = baseRadiusForLabel + fontSize / 1.5 + 2 / viewScale;
     } else if (node.type === "gate") {
-      labelText = GATE_MODES[params?.gateModeIndex || 0];
+      const pulseCount = params?.gatePulseCount || 2;
+      const currentCount = node.gateCounter || 0;
+      labelText = `${currentCount}/${pulseCount}`;
     } else if (node.type === "probabilityGate") {
       labelText = `${((params?.probability ?? DEFAULT_PROBABILITY) * 100).toFixed(0)}%`;
     } else if (node.type === "pitchShift") {
@@ -15826,18 +15901,18 @@ function handleSubdivisionCycle(node) {
 
 function handleGateCycle(node) {
   if (!node || node.type !== "gate") return;
-  const oldIndex = node.gateModeIndex;
-  node.gateModeIndex = (node.gateModeIndex + 1) % GATE_MODES.length;
+  // Cycle through pulse counts 2-8
+  const currentCount = node.audioParams?.gatePulseCount || 2;
+  const newCount = currentCount >= 8 ? 2 : currentCount + 1;
+  node.audioParams.gatePulseCount = newCount;
   node.gateCounter = 0;
   node.animationState = 0.3;
   setTimeout(() => {
     const checkNode = findNodeById(node.id);
     if (checkNode) checkNode.animationState = 0;
   }, 100);
-  if (oldIndex !== node.gateModeIndex) {
-    populateEditPanel();
-    saveState();
-  }
+  populateEditPanel();
+  saveState();
 }
 
 function handleProbabilityCycle(node) {
@@ -16445,15 +16520,39 @@ function handleMouseDown(event) {
             node.type === GRID_SEQUENCER_TYPE ||
             node.type === "pulsar_grid"
           ) {
+            const rectX = node.x - node.width / 2;
+            const rectY = node.y - node.height / 2;
+            const isGridSeq = node.type === GRID_SEQUENCER_TYPE;
             const rows =
               node.rows ||
-              (node.type === GRID_SEQUENCER_TYPE
+              (isGridSeq
                 ? GRID_SEQUENCER_DEFAULT_ROWS
                 : GRID_PULSAR_DEFAULT_ROWS);
-            const rectY = node.y - node.height / 2;
+            const cols = node.cols || (isGridSeq ? GRID_SEQUENCER_DEFAULT_COLS : GRID_PULSAR_DEFAULT_COLS);
+            
+            // Check if mouse is in bottom area for column connections (Grid Sequencer only)
+            const bottomConnectorArea = rectY + node.height + 15; // 15px tolerance
+            const isInBottomArea = isGridSeq && mousePos.y >= rectY + node.height && mousePos.y <= bottomConnectorArea;
+            
             if (node.type === CIRCLE_FIFTHS_TYPE) {
               connectFromGridHandle = 0; // single center output
+            } else if (isInBottomArea) {
+              // Connect from column handle (bottom connectors)
+              const border = isGridSeq ? GRID_SEQUENCER_DRAG_BORDER : 0;
+              const innerX = rectX + border;
+              const innerW = node.width - border * 2;
+              const colIndex = Math.max(
+                0,
+                Math.min(
+                  cols - 1,
+                  Math.floor(
+                    (mousePos.x - innerX) / (innerW / cols)
+                  )
+                )
+              );
+              connectFromGridHandle = 1000 + colIndex; // column handle offset
             } else {
+              // Connect from row handle (right connectors)
               connectFromGridHandle = Math.max(
                 0,
                 Math.min(
@@ -17459,6 +17558,7 @@ function handleMouseUp(event) {
             nodeUnderCursorOnUp.type === "pulsar_grid" ||
             nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE
           ) {
+            const rectX = nodeUnderCursorOnUp.x - nodeUnderCursorOnUp.width / 2;
             const rectY = nodeUnderCursorOnUp.y - nodeUnderCursorOnUp.height / 2;
             const isGridSeq = nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE;
             const rows =
@@ -17466,14 +17566,36 @@ function handleMouseUp(event) {
               (isGridSeq
                 ? GRID_SEQUENCER_DEFAULT_ROWS
                 : GRID_PULSAR_DEFAULT_ROWS);
+            const cols = nodeUnderCursorOnUp.cols || (isGridSeq ? GRID_SEQUENCER_DEFAULT_COLS : GRID_PULSAR_DEFAULT_COLS);
             const advanceOnPulse = !!(nodeUnderCursorOnUp.audioParams && nodeUnderCursorOnUp.audioParams.advanceOnPulse);
+            
+            // Check if mouse is in bottom area for column connections (Grid Sequencer only)
+            const bottomConnectorArea = rectY + nodeUnderCursorOnUp.height + 15; // 15px tolerance
+            const isInBottomArea = isGridSeq && mousePos.y >= rectY + nodeUnderCursorOnUp.height && mousePos.y <= bottomConnectorArea;
+            
             // If target is a Grid Sequencer in pulse-advance mode, always connect to the single left input
             if (isGridSeq && advanceOnPulse) {
               connectToGridHandle = -1; // special left input
             } else if (nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE) {
               // Only allow left input (-1). No outputs from circle.
               connectToGridHandle = -1;
+            } else if (isInBottomArea) {
+              // Connect to column handle (bottom connectors)
+              const border = isGridSeq ? GRID_SEQUENCER_DRAG_BORDER : 0;
+              const innerX = rectX + border;
+              const innerW = nodeUnderCursorOnUp.width - border * 2;
+              const colIndex = Math.max(
+                0,
+                Math.min(
+                  cols - 1,
+                  Math.floor(
+                    (mousePos.x - innerX) / (innerW / cols)
+                  )
+                )
+              );
+              connectToGridHandle = 1000 + colIndex; // column handle offset
             } else {
+              // Connect to row handle (right connectors)
               connectToGridHandle = Math.max(
                 0,
                 Math.min(
@@ -24775,7 +24897,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
       pitchShiftAmount: type === "pitchShift" ? PITCH_SHIFT_AMOUNTS[audioDetails.pitchShiftIndex || DEFAULT_PITCH_SHIFT_INDEX] : 0,
       pitchShiftAlternating: type === "pitchShift" ? (audioDetails.pitchShiftAlternating || false) : false,
       pitchShiftDirection: type === "pitchShift" ? (audioDetails.pitchShiftDirection || 1) : 1,
-      gateModeIndex: type === "gate" ? (audioDetails.gateModeIndex || DEFAULT_GATE_MODE_INDEX) : 0,
+      gatePulseCount: type === "gate" ? (audioDetails.gatePulseCount || Math.floor(Math.random() * 7) + 2) : 2, // Random 2-8
       gateCounter: 0,
       lastRandomGateResult: true,
       midiOutEnabled: false,
@@ -26364,6 +26486,19 @@ function drawConnection(conn) {
     const nA = findNodeById(conn.nodeAId);
     const nB = findNodeById(conn.nodeBId);
     if (!nA || !nB || !ctx) return;
+    
+    // Check if connection connects to non-existent column handles
+    if (nA.type === GRID_SEQUENCER_TYPE && conn.nodeAHandle >= 1000) {
+        const colIndex = conn.nodeAHandle - 1000;
+        const cols = nA.cols || GRID_SEQUENCER_DEFAULT_COLS;
+        if (colIndex >= cols) return; // Don't draw connection to non-existent column
+    }
+    if (nB.type === GRID_SEQUENCER_TYPE && conn.nodeBHandle >= 1000) {
+        const colIndex = conn.nodeBHandle - 1000;
+        const cols = nB.cols || GRID_SEQUENCER_DEFAULT_COLS;
+        if (colIndex >= cols) return; // Don't draw connection to non-existent column
+    }
+    
     const pA = getConnectionPoint(nA, conn.nodeAHandle);
     const pB = getConnectionPoint(nB, conn.nodeBHandle);
 
