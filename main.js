@@ -8460,6 +8460,9 @@ export function saveState() {
       userDefinedGroups: userDefinedGroups.map(group => ({...group, nodeIds: Array.from(group.nodeIds) })),
       mistGroups: patchState.mistGroups.map(g => ({
           patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
+      })),
+      crushGroups: patchState.crushGroups.map(g => ({
+          patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
       }))
   };
 
@@ -8668,6 +8671,79 @@ async function loadState(stateToLoad) {
         identifyAndRouteAllGroups();
         updateMixerGUI();
         initializeGlobalEffectSliders();
+    }
+
+    // Restore patch effects (mist and crush)
+    if (stateToLoad.mistGroups && Array.isArray(stateToLoad.mistGroups)) {
+        patchState.mistGroups = [];
+        stateToLoad.mistGroups.forEach(groupData => {
+            if (groupData.patches && Array.isArray(groupData.patches)) {
+                const container = document.createElement('div');
+                container.className = 'mist-group';
+                mistLayer?.appendChild(container);
+                const group = { container, patches: [] };
+                
+                groupData.patches.forEach(patchData => {
+                    const patch = document.createElement('div');
+                    patch.className = 'mist-patch';
+                    const size = patchData.size || 200;
+                    patch.style.width = size + 'px';
+                    patch.style.height = size + 'px';
+                    const coords = getScreenCoords(patchData.x, patchData.y);
+                    patch.style.left = coords.x - size / 2 + 'px';
+                    patch.style.top = coords.y - size / 2 + 'px';
+                    const gradientString = 'radial-gradient(circle at 50% 50%, rgba(150,100,255,0.35) 0%, transparent 70%)';
+                    patch.style.backgroundImage = gradientString;
+                    patch.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
+                    patch.style.setProperty('--dy', `${Math.random() * 20 - 10}px`);
+                    patch.style.setProperty('--duration', `${12 + Math.random() * 6}s`);
+                    patch.style.setProperty('--hueDuration', `${20 + Math.random() * 10}s`);
+                    patch.dataset.x = patchData.x;
+                    patch.dataset.y = patchData.y;
+                    container.appendChild(patch);
+                    group.patches.push({ element: patch, x: patchData.x, y: patchData.y, size });
+                });
+                
+                patchState.mistGroups.push(group);
+            }
+        });
+        updateMistWetness();
+    }
+
+    if (stateToLoad.crushGroups && Array.isArray(stateToLoad.crushGroups)) {
+        patchState.crushGroups = [];
+        stateToLoad.crushGroups.forEach(groupData => {
+            if (groupData.patches && Array.isArray(groupData.patches)) {
+                const container = document.createElement('div');
+                container.className = 'crush-group';
+                crushLayer?.appendChild(container);
+                const group = { container, patches: [] };
+                
+                groupData.patches.forEach(patchData => {
+                    const patch = document.createElement('div');
+                    patch.className = 'crush-patch';
+                    const size = patchData.size || 200;
+                    patch.style.width = size + 'px';
+                    patch.style.height = size + 'px';
+                    const coords = getScreenCoords(patchData.x, patchData.y);
+                    patch.style.left = coords.x - size / 2 + 'px';
+                    patch.style.top = coords.y - size / 2 + 'px';
+                    const gradientString = 'radial-gradient(circle at 50% 50%, rgba(255,100,150,0.35) 0%, transparent 70%)';
+                    patch.style.backgroundImage = gradientString;
+                    patch.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
+                    patch.style.setProperty('--dy', `${Math.random() * 20 - 10}px`);
+                    patch.style.setProperty('--duration', `${12 + Math.random() * 6}s`);
+                    patch.style.setProperty('--hueDuration', `${20 + Math.random() * 10}s`);
+                    patch.dataset.x = patchData.x;
+                    patch.dataset.y = patchData.y;
+                    container.appendChild(patch);
+                    group.patches.push({ element: patch, x: patchData.x, y: patchData.y, size });
+                });
+                
+                patchState.crushGroups.push(group);
+            }
+        });
+        updateCrushWetness();
     }
 
     isPerformingUndoRedo = false;
@@ -21719,6 +21795,49 @@ function populateEditPanel() {
                         }
                     }
                     currentSection.appendChild(soundDiv);
+                } else if (node.type === "gate") {
+                    const gateDiv = document.createElement("div");
+                    gateDiv.classList.add("edit-gate-settings");
+                    
+                    const gateLabel = document.createElement("strong");
+                    gateLabel.textContent = "Gate Settings";
+                    gateDiv.appendChild(gateLabel);
+                    gateDiv.appendChild(document.createElement("br"));
+                    gateDiv.appendChild(document.createElement("br"));
+                    
+                    const currentPulseCount = node.audioParams?.gatePulseCount || 2;
+                    const pulseCountSlider = createSlider(
+                        `edit-gate-pulsecount-${node.id}`,
+                        `Pulse Count Required (${currentPulseCount}):`,
+                        2,
+                        8,
+                        1,
+                        currentPulseCount,
+                        () => { saveState(); },
+                        (e_input) => {
+                            const newCount = parseInt(e_input.target.value);
+                            selectedArray.forEach((elData) => {
+                                const n = findNodeById(elData.id);
+                                if (n && n.type === "gate" && n.audioParams) {
+                                    n.audioParams.gatePulseCount = newCount;
+                                    // Reset gate counter when changing pulse count
+                                    n.gateCounter = 0;
+                                }
+                            });
+                            e_input.target.previousElementSibling.textContent = `Pulse Count Required (${newCount}):`;
+                        }
+                    );
+                    gateDiv.appendChild(pulseCountSlider);
+                    
+                    // Add info text
+                    const infoText = document.createElement("small");
+                    infoText.textContent = "Gate opens after receiving the specified number of pulses, then resets.";
+                    infoText.style.display = "block";
+                    infoText.style.marginTop = "5px";
+                    infoText.style.opacity = "0.7";
+                    gateDiv.appendChild(infoText);
+                    
+                    currentSection.appendChild(gateDiv);
                 } else if (node.type === "switch" && selectedArray.length === 1) {
                     const label = document.createElement("label");
                     label.textContent = "Primary Input Connection:";
@@ -22155,7 +22274,6 @@ function openReplaceInstrumentMenu() {
     { icon: "🔔", label: "FM Synth", handler: () => populateReplacePresetMenu('fmSynths', 'FM Synths') },
     { icon: "🛰️", label: "Sampler", handler: () => populateReplacePresetMenu('samplers', 'Samplers') },
     { icon: "🥁", label: "Drum", handler: () => populateReplacePresetMenu('drumElements', 'Drum Elements') },
-    { icon: "⚙️", label: "Motor Orb", handler: () => setupAddTool(null, MOTOR_ORB_TYPE, false) },
   ];
   instruments.forEach(inst => {
     const btn = document.createElement('button');
@@ -22315,14 +22433,6 @@ function populateInstrumentMenu() {
       handler: () => {
         soundEngineToAdd = null;
         setupAddTool(null, RESONAUTER_TYPE, false);
-      },
-    },
-    {
-      icon: "⚙️",
-      label: "Motor Orb",
-      handler: () => {
-        soundEngineToAdd = null;
-        setupAddTool(null, MOTOR_ORB_TYPE, false);
       },
     },
   ];
@@ -22577,6 +22687,11 @@ function populateMotionMenu() {
         soundEngineToAdd = null;
         setupAddTool(null, CLOCKWORK_ORB_TYPE, false);
       },
+    },
+    {
+      icon: "🧪",
+      label: "Rope Connector",
+      handler: () => setActiveTool("connect_rope"),
     },
   ];
 
@@ -23330,11 +23445,7 @@ export function handleNewWorkspace(skipConfirm = false) {
 
   historyStack = [];
   historyIndex = -1;
-  saveState();
   unsavedChanges = false;
-  try {
-    localStorage.removeItem('resonaut_state');
-  } catch (e) {}
 
   viewOffsetX = 0;
   viewOffsetY = 0;
@@ -23343,7 +23454,30 @@ export function handleNewWorkspace(skipConfirm = false) {
   clearEditPanel();
   updateConstellationGroup();
   updateGroupControlsUI();
+  // Clear visual patch effects (mist and crush)
+  patchState.mistGroups.forEach(group => {
+    if (group.container) group.container.remove();
+  });
+  patchState.crushGroups.forEach(group => {
+    if (group.container) group.container.remove();
+  });
+  patchState.mistGroups = [];
+  patchState.crushGroups = [];
+  patchState.currentMistGroup = null;
+  patchState.currentCrushGroup = null;
+
+  // Save the cleared state to prevent patches from reappearing on refresh
+  saveState();
+
   if (isAudioReady) {
+    // Reset effect levels to 0 for new project
+    if (mistWetGain) {
+      mistWetGain.gain.setValueAtTime(0.0, audioContext.currentTime);
+    }
+    if (crushWetGain) {
+      crushWetGain.gain.setValueAtTime(0.0, audioContext.currentTime);
+    }
+    
     identifyAndRouteAllGroups();
     updateMixerGUI();
   }
@@ -25856,7 +25990,7 @@ if (addMeteorShowerBtn) {
   });
 }
 addPulsarBtn.addEventListener("click", (e) => {
-  setupAddTool(e.currentTarget, null, true, "pulsarTypes", "Pulsars");
+  setupAddTool(e.currentTarget, "pulsar_standard", true, "pulsarTypes", "Pulsars");
   if (
     helpWizard &&
     !helpWizard.classList.contains("hidden") &&

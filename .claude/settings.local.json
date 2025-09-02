@@ -1,9 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build:*)",
-      "Bash(node:*)",
-      "Bash(grep -n -A 5 -B 2 \"} else if.*node.*type.*===\" main.js)"
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []

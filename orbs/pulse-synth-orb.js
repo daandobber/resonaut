@@ -49,7 +49,7 @@ export function createPulseSynthOrb(node) {
   // Voice and mixing
   const osc1Gain = new Tone.Gain(0.0); // shaped by per-note ADSR
   const ampEnvControl = new Tone.Gain(1.0); // unity bus that sums all voices
-  const mainGain = new Tone.Gain(1.0); // constant; downstream FX sends use this
+  const mainGain = new Tone.Gain(0.0); // starts silent, controlled by envelope
   const reverbSendGain = new Tone.Gain(p.reverbSend ?? DEFAULT_PULSE_SYNTH_PARAMS.reverbSend);
   const delaySendGain = new Tone.Gain(p.delaySend ?? DEFAULT_PULSE_SYNTH_PARAMS.delaySend);
 
@@ -147,6 +147,10 @@ export function createPulseSynthOrb(node) {
     const peak = Math.max(0.001, Math.min(1.5, velocity)) * (1 - orbitMix);
 
     try {
+      // Set mainGain to full volume during notes
+      mainGain.gain.setValueAtTime(1.0, now);
+      
+      // Control osc1Gain envelope
       osc1Gain.gain.cancelScheduledValues(now);
       osc1Gain.gain.setValueAtTime(0, now);
       osc1Gain.gain.linearRampToValueAtTime(peak, now + atk);
@@ -163,6 +167,10 @@ export function createPulseSynthOrb(node) {
     const rel = Math.max(0.001, ap.ampEnvRelease ?? DEFAULT_PULSE_SYNTH_PARAMS.ampEnvRelease);
     const now = time ?? Tone.getContext().currentTime;
     try {
+      // Fade out main gain
+      mainGain.gain.setTargetAtTime(0.0001, now, rel / 4 + 0.001);
+      
+      // Fade out osc gain
       osc1Gain.gain.cancelScheduledValues(now);
       osc1Gain.gain.setTargetAtTime(0.0001, now, rel / 4 + 0.001);
     } catch {}
