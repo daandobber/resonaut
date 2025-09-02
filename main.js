@@ -4809,6 +4809,74 @@ export function triggerNodeEffect(
       node.isTriggered = true;
       node.animationState = 1;
 
+      // Create polyphonic voice for chord sequences
+      if (transpositionOverride && typeof transpositionOverride.scaleIndexOverride === "number") {
+        try {
+          console.log('Creating polyphonic FM voice for note:', transpositionOverride.scaleIndexOverride, 'pitch:', effectivePitch);
+          
+          // Create FM synthesis components for this voice
+          const carrier = audioContext.createOscillator();
+          const modulator = audioContext.createOscillator();
+          const modGain = audioContext.createGain();
+          const ampGain = audioContext.createGain();
+          
+          // Add slight timing offset to prevent phase cancellation
+          const voiceStartTime = now + Math.random() * 0.005;
+          
+          // Set up FM parameters
+          carrier.type = params.carrierWaveform || 'sine';
+          modulator.type = params.modulatorWaveform || 'sine';
+          carrier.frequency.setValueAtTime(effectivePitch, voiceStartTime);
+          modulator.frequency.setValueAtTime(effectivePitch * (params.modulatorRatio || 2), voiceStartTime);
+          
+          // Set modulation depth
+          const modDepth = (params.modulatorDepthScale || 3) * 10;
+          modGain.gain.setValueAtTime(modDepth, voiceStartTime);
+          
+          // Set up envelope
+          const peak = Math.max(0.01, Math.min(1.5, baseVolumeSettingForFinalEnvelope * intensity * oscillatorVolumeMultiplier));
+          const atk = params.carrierEnvAttack ?? 0.01;
+          const dec = params.carrierEnvDecay ?? 0.3;
+          const sus = params.carrierEnvSustain ?? 0;
+          const rel = params.carrierEnvRelease ?? 0.3;
+          
+          // Apply amplitude envelope
+          ampGain.gain.setValueAtTime(0, voiceStartTime);
+          ampGain.gain.linearRampToValueAtTime(peak, voiceStartTime + atk);
+          ampGain.gain.exponentialRampToValueAtTime(Math.max(0.01, peak * sus), voiceStartTime + atk + dec);
+          
+          // Connect FM chain
+          modulator.connect(modGain);
+          modGain.connect(carrier.frequency);
+          carrier.connect(ampGain);
+          ampGain.connect(node.audioNodes.mainGain);
+          
+          // Start oscillators
+          carrier.start(voiceStartTime);
+          modulator.start(voiceStartTime);
+          
+          // Schedule note off and cleanup
+          const noteOffTime = voiceStartTime + atk + dec + 0.5; // Longer hold
+          ampGain.gain.exponentialRampToValueAtTime(0.001, noteOffTime + rel);
+          
+          setTimeout(() => {
+            try {
+              carrier.stop();
+              modulator.stop();
+              carrier.disconnect();
+              modulator.disconnect();
+              modGain.disconnect();
+              ampGain.disconnect();
+            } catch (e) {}
+          }, (noteOffTime + rel + 0.1) * 1000);
+          
+          return;
+        } catch (e) {
+          console.error('Error creating polyphonic FM voice:', e);
+          // Fall through to monophonic behavior
+        }
+      }
+
       const atk = params.carrierEnvAttack ?? 0.01;
       const dec = params.carrierEnvDecay ?? 0.3;
       const sus = params.carrierEnvSustain ?? 0;
@@ -4909,6 +4977,77 @@ export function triggerNodeEffect(
     if (!isSampler && node.audioParams && node.audioParams.engine === 'tone') {
       node.isTriggered = true;
       node.animationState = 1;
+
+      // Create polyphonic voice for chord sequences
+      if (transpositionOverride && typeof transpositionOverride.scaleIndexOverride === "number") {
+        try {
+          console.log('Creating polyphonic analog voice for note:', transpositionOverride.scaleIndexOverride, 'pitch:', effectivePitch);
+          
+          // Create new oscillators for this voice
+          const osc1 = audioContext.createOscillator();
+          const osc2 = audioContext.createOscillator();
+          const ampGain = audioContext.createGain();
+          const osc1Gain = audioContext.createGain();
+          const osc2Gain = audioContext.createGain();
+          
+          // Add slight timing offset to prevent phase cancellation
+          const voiceStartTime = now + Math.random() * 0.005;
+          
+          // Set up oscillator parameters
+          osc1.type = params.osc1Waveform || 'sawtooth';
+          osc2.type = params.osc2Waveform || 'sawtooth';
+          osc1.frequency.setValueAtTime(effectivePitch * Math.pow(2, params.osc1Octave || 0), voiceStartTime);
+          osc2.frequency.setValueAtTime(effectivePitch * Math.pow(2, params.osc2Octave || 0), voiceStartTime);
+          
+          // Set oscillator levels
+          osc1Gain.gain.setValueAtTime(params.osc1Level ?? 1.0, voiceStartTime);
+          osc2Gain.gain.setValueAtTime(params.osc2Enabled ? (params.osc2Level ?? 1.0) : 0, voiceStartTime);
+          
+          // Set up envelope
+          const peak = Math.max(0.01, Math.min(1.5, baseVolumeSettingForFinalEnvelope * intensity * oscillatorVolumeMultiplier));
+          const atk = params.ampEnvAttack ?? 0.01;
+          const dec = params.ampEnvDecay ?? 0.3;
+          const sus = params.ampEnvSustain ?? 0.7;
+          const rel = params.ampEnvRelease ?? 0.3;
+          
+          // Apply amplitude envelope
+          ampGain.gain.setValueAtTime(0, voiceStartTime);
+          ampGain.gain.linearRampToValueAtTime(peak, voiceStartTime + atk);
+          ampGain.gain.exponentialRampToValueAtTime(Math.max(0.01, peak * sus), voiceStartTime + atk + dec);
+          
+          // Connect the voice
+          osc1.connect(osc1Gain);
+          osc2.connect(osc2Gain);
+          osc1Gain.connect(ampGain);
+          osc2Gain.connect(ampGain);
+          ampGain.connect(node.audioNodes.mainGain);
+          
+          // Start oscillators
+          osc1.start(voiceStartTime);
+          osc2.start(voiceStartTime);
+          
+          // Schedule note off and cleanup
+          const noteOffTime = voiceStartTime + atk + dec + 0.5; // Longer hold
+          ampGain.gain.exponentialRampToValueAtTime(0.001, noteOffTime + rel);
+          
+          setTimeout(() => {
+            try {
+              osc1.stop();
+              osc2.stop();
+              osc1.disconnect();
+              osc2.disconnect();
+              ampGain.disconnect();
+              osc1Gain.disconnect();
+              osc2Gain.disconnect();
+            } catch (e) {}
+          }, (noteOffTime + rel + 0.1) * 1000);
+          
+          return;
+        } catch (e) {
+          console.error('Error creating polyphonic analog voice:', e);
+          // Fall through to monophonic behavior
+        }
+      }
 
       const peak = Math.max(
         0.01,
