@@ -477,6 +477,10 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
     { v: 'sampler', t: 'Sampler' },
     { v: 'fm', t: 'FM Synth' },
     { v: 'analog', t: 'Analog' },
+    { v: 'pulse', t: 'Pulse Synth' },
+    { v: 'alien_orb', t: 'Alien Orb' },
+    { v: 'midi_orb', t: 'MIDI Orb' },
+    { v: 'resonauter', t: 'Resonauter' },
   ].forEach((o) => {
     const opt = document.createElement('option');
     opt.value = o.v;
@@ -505,12 +509,28 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
       list = (fmSynthPresets || []).map((p) => p.type);
     } else if (engine === 'analog') {
       list = (analogWaveformPresets || []).map((p) => p.type);
+    } else if (engine === 'pulse') {
+      list = ['pulse'];
+    } else if (engine === 'alien_orb') {
+      list = ['alien_orb'];
+    } else if (engine === 'midi_orb') {
+      list = ['midi_orb'];
+    } else if (engine === 'resonauter') {
+      list = ['resonauter'];
     }
-    if (!list || list.length === 0) list = engine === 'fm' ? ['fm_bell'] : engine === 'analog' ? ['sine'] : ['sampler_marimba'];
+    if (!list || list.length === 0) {
+      list = engine === 'fm' ? ['fm_bell'] : 
+            engine === 'analog' ? ['sine'] : 
+            engine === 'pulse' ? ['pulse'] :
+            engine === 'alien_orb' ? ['alien_orb'] :
+            engine === 'midi_orb' ? ['midi_orb'] :
+            engine === 'resonauter' ? ['resonauter'] :
+            ['sampler_marimba'];
+    }
     list.forEach((t) => {
       const opt = document.createElement('option');
       opt.value = t;
-      opt.textContent = t.replace(/^sampler_/, '');
+      opt.textContent = t.replace(/^sampler_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
       presetSelect.appendChild(opt);
     });
   };
@@ -520,17 +540,32 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
     const t = node.audioParams?.centerAttachedNodeId ? findNodeById(node.audioParams.centerAttachedNodeId) : null;
     let engine = 'sampler';
     let preset = 'sampler_marimba';
-    if (t && t.audioParams && t.audioParams.waveform) {
-      const wf = String(t.audioParams.waveform);
-      if (wf.startsWith('sampler_')) {
-        engine = 'sampler';
-        preset = wf;
-      } else if ((fmSynthPresets || []).some((p) => p.type === wf)) {
-        engine = 'fm';
-        preset = wf;
-      } else {
-        engine = 'analog';
-        preset = wf;
+    if (t && t.type) {
+      // Check the node type first, then waveform
+      if (t.type === 'alien_orb') {
+        engine = 'alien_orb';
+        preset = 'alien_orb';
+      } else if (t.type === 'midi_orb') {
+        engine = 'midi_orb'; 
+        preset = 'midi_orb';
+      } else if (t.type === 'resonauter') {
+        engine = 'resonauter';
+        preset = 'resonauter';
+      } else if (t.type === 'sound' && t.audioParams && (t.audioParams.engine === 'pulse' || t.audioParams.waveform === 'pulse')) {
+        engine = 'pulse';
+        preset = 'pulse';
+      } else if (t.type === 'sound' && t.audioParams && t.audioParams.waveform) {
+        const wf = String(t.audioParams.waveform);
+        if (wf.startsWith('sampler_')) {
+          engine = 'sampler';
+          preset = wf;
+        } else if ((fmSynthPresets || []).some((p) => p.type === wf)) {
+          engine = 'fm';
+          preset = wf;
+        } else {
+          engine = 'analog';
+          preset = wf;
+        }
       }
     }
     engineSelect.value = engine;
@@ -541,11 +576,63 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
 
   const applyPreset = () => {
     const t = ensureEmbedded();
+    if (!t) {
+      console.error('Cannot apply preset: no center instrument found');
+      return;
+    }
     const wf = presetSelect.value || 'sampler_marimba';
     try { stopNodeAudio(t); } catch {}
-    t.type = 'sound';
-    t.audioParams = t.audioParams || {};
-    t.audioParams.waveform = wf;
+    
+    // Store old pitch and scale to preserve them
+    const oldPitch = t.audioParams?.pitch;
+    const oldScaleIndex = t.audioParams?.scaleIndex;
+    
+    // Set the node type and parameters based on selection
+    if (wf === 'alien_orb') {
+      t.type = 'alien_orb';
+      t.audioParams = t.audioParams || {};
+    } else if (wf === 'midi_orb') {
+      t.type = 'midi_orb';
+      t.audioParams = t.audioParams || {};
+    } else if (wf === 'resonauter') {
+      t.type = 'resonauter';
+      t.audioParams = t.audioParams || {};
+    } else if (wf === 'pulse') {
+      // Pulse synth is a sound node with specific engine settings
+      t.type = 'sound';
+      t.audioParams = t.audioParams || {};
+      t.audioParams.engine = 'pulse';
+      t.audioParams.waveform = 'pulse';
+    } else {
+      // Regular sound node with waveform
+      t.type = 'sound';
+      t.audioParams = t.audioParams || {};
+      
+      // Apply the full preset, not just the waveform
+      const analogPreset = analogWaveformPresets.find(a => a.type === wf);
+      const fmPreset = fmSynthPresets.find(f => f.type === wf);
+      const samplerPreset = samplerWaveformTypes.find(s => s.type === wf);
+      
+      if (fmPreset && fmPreset.details) {
+        // FM synth
+        Object.assign(t.audioParams, fmPreset.details);
+        t.audioParams.engine = 'tonefm';
+      } else if (analogPreset && analogPreset.details) {
+        // Analog synth
+        Object.assign(t.audioParams, analogPreset.details);
+        t.audioParams.engine = 'tone';
+      } else if (samplerPreset) {
+        // Sampler - no engine needed
+      }
+      
+      // Set the waveform
+      t.audioParams.waveform = wf;
+    }
+    
+    // Restore pitch and scale for all types
+    if (oldPitch !== undefined) t.audioParams.pitch = oldPitch;
+    if (oldScaleIndex !== undefined) t.audioParams.scaleIndex = oldScaleIndex;
+    
     t.audioNodes = createAudioNodesForNode(t);
     if (t.audioNodes) updateNodeAudioParams(t);
     saveState();

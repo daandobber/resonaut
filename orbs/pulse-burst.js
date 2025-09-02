@@ -21,6 +21,7 @@ export function initPulseBurstNode(newNode, deps) {
   newNode.burstState = {
     isActive: false,
     currentBurst: null,
+    currentPulse: 0,
     timeouts: [] // Track scheduled pulses for cancellation
   };
 
@@ -84,11 +85,13 @@ function startBurstSequence(node, deps) {
   // Schedule each pulse
   timings.forEach((delay, index) => {
     const timeout = setTimeout(() => {
+      burstState.currentPulse = index; // Track current pulse for visual feedback
       fireBurstPulse(node, index, count, deps);
       
       // Clean up if this was the last pulse
       if (index === count - 1) {
         burstState.isActive = false;
+        burstState.currentPulse = 0;
         burstState.timeouts = [];
         console.log('Burst sequence completed');
       }
@@ -165,13 +168,13 @@ function calculateBurstTimings(count, duration, pattern, intensity) {
 
 // Fire a single pulse in the burst sequence
 function fireBurstPulse(node, pulseIndex, totalPulses, deps) {
-  const { triggerNodeEffect, findNodeById } = deps;
+  const { findNodeById, propagateTrigger, createVisualPulse, connections } = deps;
   const ap = node.audioParams;
   
   console.log(`Firing burst pulse ${pulseIndex + 1}/${totalPulses}`);
   
-  // Create pulse with intensity and visual feedback
-  const pulse = {
+  // Create pulse data with intensity and metadata
+  const pulseData = {
     intensity: ap.pulseIntensity || 1.0,
     color: node.color || null,
     particleMultiplier: 0.8,
@@ -181,19 +184,56 @@ function fireBurstPulse(node, pulseIndex, totalPulses, deps) {
 
   // Visual feedback - brief flash
   node.animationState = 1;
+  setTimeout(() => {
+    if (node.animationState > 0) node.animationState = 0;
+  }, 150);
   
-  // Find connected output nodes and fire to them
-  if (globalThis.connections) {
-    globalThis.connections.forEach(conn => {
-      const isSource = (conn.nodeAId === node.id && conn.nodeAHandle === 0);
-      if (isSource) {
-        const targetNode = findNodeById(conn.nodeBId);
-        if (targetNode) {
-          const delay = 0.1 + (pulseIndex * 0.05); // Slight stagger for visual effect
-          triggerNodeEffect(targetNode, pulse, conn, delay);
-        }
+  // Propagate to connected nodes using the exact same pattern as main pulse propagation
+  if (node.connections && node.connections.size > 0) {
+    node.connections.forEach((neighborId) => {
+      const neighborNode = findNodeById(neighborId);
+      const connection = connections.find(
+        (c) =>
+          (c.nodeAId === node.id && c.nodeBId === neighborId) ||
+          (!c.directional && c.nodeAId === neighborId && c.nodeBId === node.id),
+      );
+
+      if (
+        neighborNode &&
+        neighborNode.type !== "nebula" &&
+        neighborNode.type !== "portal_nebula" &&
+        connection &&
+        connection.type !== "rope"
+      ) {
+        const travelTime = connection.length * 0.005; // DELAY_FACTOR
+        const burstDelay = pulseIndex * 50; // 50ms stagger between burst pulses
+        
+        // Create visual pulse (like pulsars do)
+        setTimeout(() => {
+          createVisualPulse(
+            connection.id,
+            travelTime,
+            node.id,
+            10, // hopsRemaining
+            "trigger",
+            pulseData.color,
+          );
+          
+          // Send the actual pulse
+          propagateTrigger(
+            neighborNode,
+            travelTime,
+            Math.random() + pulseIndex, // unique pulse ID
+            node.id, // sourceNodeId  
+            10, // hopsRemaining
+            { type: "trigger", data: pulseData },
+            connection
+          );
+        }, burstDelay);
       }
     });
+  } else {
+    console.log('Pulse Burst: No connections found for node', node.id, 'connections:', node.connections);
   }
 }
 
@@ -207,6 +247,7 @@ function cancelCurrentBurst(node) {
   }
   
   burstState.isActive = false;
+  burstState.currentPulse = 0;
   console.log('Burst sequence cancelled');
 }
 

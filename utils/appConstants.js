@@ -98,7 +98,7 @@ export const DRUM_ELEMENT_DEFAULTS = {
   drum_kick: {
     baseFreq: 60,
     decay: 0.3,
-    volume: 1.0,
+    volume: 1.0, // Keep at max since we boost in code
     icon: "\uD83D\uDCA5",
     label: "Kick",
   },
@@ -106,20 +106,20 @@ export const DRUM_ELEMENT_DEFAULTS = {
     baseFreq: 180,
     decay: 0.2,
     noiseDecay: 0.15,
-    volume: 0.8,
+    volume: 1.0, // Boosted from 0.8
     icon: "SN",
     label: "Snare",
   },
   drum_hihat: {
     baseFreq: 7000,
     decay: 0.05,
-    volume: 0.6,
+    volume: 1.0, // Boosted from 0.6
     icon: "HH",
     label: "Hi-Hat",
   },
   drum_clap: {
     noiseDecay: 0.1,
-    volume: 0.9,
+    volume: 1.0, // Boosted from 0.9
     icon: "CL",
     label: "Clap",
     baseFreq: 1500,
@@ -127,21 +127,21 @@ export const DRUM_ELEMENT_DEFAULTS = {
   drum_tom1: {
     baseFreq: 150,
     decay: 0.4,
-    volume: 0.9,
+    volume: 1.0, // Boosted from 0.9
     icon: "T1",
     label: "Tom 1",
   },
   drum_tom2: {
     baseFreq: 100,
     decay: 0.5,
-    volume: 0.9,
+    volume: 1.0, // Boosted from 0.9
     icon: "T2",
     label: "Tom 2",
   },
   drum_cowbell: {
     baseFreq: 520,
     decay: 0.3,
-    volume: 0.7,
+    volume: 1.0, // Boosted from 0.7
     icon: "CB",
     label: "Cowbell",
   },

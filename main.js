@@ -563,17 +563,6 @@ if (toolbarPulsars && typeof document.createElement === 'function') {
     toolbarPulsars.insertBefore(tonnetzBtn, btn.nextSibling);
   } catch { toolbarPulsars.appendChild(tonnetzBtn); }
   
-  // Add Pulse Burst button
-  const pulseBurstBtn = document.createElement('button');
-  pulseBurstBtn.id = 'addPulseBurstBtn';
-  pulseBurstBtn.title = 'Add Pulse Burst (1 → Many Pulses)';
-  pulseBurstBtn.textContent = '💥'; // Could also use: ⭐ 🎆 ✨ ⚡ 💫
-  pulseBurstBtn.addEventListener('click', (e) => {
-    setupAddTool(e.currentTarget, PULSE_BURST_TYPE, false);
-  });
-  try {
-    toolbarPulsars.appendChild(pulseBurstBtn);
-  } catch { toolbarPulsars.appendChild(pulseBurstBtn); }
 }
 const addTimelineGridBtn =
   typeof document !== 'undefined' && typeof document.getElementById === 'function'
@@ -5739,17 +5728,37 @@ export function triggerNodeEffect(
     const targetFreq = soundParams.baseFreq;
     try {
       if (node.type === "drum_kick") {
+        // Main kick oscillator with more punch
         const osc = audioContext.createOscillator();
         const gain = audioContext.createGain();
-        const kickStartFreq = targetFreq * 2.5;
+        const kickStartFreq = targetFreq * 3.0; // Higher start for more click
         osc.frequency.setValueAtTime(kickStartFreq, now);
-        osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.05);
-        gain.gain.setValueAtTime(finalVol, now);
+        osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.08);
+        
+        // Much punchier volume envelope - fast attack, punchy decay
+        const boostedVol = finalVol * 10.0; // 10x volume boost to match other synths
+        gain.gain.setValueAtTime(boostedVol, now);
+        gain.gain.exponentialRampToValueAtTime(boostedVol * 0.5, now + 0.01); // Quick punch
         gain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay);
+        
+        // Add harmonic for more punch
+        const harmonic = audioContext.createOscillator();
+        const harmonicGain = audioContext.createGain();
+        harmonic.frequency.setValueAtTime(kickStartFreq * 1.5, now);
+        harmonic.frequency.exponentialRampToValueAtTime(targetFreq * 1.3, now + 0.04);
+        harmonicGain.gain.setValueAtTime(boostedVol * 0.3, now);
+        harmonicGain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay * 0.6);
+        
+        // Connect everything
         osc.connect(gain);
+        harmonic.connect(harmonicGain);
         gain.connect(mainGain);
+        harmonicGain.connect(mainGain);
+        
         osc.start(now);
+        harmonic.start(now);
         osc.stop(now + soundParams.decay + 0.05);
+        harmonic.stop(now + soundParams.decay * 0.6 + 0.05);
       } else if (node.type === "drum_snare") {
         const noiseDur = soundParams.noiseDecay ?? 0.15;
         const bodyDecay = soundParams.decay ?? 0.2;
@@ -5768,7 +5777,8 @@ export function triggerNodeEffect(
         noiseFilter.type = "highpass";
         noiseFilter.frequency.value = 1500;
         const noiseGain = audioContext.createGain();
-        noiseGain.gain.setValueAtTime(finalVol * 0.8, now);
+        const boostedSnareVol = finalVol * 8.0; // 8x volume boost to match other synths
+        noiseGain.gain.setValueAtTime(boostedSnareVol, now);
         noiseGain.gain.exponentialRampToValueAtTime(0.001, now + noiseDur);
         noise.connect(noiseFilter);
         noiseFilter.connect(noiseGain);
@@ -5779,7 +5789,7 @@ export function triggerNodeEffect(
         const gain = audioContext.createGain();
         osc.type = "triangle";
         osc.frequency.setValueAtTime(soundParams.baseFreq, now);
-        gain.gain.setValueAtTime(finalVol * 0.7, now);
+        gain.gain.setValueAtTime(boostedSnareVol * 0.8, now); // Boost body too
         gain.gain.exponentialRampToValueAtTime(0.01, now + bodyDecay);
         osc.connect(gain);
         gain.connect(mainGain);
@@ -5802,7 +5812,7 @@ export function triggerNodeEffect(
         noiseFilter.type = "highpass";
         noiseFilter.frequency.value = soundParams.baseFreq;
         const noiseGain = audioContext.createGain();
-        noiseGain.gain.setValueAtTime(finalVol, now);
+        noiseGain.gain.setValueAtTime(finalVol * 8.0, now); // 8x volume boost for hi-hat
         noiseGain.gain.exponentialRampToValueAtTime(0.001, now + decay);
         noise.connect(noiseFilter);
         noiseFilter.connect(noiseGain);
@@ -5828,12 +5838,13 @@ export function triggerNodeEffect(
         noiseFilter.Q.value = 1.5;
         const noiseGain = audioContext.createGain();
         noiseGain.gain.setValueAtTime(0, now);
-        noiseGain.gain.linearRampToValueAtTime(finalVol, now + 0.002);
-        noiseGain.gain.setValueAtTime(finalVol, now + 0.002);
-        noiseGain.gain.linearRampToValueAtTime(finalVol * 0.7, now + 0.01);
-        noiseGain.gain.setValueAtTime(finalVol * 0.7, now + 0.01);
-        noiseGain.gain.linearRampToValueAtTime(finalVol * 0.9, now + 0.015);
-        noiseGain.gain.setValueAtTime(finalVol * 0.9, now + 0.015);
+        const boostedClapVol = finalVol * 10.0; // 10x volume boost for clap
+        noiseGain.gain.linearRampToValueAtTime(boostedClapVol, now + 0.002);
+        noiseGain.gain.setValueAtTime(boostedClapVol, now + 0.002);
+        noiseGain.gain.linearRampToValueAtTime(boostedClapVol * 0.7, now + 0.01);
+        noiseGain.gain.setValueAtTime(boostedClapVol * 0.7, now + 0.01);
+        noiseGain.gain.linearRampToValueAtTime(boostedClapVol * 0.9, now + 0.015);
+        noiseGain.gain.setValueAtTime(boostedClapVol * 0.9, now + 0.015);
         noiseGain.gain.exponentialRampToValueAtTime(0.001, now + decay);
         noise.connect(noiseFilter);
         noiseFilter.connect(noiseGain);
@@ -5849,7 +5860,7 @@ export function triggerNodeEffect(
         const tomStartFreq = targetFreq * 1.8;
         osc.frequency.setValueAtTime(tomStartFreq, now);
         osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.08);
-        gain.gain.setValueAtTime(finalVol, now);
+        gain.gain.setValueAtTime(finalVol * 8.0, now); // 8x volume boost for toms
         gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
         osc.connect(gain);
         gain.connect(mainGain);
@@ -5864,7 +5875,7 @@ export function triggerNodeEffect(
         osc2_cb.type = "square";
         osc1_cb.frequency.value = soundParams.baseFreq;
         osc2_cb.frequency.value = soundParams.baseFreq * 1.5;
-        gain_cb.gain.setValueAtTime(finalVol * 0.6, now);
+        gain_cb.gain.setValueAtTime(finalVol * 8.0, now); // 8x volume boost for cowbell
         gain_cb.gain.exponentialRampToValueAtTime(0.001, now + decay);
         osc1_cb.connect(gain_cb);
         osc2_cb.connect(gain_cb);
@@ -5906,7 +5917,7 @@ export function triggerNodeEffect(
           feedbackGain.connect(mod.frequency);
         }
 
-        ampGain.gain.setValueAtTime(finalVol, now);
+        ampGain.gain.setValueAtTime(finalVol * 8.0, now); // 8x volume boost for FM drums
         ampGain.gain.exponentialRampToValueAtTime(0.001, now + decay);
         carrier.connect(ampGain);
 
@@ -5958,7 +5969,7 @@ export function triggerNodeEffect(
             envelope: { attack: 0.001, decay: decay, sustain: 0.0, release: 0.01 },
             modulationEnvelope: { attack: 0.001, decay: decay * 0.8, sustain: 0.0, release: 0.01 },
           });
-          const tGain = new Tone.Gain(finalVol);
+          const tGain = new Tone.Gain(finalVol * 10.0); // 10x volume boost for Tone.js FM drums
           // Route into the node's WebAudio mainGain so mixer/FX see it
           try {
             tGain.connect(node.audioNodes.mainGain);
@@ -6481,6 +6492,9 @@ function propagateTrigger(
       handlePulseBurstPulse(currentNode, incomingConnection, {
         findNodeById,
         triggerNodeEffect,
+        propagateTrigger,
+        createVisualPulse,
+        connections,
       });
       } else if (currentNode.type === "pitchShift") {
       currentNode.animationState = 1;
@@ -12799,6 +12813,69 @@ function drawNode(node) {
     ctx.fill();
     
     return;
+  } else if (node.type === PULSE_BURST_TYPE) {
+    // Draw Pulse Burst node - shows burst pattern visually
+    const currentStyles = getComputedStyle(document.body || document.documentElement);
+    const border = (currentStyles.getPropertyValue("--pulse-border-color").trim() || "rgba(255,180,80,0.8)");
+    const accent = (currentStyles.getPropertyValue("--pulse-accent-color").trim() || "rgba(255,150,50,0.9)");
+    const size = Math.min(node.width, node.height);
+    const radius = size * 0.35;
+    const cx = node.x;
+    const cy = node.y;
+    
+    // Draw main circle
+    ctx.strokeStyle = border;
+    ctx.lineWidth = Math.max(2 / viewScale, 1.5 / viewScale);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Draw burst pattern visualization
+    const ap = node.audioParams || {};
+    const burstCount = Math.max(2, Math.min(16, ap.burstCount || 4));
+    const burstState = node.burstState || { isActive: false, currentPulse: 0 };
+    
+    // Create visual representation of burst timing
+    const innerRadius = radius * 0.6;
+    const outerRadius = radius * 0.9;
+    
+    for (let i = 0; i < burstCount; i++) {
+      const angle = (i / burstCount) * Math.PI * 2 - Math.PI / 2;
+      const x1 = cx + Math.cos(angle) * innerRadius;
+      const y1 = cy + Math.sin(angle) * innerRadius;
+      const x2 = cx + Math.cos(angle) * outerRadius;
+      const y2 = cy + Math.sin(angle) * outerRadius;
+      
+      // Highlight active burst pulse
+      const isActive = burstState.isActive && i <= (burstState.currentPulse || 0);
+      ctx.strokeStyle = isActive ? accent : colorWithAlpha(border, 0.5);
+      ctx.lineWidth = Math.max((isActive ? 3 : 1.5) / viewScale, 1 / viewScale);
+      
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    
+    // Draw center indicator
+    ctx.fillStyle = burstState.isActive ? accent : border;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Draw input/output connectors
+    const cr = 4 / viewScale;
+    ctx.fillStyle = border;
+    // Left input (pulse input)
+    ctx.beginPath();
+    ctx.arc(cx - 15, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+    // Right output (pulse output)
+    ctx.beginPath();
+    ctx.arc(cx + 15, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+    
+    return;
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
     const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
     const radarStroke =
@@ -12826,7 +12903,7 @@ function drawNode(node) {
         node.type === "reflector" ||
         node.type === "switch"
       ? 1.0
-      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE || node.type === PRORB_TYPE
+      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE || node.type === PULSE_BURST_TYPE || node.type === PRORB_TYPE
         ? 2.0
         : 1.5;
   ctx.lineWidth = Math.max(
@@ -21277,6 +21354,209 @@ function populateEditPanel() {
 
                 fragment.appendChild(section);
 
+            } else if (node && node.type === PULSE_BURST_TYPE) {
+                // Pulse Burst controls
+                const section = document.createElement("div");
+                section.classList.add("panel-section");
+
+                // Section title
+                const title = document.createElement("div");
+                title.textContent = "Pulse Burst Configuration";
+                title.style.fontWeight = "bold";
+                title.style.marginBottom = "10px";
+                section.appendChild(title);
+
+                const ap = node.audioParams || {};
+
+                // Burst Count control (2-16)
+                const countRow = document.createElement("div");
+                countRow.style.display = "flex";
+                countRow.style.alignItems = "center";
+                countRow.style.marginBottom = "8px";
+
+                const countLabel = document.createElement("label");
+                countLabel.textContent = "Count:";
+                countLabel.style.minWidth = "80px";
+                countRow.appendChild(countLabel);
+
+                const countSlider = document.createElement("input");
+                countSlider.type = "range";
+                countSlider.min = "2";
+                countSlider.max = "16";
+                countSlider.step = "1";
+                countSlider.value = ap.burstCount || 4;
+                countSlider.style.flex = "1";
+                countSlider.addEventListener("input", (e) => {
+                  const value = parseInt(e.target.value);
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === PULSE_BURST_TYPE) {
+                      n.audioParams = n.audioParams || {};
+                      n.audioParams.burstCount = value;
+                    }
+                  });
+                  countValue.textContent = value;
+                  saveState();
+                });
+                countRow.appendChild(countSlider);
+
+                const countValue = document.createElement("span");
+                countValue.textContent = ap.burstCount || 4;
+                countValue.style.minWidth = "30px";
+                countValue.style.marginLeft = "8px";
+                countRow.appendChild(countValue);
+
+                section.appendChild(countRow);
+
+                // Duration control (0.1-5.0 seconds)
+                const durationRow = document.createElement("div");
+                durationRow.style.display = "flex";
+                durationRow.style.alignItems = "center";
+                durationRow.style.marginBottom = "8px";
+
+                const durationLabel = document.createElement("label");
+                durationLabel.textContent = "Duration:";
+                durationLabel.style.minWidth = "80px";
+                durationRow.appendChild(durationLabel);
+
+                const durationSlider = document.createElement("input");
+                durationSlider.type = "range";
+                durationSlider.min = "0.1";
+                durationSlider.max = "5.0";
+                durationSlider.step = "0.1";
+                durationSlider.value = ap.burstDuration || 1.0;
+                durationSlider.style.flex = "1";
+                durationSlider.addEventListener("input", (e) => {
+                  const value = parseFloat(e.target.value);
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === PULSE_BURST_TYPE) {
+                      n.audioParams = n.audioParams || {};
+                      n.audioParams.burstDuration = value;
+                    }
+                  });
+                  durationValue.textContent = value.toFixed(1) + "s";
+                  saveState();
+                });
+                durationRow.appendChild(durationSlider);
+
+                const durationValue = document.createElement("span");
+                durationValue.textContent = (ap.burstDuration || 1.0).toFixed(1) + "s";
+                durationValue.style.minWidth = "40px";
+                durationValue.style.marginLeft = "8px";
+                durationRow.appendChild(durationValue);
+
+                section.appendChild(durationRow);
+
+                // Pattern selector
+                const patternRow = document.createElement("div");
+                patternRow.style.display = "flex";
+                patternRow.style.alignItems = "center";
+                patternRow.style.marginBottom = "8px";
+
+                const patternLabel = document.createElement("label");
+                patternLabel.textContent = "Pattern:";
+                patternLabel.style.minWidth = "80px";
+                patternRow.appendChild(patternLabel);
+
+                const patternSelect = document.createElement("select");
+                patternSelect.style.flex = "1";
+                const patterns = ['even', 'accelerate', 'decelerate', 'random'];
+                patterns.forEach(pattern => {
+                  const option = document.createElement("option");
+                  option.value = pattern;
+                  option.textContent = pattern.charAt(0).toUpperCase() + pattern.slice(1);
+                  patternSelect.appendChild(option);
+                });
+                patternSelect.value = ap.burstPattern || 'even';
+                patternSelect.addEventListener("change", (e) => {
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === PULSE_BURST_TYPE) {
+                      n.audioParams = n.audioParams || {};
+                      n.audioParams.burstPattern = e.target.value;
+                    }
+                  });
+                  saveState();
+                });
+                patternRow.appendChild(patternSelect);
+
+                section.appendChild(patternRow);
+
+                // Pattern Intensity control
+                const intensityRow = document.createElement("div");
+                intensityRow.style.display = "flex";
+                intensityRow.style.alignItems = "center";
+                intensityRow.style.marginBottom = "8px";
+
+                const intensityLabel = document.createElement("label");
+                intensityLabel.textContent = "Intensity:";
+                intensityLabel.style.minWidth = "80px";
+                intensityRow.appendChild(intensityLabel);
+
+                const intensitySlider = document.createElement("input");
+                intensitySlider.type = "range";
+                intensitySlider.min = "0";
+                intensitySlider.max = "1";
+                intensitySlider.step = "0.1";
+                intensitySlider.value = ap.patternIntensity || 0.5;
+                intensitySlider.style.flex = "1";
+                intensitySlider.addEventListener("input", (e) => {
+                  const value = parseFloat(e.target.value);
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === PULSE_BURST_TYPE) {
+                      n.audioParams = n.audioParams || {};
+                      n.audioParams.patternIntensity = value;
+                    }
+                  });
+                  intensityValue.textContent = value.toFixed(1);
+                  saveState();
+                });
+                intensityRow.appendChild(intensitySlider);
+
+                const intensityValue = document.createElement("span");
+                intensityValue.textContent = (ap.patternIntensity || 0.5).toFixed(1);
+                intensityValue.style.minWidth = "30px";
+                intensityValue.style.marginLeft = "8px";
+                intensityRow.appendChild(intensityValue);
+
+                section.appendChild(intensityRow);
+
+                // Retriggerable checkbox
+                const retriggerRow = document.createElement("div");
+                retriggerRow.style.display = "flex";
+                retriggerRow.style.alignItems = "center";
+                retriggerRow.style.marginBottom = "8px";
+
+                const retriggerCheckbox = document.createElement("input");
+                retriggerCheckbox.type = "checkbox";
+                retriggerCheckbox.checked = ap.retriggerable !== false;
+                retriggerCheckbox.addEventListener("change", (e) => {
+                  selectedArray.forEach((elData) => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === PULSE_BURST_TYPE) {
+                      n.audioParams = n.audioParams || {};
+                      n.audioParams.retriggerable = e.target.checked;
+                    }
+                  });
+                  saveState();
+                });
+                retriggerRow.appendChild(retriggerCheckbox);
+
+                const retriggerLabel = document.createElement("label");
+                retriggerLabel.textContent = "Retriggerable (new pulse cancels current burst)";
+                retriggerLabel.style.marginLeft = "8px";
+                retriggerRow.appendChild(retriggerLabel);
+
+                section.appendChild(retriggerRow);
+
+                // Add center panel
+                const burstCenterPanel = buildPulseBurstPanel(node, { document });
+                if (burstCenterPanel) section.appendChild(burstCenterPanel);
+
+                fragment.appendChild(section);
+
             } else if (node && (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE)) {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
@@ -23181,6 +23461,11 @@ function populateToolMenu() {
       icon: "🎯",
       label: "Receive Canvas Orb",
       handler: () => setupAddTool(null, CANVAS_RECEIVE_ORB_TYPE, false),
+    },
+    {
+      icon: "💥",
+      label: "Pulse Burst",
+      handler: () => setupAddTool(null, PULSE_BURST_TYPE, false),
     },
   ];
 
@@ -25884,6 +26169,16 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.isStartNode = false;
     delete newNode.starPoints;
     delete newNode.baseHue;
+  } else if (type === PULSE_BURST_TYPE) {
+    const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 120;
+    newNode.width = size;
+    newNode.height = size;
+    initPulseBurstNode(newNode, {
+      DEFAULT_PULSE_INTENSITY,
+    });
+    newNode.isStartNode = false;
+    delete newNode.starPoints;
+    delete newNode.baseHue;
     delete newNode.color;
   }
 
@@ -26824,6 +27119,7 @@ if (connectStringBtn)
     setActiveTool("connect_string"),
   );
 deleteBtn.addEventListener("click", () => setActiveTool("delete"));
+
 if (eraserBtn)
   eraserBtn.addEventListener("click", () => setActiveTool("eraser"));
 if (mixerToggleBtn) {
