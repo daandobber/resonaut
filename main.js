@@ -2598,7 +2598,44 @@ export function createAudioNodesForNode(node) {
         if (node.audioParams?.waveform && node.audioParams.waveform.startsWith('sampler_')) {
             return createSamplerOrbAudioNodes(node);
         } else if (node.audioParams && node.audioParams.engine === 'tonefm') {
-            return createToneFmSynthOrb(node);
+            const audioNodes = createToneFmSynthOrb(node);
+            
+            audioNodes.orbitoneSynths = [];
+            if (
+                node.audioParams.orbitonesEnabled &&
+                node.audioParams.orbitoneCount > 0 &&
+                node.audioParams.orbitoneIntervals
+            ) {
+                const orbitFreqs = getOrbitoneFrequencies(
+                    node.audioParams.scaleIndex,
+                    node.audioParams.orbitoneCount,
+                    node.audioParams.orbitoneIntervals,
+                    0,
+                    currentScale,
+                    node.audioParams.pitch,
+                ).slice(1);
+                
+                orbitFreqs.forEach((freq) => {
+                    const orbitone = audioNodes.createOrbitone(freq);
+                    orbitone.gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                    orbitone.gainNode.connect(audioNodes.gainNode);
+                    
+                    if (globalThis.mistEffectInput) {
+                        orbitone.mistSendGain = new Tone.Gain(0);
+                        orbitone.gainNode.connect(orbitone.mistSendGain);
+                        orbitone.mistSendGain.connect(globalThis.mistEffectInput);
+                    }
+                    if (globalThis.crushEffectInput) {
+                        orbitone.crushSendGain = new Tone.Gain(0);
+                        orbitone.gainNode.connect(orbitone.crushSendGain);
+                        orbitone.crushSendGain.connect(globalThis.crushEffectInput);
+                    }
+                    
+                    audioNodes.orbitoneSynths.push(orbitone);
+                });
+            }
+            
+            return audioNodes;
         } else if (node.audioParams && (node.audioParams.engine === 'pulse' || node.audioParams.waveform === 'pulse')) {
             return createPulseSynthOrb(node);
         } else if (node.audioParams && node.audioParams.engine === 'tone') {
@@ -23454,13 +23491,22 @@ export function handleNewWorkspace(skipConfirm = false) {
   clearEditPanel();
   updateConstellationGroup();
   updateGroupControlsUI();
-  // Clear visual patch effects (mist and crush)
+  // Clear visual patch effects (mist and crush) - both from patchState and directly from DOM
   patchState.mistGroups.forEach(group => {
     if (group.container) group.container.remove();
   });
   patchState.crushGroups.forEach(group => {
     if (group.container) group.container.remove();
   });
+  
+  // Also clear any remaining patch elements directly from the DOM layers
+  if (mistLayer) {
+    mistLayer.innerHTML = '';
+  }
+  if (crushLayer) {
+    crushLayer.innerHTML = '';
+  }
+  
   patchState.mistGroups = [];
   patchState.crushGroups = [];
   patchState.currentMistGroup = null;

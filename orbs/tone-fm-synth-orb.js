@@ -248,6 +248,72 @@ export function createToneFmSynthOrb(node) {
   op3.osc.detune.value = p.modulator2Detune ?? 0;
   op4.osc.detune.value = p.modulator3Detune ?? 0;
 
+  function createOrbitone(freq) {
+    const orbOp1 = createOperator('carrier', 'carrier');
+    const orbOp2 = createOperator('modulator');
+    const orbOp3 = createOperator('modulator2');
+    const orbOp4 = createOperator('modulator3');
+    
+    const orbFilter = new Tone.Filter(p.filterCutoff ?? 20000, p.filterType ?? 'lowpass');
+    orbFilter.Q.value = p.filterResonance ?? 1;
+    
+    const orbGainNode = new Tone.Gain(0);
+    orbFilter.connect(orbGainNode);
+    
+    const orbOperators = [null, orbOp1, orbOp2, orbOp3, orbOp4];
+    
+    function applyOrbAlgorithm(index = 0) {
+      const alg = fmAlgorithms[index] || fmAlgorithms[0];
+      for (let i = 1; i <= 4; i++) {
+        orbOperators[i].modGain.disconnect();
+        orbOperators[i].outGain.disconnect();
+      }
+      alg.connections.forEach(({ source, target }) => {
+        orbOperators[source].modGain.connect(orbOperators[target].osc.frequency);
+      });
+      alg.carriers.forEach(idx => {
+        orbOperators[idx].outGain.connect(orbFilter);
+      });
+    }
+    
+    applyOrbAlgorithm(p.algorithm ?? 0);
+    
+    orbOp1.osc.frequency.setValueAtTime(freq, 0);
+    orbOp2.osc.frequency.setValueAtTime(freq * (p.modulatorRatio ?? 1), 0);
+    orbOp3.osc.frequency.setValueAtTime(freq * (p.modulator2Ratio ?? 1), 0);
+    orbOp4.osc.frequency.setValueAtTime(freq * (p.modulator3Ratio ?? 1), 0);
+    
+    orbOp1.osc.detune.value = p.carrierDetune ?? p.detune ?? 0;
+    orbOp2.osc.detune.value = p.modulatorDetune ?? 0;
+    orbOp3.osc.detune.value = p.modulator2Detune ?? 0;
+    orbOp4.osc.detune.value = p.modulator3Detune ?? 0;
+    
+    [orbOp1, orbOp2, orbOp3, orbOp4].forEach(o => o.osc.start());
+    
+    const orbTriggerStart = (time, velocity = 1) => {
+      orbOp1.env.triggerAttack(time, velocity);
+      orbOp2.env.triggerAttack(time);
+      orbOp3.env.triggerAttack(time);
+      orbOp4.env.triggerAttack(time);
+    };
+    
+    const orbTriggerStop = (time) => {
+      orbOp1.env.triggerRelease(time);
+      orbOp2.env.triggerRelease(time);
+      orbOp3.env.triggerRelease(time);
+      orbOp4.env.triggerRelease(time);
+    };
+    
+    return {
+      gainNode: orbGainNode,
+      triggerStart: orbTriggerStart,
+      triggerStop: orbTriggerStop,
+      setAlgorithm: applyOrbAlgorithm,
+      operators: orbOperators,
+      filter: orbFilter,
+    };
+  }
+
   return {
     oscillator1: op1.osc,
     carrierEnv: op1.env,
@@ -272,5 +338,6 @@ export function createToneFmSynthOrb(node) {
     triggerStart,
     triggerStop,
     setAlgorithm: applyAlgorithm,
+    createOrbitone,
   };
 }

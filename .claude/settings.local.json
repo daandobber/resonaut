@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(python:*)",
+      "Bash(npx http-server:*)"
     ],
     "deny": [],
     "ask": []
