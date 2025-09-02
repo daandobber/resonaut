@@ -65,6 +65,8 @@ import { createDailyTipManager } from './utils/dailyTips.js';
 import * as el from './utils/domElements.js';
 import { ONE_WAY_TYPE, drawArrow, getArrowPosition } from './connectors.js';
 import { CIRCLE_FIFTHS_TYPE, applyZodiacPresetToCircle, initCircleNode as initCircleFifthsNode, handleCirclePulse as handleCircleFifthsPulse, buildCenterInstrumentPanel as buildCircleCenterPanel } from './orbs/circle-fifths.js';
+import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS } from './orbs/tonnetz-sequencer.js';
+import { PULSE_BURST_TYPE, initPulseBurstNode, handlePulseBurstPulse, buildPulseBurstPanel } from './orbs/pulse-burst.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
 import { generateWaveformPath } from "./utils/waveformUtils.js";
 import { SAMPLER_DEFINITIONS } from './samplers.js';
@@ -548,6 +550,30 @@ if (toolbarPulsars && typeof document.createElement === 'function') {
       toolbarPulsars.appendChild(btn);
     }
   } catch { toolbarPulsars.appendChild(btn); }
+
+  // Add Tonnetz Sequencer button
+  const tonnetzBtn = document.createElement('button');
+  tonnetzBtn.id = 'addTonnetzBtn';
+  tonnetzBtn.title = 'Add Tonnetz Sequencer (Harmonic Network)';
+  tonnetzBtn.textContent = '⬢';
+  tonnetzBtn.addEventListener('click', (e) => {
+    setupAddTool(e.currentTarget, TONNETZ_TYPE, false);
+  });
+  try {
+    toolbarPulsars.insertBefore(tonnetzBtn, btn.nextSibling);
+  } catch { toolbarPulsars.appendChild(tonnetzBtn); }
+  
+  // Add Pulse Burst button
+  const pulseBurstBtn = document.createElement('button');
+  pulseBurstBtn.id = 'addPulseBurstBtn';
+  pulseBurstBtn.title = 'Add Pulse Burst (1 → Many Pulses)';
+  pulseBurstBtn.textContent = '💥'; // Could also use: ⭐ 🎆 ✨ ⚡ 💫
+  pulseBurstBtn.addEventListener('click', (e) => {
+    setupAddTool(e.currentTarget, PULSE_BURST_TYPE, false);
+  });
+  try {
+    toolbarPulsars.appendChild(pulseBurstBtn);
+  } catch { toolbarPulsars.appendChild(pulseBurstBtn); }
 }
 const addTimelineGridBtn =
   typeof document !== 'undefined' && typeof document.getElementById === 'function'
@@ -1492,7 +1518,7 @@ function updateAllConnectionLengths() {
 function findNodeAt(worldX, worldY) {
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
-    if (n && n.isEmbeddedInCircleId) continue; // embedded center instruments are not selectable
+    if (n && (n.isEmbeddedInCircleId || n.isEmbeddedInTonnetzId)) continue; // embedded center instruments are not selectable
     if (n.type === TIMELINE_GRID_TYPE || n.type === GRID_SEQUENCER_TYPE || n.type === "pulsar_grid") {
       const rectX1 = n.x - n.width / 2;
       const rectY1 = n.y - n.height / 2;
@@ -1568,10 +1594,15 @@ function getCrankRadarHandleGripPos(n) {
 function getConnectionPoint(node, useHandle) {
   if (
     typeof useHandle === 'number' &&
-    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid' || node.type === CIRCLE_FIFTHS_TYPE)
+    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid' || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE)
   ) {
     if (node.type === CIRCLE_FIFTHS_TYPE) {
       const offset = 12;
+      if (useHandle < 0) return { x: node.x - offset, y: node.y };
+      return { x: node.x + offset, y: node.y };
+    }
+    if (node.type === TONNETZ_TYPE) {
+      const offset = 15;
       if (useHandle < 0) return { x: node.x - offset, y: node.y };
       return { x: node.x + offset, y: node.y };
     }
@@ -4805,9 +4836,78 @@ export function triggerNodeEffect(
         audioNodes.triggerStart(now, intensity);
       }
 
+      // Handle orbitones for FM synth
+      if (audioNodes.orbitoneSynths && audioNodes.orbitoneSynths.length > 0 && params.orbitonesEnabled) {
+        const allFreqs = getOrbitoneFrequencies(
+          effectiveScaleIndex,
+          params.orbitoneCount,
+          params.orbitoneIntervals,
+          0,
+          currentScale,
+          effectivePitch,
+        ).slice(1);
+        
+        const orbitoneMix = params.orbitoneMix ?? 0.5;
+        const mainVolume = intensity * (1.0 - orbitoneMix);
+        const orbitoneVolume = (intensity * orbitoneMix) / audioNodes.orbitoneSynths.length;
+        
+        // Set main synth volume
+        if (gainNode && gainNode.gain) {
+          gainNode.gain.setValueAtTime(mainVolume, now);
+        }
+        
+        // Trigger orbitones with timing offsets
+        audioNodes.orbitoneSynths.forEach((orbitone, idx) => {
+          if (idx < allFreqs.length) {
+            // Calculate timing offset for this orbitone
+            const offMs = params.orbitoneTimingOffsets && 
+                         params.orbitoneTimingOffsets[idx] !== undefined
+                         ? params.orbitoneTimingOffsets[idx]
+                         : 0;
+            const startT = now + offMs / 1000.0;
+            
+            // Update orbitone frequency
+            if (orbitone.operators && orbitone.operators[1] && orbitone.operators[1].osc) {
+              const freq = allFreqs[idx];
+              orbitone.operators[1].osc.frequency.setValueAtTime(freq, startT);
+              orbitone.operators[2].osc.frequency.setValueAtTime(freq * (params.modulatorRatio ?? 1), startT);
+              orbitone.operators[3].osc.frequency.setValueAtTime(freq * (params.modulator2Ratio ?? 1), startT);
+              orbitone.operators[4].osc.frequency.setValueAtTime(freq * (params.modulator3Ratio ?? 1), startT);
+            }
+            
+            // Set orbitone volume and trigger with timing
+            if (orbitone.gainNode && orbitone.gainNode.gain) {
+              orbitone.gainNode.gain.setValueAtTime(orbitoneVolume, startT);
+            }
+            if (orbitone.triggerStart) {
+              orbitone.triggerStart(startT, intensity);
+            }
+          }
+        });
+      } else {
+        // No orbitones, use full volume for main synth
+        if (gainNode && gainNode.gain) {
+          gainNode.gain.setValueAtTime(intensity, now);
+        }
+      }
+
       const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
       if (audioNodes.triggerStop) {
         audioNodes.triggerStop(noteOffTime);
+      }
+      
+      // Stop orbitones too with proper timing
+      if (audioNodes.orbitoneSynths && audioNodes.orbitoneSynths.length > 0) {
+        audioNodes.orbitoneSynths.forEach((orbitone, idx) => {
+          if (orbitone.triggerStop) {
+            const offMs = params.orbitoneTimingOffsets && 
+                         params.orbitoneTimingOffsets[idx] !== undefined
+                         ? params.orbitoneTimingOffsets[idx]
+                         : 0;
+            const orbitoneStopTime = noteOffTime + offMs / 1000.0;
+            orbitone.triggerStop(orbitoneStopTime);
+          }
+        });
       }
 
       setTimeout(() => {
@@ -6359,6 +6459,29 @@ function propagateTrigger(
         DELAY_FACTOR,
         highlightCircleDegreeBars,
       });
+    } else if (
+      currentNode.type === TONNETZ_TYPE
+    ) {
+      // Delegate pulse handling to Tonnetz module
+      playPrimaryAudioEffect = false;
+      canPropagateOriginalPulseFurther = false;
+      handleTonnetzPulse(currentNode, incomingConnection, {
+        findNodeById,
+        triggerNodeEffect,
+        MIN_SCALE_INDEX,
+        MAX_SCALE_INDEX,
+        highlightTonnetzPosition,
+      });
+    } else if (
+      currentNode.type === PULSE_BURST_TYPE
+    ) {
+      // Delegate pulse handling to Pulse Burst module
+      playPrimaryAudioEffect = false;
+      canPropagateOriginalPulseFurther = false;
+      handlePulseBurstPulse(currentNode, incomingConnection, {
+        findNodeById,
+        triggerNodeEffect,
+      });
       } else if (currentNode.type === "pitchShift") {
       currentNode.animationState = 1;
       playPrimaryAudioEffect = false;
@@ -6874,6 +6997,36 @@ function playSingleRetrigger(
           try { source.disconnect(); } catch (e) {}
         };
       }
+    } else if (params.engine === 'tonefm' && audioNodes.triggerStart && audioNodes.triggerStop) {
+      // Handle FM synth retrigger like drums - use triggerNodeEffect with proper timing
+      const tempNodeForFmRetrigger = {
+        ...node,
+        audioParams: {
+          ...node.audioParams,
+          ...tempAudioParamsForRetrigger,
+        },
+        audioNodes: node.audioNodes,
+      };
+      
+      // Schedule the trigger using precise audio context timing
+      const delay = Math.max(0, (scheduledPlayTime - now) * 1000);
+      
+      if (delay < 10) {
+        // If very close to now, trigger immediately
+        triggerNodeEffect(tempNodeForFmRetrigger, {
+          intensity: currentVolume,
+          isRetrigger: true,
+        }, null, 0.3, transpositionOverride);
+      } else {
+        // Use setTimeout for delays > 10ms
+        setTimeout(() => {
+          triggerNodeEffect(tempNodeForFmRetrigger, {
+            intensity: currentVolume,
+            isRetrigger: true,
+          }, null, 0.3, transpositionOverride);
+        }, delay);
+      }
+      
     } else if (audioNodes.oscillator1 && audioNodes.gainNode) {
       const {
         oscillator1,
@@ -7694,6 +7847,58 @@ function createCircleDegreeDisplay(node) {
     window.addEventListener('scale-changed', entry.scaleHandler);
   });
   return wrap;
+}
+
+function highlightTonnetzPosition(nodeId, pos, scaleIndices, intensity) {
+  try {
+    const node = findNodeById(nodeId);
+    if (!node || node.type !== TONNETZ_TYPE) return;
+    
+    // Store highlight data for the drawing function to use
+    if (!node.highlightData) {
+      node.highlightData = {};
+    }
+    
+    node.highlightData.currentPosition = pos;
+    node.highlightData.scaleIndices = scaleIndices || [];
+    node.highlightData.intensity = Math.max(0, Math.min(1, intensity || 1));
+    node.highlightData.timestamp = Date.now();
+    
+    // Add visual pulse effect that maintains minimum visibility for sequencers
+    const decayTime = 800; // Shorter decay for more responsive feel
+    const startIntensity = node.highlightData.intensity;
+    const minIntensity = 0.2; // Keep some highlight visible for active sequencers
+    
+    // Cancel any existing animation
+    if (node.highlightData.animationId) {
+      cancelAnimationFrame(node.highlightData.animationId);
+    }
+    
+    const animate = () => {
+      const elapsed = Date.now() - node.highlightData.timestamp;
+      
+      if (elapsed > decayTime) {
+        // For sequencers, maintain minimum visibility instead of going to 0
+        node.highlightData.intensity = minIntensity;
+        node.highlightData.animationId = requestAnimationFrame(animate);
+        return;
+      }
+      
+      // Exponential decay with minimum floor
+      const progress = elapsed / decayTime;
+      const decayedIntensity = startIntensity * Math.exp(-progress * 2);
+      node.highlightData.intensity = Math.max(minIntensity, decayedIntensity);
+      
+      // Continue animation indefinitely for active sequencers
+      node.highlightData.animationId = requestAnimationFrame(animate);
+    };
+    
+    node.highlightData.animationId = requestAnimationFrame(animate);
+    
+    console.debug(`Tonnetz node ${nodeId} at (${pos.x},${pos.y}) playing indices:`, scaleIndices);
+  } catch (err) {
+    console.warn('Error in highlightTonnetzPosition:', err);
+  }
 }
 
 function highlightCircleDegreeBars(nodeId, payload = [], intensity = 1.0) {
@@ -12433,6 +12638,167 @@ function drawNode(node) {
       ctx.stroke();
     } catch {}
     return;
+  } else if (node.type === TONNETZ_TYPE) {
+    // Draw hexagonal Tonnetz sequencer with triangular cells
+    const currentStyles = getComputedStyle(document.body || document.documentElement);
+    const border = (currentStyles.getPropertyValue("--tonnetz-border-color").trim() || "rgba(180,220,255,0.8)");
+    const accent = (currentStyles.getPropertyValue("--tonnetz-accent-color").trim() || "rgba(120,200,255,0.9)");
+    const size = Math.min(node.width, node.height);
+    const hexRadius = size * 0.4;
+    const cx = node.x;
+    const cy = node.y;
+    
+    // Draw hexagonal boundary
+    ctx.strokeStyle = border;
+    ctx.lineWidth = Math.max(2 / viewScale, 1.5 / viewScale);
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = (i * Math.PI) / 3;
+      const x = cx + hexRadius * Math.cos(angle);
+      const y = cy + hexRadius * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    
+    // Draw proper Tonnetz tessellation as continuous triangular mesh
+    const meshScale = hexRadius * 0.75; // Make mesh bigger to fill hexagon
+    const gridSize = 4; // Larger grid for better coverage
+    
+    // Create points for hexagonal triangular grid using proper Tonnetz coordinates
+    const gridPoints = [];
+    
+    // Generate points in triangular coordinate system (axial coordinates)
+    for (let q = -gridSize; q <= gridSize; q++) {
+      for (let r = Math.max(-gridSize, -q-gridSize); r <= Math.min(gridSize, -q+gridSize); r++) {
+        // Convert axial coordinates to pixel positions
+        const x = meshScale * (3/2 * q) / gridSize;
+        const y = meshScale * (Math.sqrt(3)/2 * q + Math.sqrt(3) * r) / gridSize;
+        
+        // Only include points within hexagonal boundary
+        const distFromCenter = Math.sqrt(x*x + y*y);
+        if (distFromCenter <= hexRadius * 0.85) {
+          gridPoints.push({ q, r, s: -q-r, x: cx + x, y: cy + y });
+        }
+      }
+    }
+    
+    // Draw triangular mesh using the grid points
+    ctx.strokeStyle = colorWithAlpha(border, 0.3);
+    ctx.lineWidth = Math.max(1 / viewScale, 0.5 / viewScale);
+    
+    // Draw mesh lines
+    gridPoints.forEach(point => {
+      // Connect to adjacent points to form triangular mesh
+      const neighbors = gridPoints.filter(p => {
+        const dq = Math.abs(p.q - point.q);
+        const dr = Math.abs(p.r - point.r);
+        const ds = Math.abs(p.s - point.s);
+        return (dq === 1 && dr === 0 && ds === 1) || 
+               (dq === 0 && dr === 1 && ds === 1) ||
+               (dq === 1 && dr === 1 && ds === 0);
+      });
+      
+      neighbors.forEach(neighbor => {
+        if (neighbor.q > point.q || (neighbor.q === point.q && neighbor.r > point.r)) {
+          ctx.beginPath();
+          ctx.moveTo(point.x, point.y);
+          ctx.lineTo(neighbor.x, neighbor.y);
+          ctx.stroke();
+        }
+      });
+    });
+    
+    // Draw filled triangular regions for current/highlighted positions
+    gridPoints.forEach(point => {
+      const isCurrentPos = node.currentPos && node.currentPos.x === point.q && node.currentPos.y === point.r;
+      const highlightData = node.highlightData;
+      const isHighlighted = highlightData && highlightData.currentPosition && 
+                           highlightData.currentPosition.x === point.q && 
+                           highlightData.currentPosition.y === point.r &&
+                           highlightData.intensity > 0;
+      
+      if (isCurrentPos || isHighlighted) {
+        const intensity = isHighlighted ? highlightData.intensity : 0.7;
+        const pulseIntensity = isHighlighted ? Math.sin(Date.now() * 0.01) * 0.3 + 0.7 : 1;
+        
+        // Find surrounding triangles and fill them
+        const surroundingPoints = gridPoints.filter(p => {
+          const dq = Math.abs(p.q - point.q);
+          const dr = Math.abs(p.r - point.r);
+          const ds = Math.abs(p.s - point.s);
+          return dq <= 1 && dr <= 1 && ds <= 1 && (dq + dr + ds <= 2);
+        });
+        
+        if (surroundingPoints.length >= 3) {
+          ctx.fillStyle = colorWithAlpha(accent, 0.15 + (intensity * 0.25 * pulseIntensity));
+          ctx.beginPath();
+          ctx.moveTo(surroundingPoints[0].x, surroundingPoints[0].y);
+          for (let i = 1; i < surroundingPoints.length; i++) {
+            ctx.lineTo(surroundingPoints[i].x, surroundingPoints[i].y);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    });
+    
+    // Draw node points and labels
+    gridPoints.forEach(point => {
+      // Draw node point
+      ctx.fillStyle = colorWithAlpha(border, 0.6);
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, Math.max(2 / viewScale, 2), 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Add note label
+      if (meshScale > 60 / viewScale) {
+        const note = ((7 * point.q + 4 * point.r) % 12 + 12) % 12;
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        ctx.fillStyle = colorWithAlpha(border, 0.9);
+        ctx.font = `${Math.max(10 / viewScale, 8)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(noteNames[note], point.x, point.y - 12 / viewScale);
+      }
+    });
+    
+    // Center instrument indicator
+    const cr = 4 / viewScale;
+    if (node.audioParams?.centerAttachedNodeId) {
+      const att = findNodeById(node.audioParams.centerAttachedNodeId);
+      const coreR = Math.max(8 / viewScale, hexRadius * 0.15);
+      const coreFill = colorWithAlpha(accent, 0.35);
+      const coreStroke = colorWithAlpha(accent, 0.9);
+      ctx.fillStyle = coreFill;
+      ctx.strokeStyle = coreStroke;
+      ctx.lineWidth = Math.max(2 / viewScale, 1.5 / viewScale);
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Anchor attached node at center
+      if (att) {
+        att.x = cx;
+        att.y = cy;
+        att.isEmbeddedInTonnetzId = node.id;
+      }
+    } else {
+      // Fallback: show center output connector
+      ctx.fillStyle = border;
+      ctx.beginPath();
+      ctx.arc(cx + 15, cy, cr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Left input connector dot (handle -1)
+    ctx.beginPath();
+    ctx.arc(cx - 15, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+    
+    return;
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
     const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
     const radarStroke =
@@ -12460,7 +12826,7 @@ function drawNode(node) {
         node.type === "reflector" ||
         node.type === "switch"
       ? 1.0
-      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === PRORB_TYPE
+      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE || node.type === PRORB_TYPE
         ? 2.0
         : 1.5;
   ctx.lineWidth = Math.max(
@@ -20645,6 +21011,272 @@ function populateEditPanel() {
 
                 fragment.appendChild(section);
 
+            } else if (node && node.type === TONNETZ_TYPE) {
+                const section = document.createElement("div");
+                section.classList.add("panel-section");
+
+                // Preset selection buttons
+                const presetWrap = document.createElement('div');
+                presetWrap.classList.add('tonnetz-preset-wrap');
+                const presetGrid = document.createElement('div');
+                presetGrid.classList.add('tonnetz-preset-grid');
+                presetGrid.style.display = 'grid';
+                presetGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+                presetGrid.style.gap = '4px';
+                presetGrid.style.marginBottom = '8px';
+
+                const currentPreset = node.audioParams?.preset || 'Classical';
+                const presetNames = Object.keys(TONNETZ_PRESETS);
+                const presetButtons = {};
+
+                presetNames.forEach(presetName => {
+                    const btn = document.createElement('button');
+                    btn.className = 'tonnetz-preset-btn';
+                    btn.textContent = presetName;
+                    btn.style.padding = '4px 8px';
+                    btn.style.fontSize = '11px';
+                    if (presetName === currentPreset) btn.classList.add('selected');
+                    
+                    btn.addEventListener('click', () => {
+                        selectedArray.forEach(elData => {
+                            const n = findNodeById(elData.id);
+                            if (n && n.type === TONNETZ_TYPE) {
+                                if (!n.audioParams) n.audioParams = {};
+                                n.audioParams.preset = presetName;
+                                // Apply preset values
+                                const preset = TONNETZ_PRESETS[presetName];
+                                Object.assign(n.audioParams, preset);
+                            }
+                        });
+                        Object.values(presetButtons).forEach(b => b.classList.remove('selected'));
+                        btn.classList.add('selected');
+                        saveState();
+                        populateEditPanel(); // Refresh to show new values
+                    });
+                    
+                    presetGrid.appendChild(btn);
+                    presetButtons[presetName] = btn;
+                });
+
+                presetWrap.appendChild(presetGrid);
+                section.appendChild(presetWrap);
+
+                // Sequencing Mode select
+                const modeLabel = document.createElement("label");
+                modeLabel.htmlFor = `edit-tonnetz-mode-${node.id}`;
+                modeLabel.textContent = "Mode:";
+                modeLabel.style.marginRight = "6px";
+                const modeSelect = document.createElement("select");
+                modeSelect.id = `edit-tonnetz-mode-${node.id}`;
+                const modes = [
+                    { v: 'triad', t: 'Triad Progression' },
+                    { v: 'neo_riemannian', t: 'Neo-Riemannian' },
+                    { v: 'hexagon_walk', t: 'Hexagon Walk' },
+                    { v: 'random_walk', t: 'Random Walk' },
+                ];
+                const curMode = node.audioParams?.sequencingMode || 'triad';
+                modes.forEach(opt => {
+                    const o = document.createElement('option');
+                    o.value = opt.v; o.textContent = opt.t;
+                    if (opt.v === curMode) o.selected = true;
+                    modeSelect.appendChild(o);
+                });
+                modeSelect.addEventListener('change', (e) => {
+                    selectedArray.forEach(elData => {
+                        const n = findNodeById(elData.id);
+                        if (n && n.type === TONNETZ_TYPE) {
+                            if (!n.audioParams) n.audioParams = {};
+                            n.audioParams.sequencingMode = e.target.value;
+                        }
+                    });
+                    saveState();
+                });
+                section.appendChild(modeLabel);
+                section.appendChild(modeSelect);
+                section.appendChild(document.createElement('br'));
+
+                // Harmonic parameters section
+                const harmonyTitle = document.createElement('div');
+                harmonyTitle.style.margin = '8px 0 4px 0';
+                harmonyTitle.style.fontWeight = '600';
+                harmonyTitle.textContent = 'Harmonic Parameters';
+                section.appendChild(harmonyTitle);
+
+                const harmonyGrid = document.createElement('div');
+                harmonyGrid.style.display = 'grid';
+                harmonyGrid.style.gridTemplateColumns = 'repeat(4, 50px)';
+                harmonyGrid.style.gap = '6px';
+                harmonyGrid.style.marginBottom = '8px';
+                section.appendChild(harmonyGrid);
+
+                const addTonnetzDial = (key, label, min, max, step, paramKey, defaultValue) => {
+                    const wrap = document.createElement('div');
+                    wrap.style.display = 'flex';
+                    wrap.style.flexDirection = 'column';
+                    wrap.style.alignItems = 'center';
+                    wrap.style.width = '50px';
+                    
+                    const target = document.createElement('div');
+                    target.style.width = '40px';
+                    target.style.height = '40px';
+                    wrap.appendChild(target);
+                    
+                    const lab = document.createElement('div');
+                    lab.textContent = label;
+                    lab.style.fontSize = '10px';
+                    lab.style.marginTop = '2px';
+                    wrap.appendChild(lab);
+                    
+                    const currentValue = node.audioParams?.[paramKey] ?? defaultValue;
+                    
+                    getNexusForCircle().then((Nexus) => {
+                        if (Nexus && Nexus.Dial) {
+                            const dial = new Nexus.Dial(target, {
+                                size: [35, 35],
+                                interaction: 'radial',
+                                mode: 'relative',
+                                min, max, step,
+                                value: currentValue
+                            });
+                            try {
+                                const st = getComputedStyle(document.body);
+                                dial.colorize('fill', (st.getPropertyValue('--button-bg') || '#304070').trim());
+                                dial.colorize('accent', (st.getPropertyValue('--button-active') || '#6075b0').trim());
+                            } catch {}
+                            dial.on('change', (v) => {
+                                const newVal = Math.max(min, Math.min(max, v));
+                                selectedArray.forEach(elData => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === TONNETZ_TYPE) {
+                                        if (!n.audioParams) n.audioParams = {};
+                                        n.audioParams[paramKey] = newVal;
+                                    }
+                                });
+                                saveState();
+                            });
+                        } else {
+                            const input = document.createElement('input');
+                            input.type = 'range';
+                            input.min = min;
+                            input.max = max;
+                            input.step = step;
+                            input.value = currentValue;
+                            input.style.width = '40px';
+                            target.appendChild(input);
+                            input.addEventListener('input', (e) => {
+                                const newVal = parseFloat(e.target.value);
+                                selectedArray.forEach(elData => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === TONNETZ_TYPE) {
+                                        if (!n.audioParams) n.audioParams = {};
+                                        n.audioParams[paramKey] = newVal;
+                                    }
+                                });
+                                saveState();
+                            });
+                        }
+                    });
+                    
+                    harmonyGrid.appendChild(wrap);
+                };
+
+                // Add harmonic parameter dials
+                addTonnetzDial('chordProb', 'Chord', 0, 1, 0.01, 'chordProbability', 0.7);
+                addTonnetzDial('spread', 'Spread', 0, 2, 0.1, 'harmonicSpread', 1.0);
+                addTonnetzDial('velocity', 'Vel', 0, 1, 0.01, 'velocityJitter', 0.2);
+                addTonnetzDial('drift', 'Drift', 0, 1, 0.01, 'harmonicDrift', 0.1);
+
+                // Movement parameters section
+                const movementTitle = document.createElement('div');
+                movementTitle.style.margin = '8px 0 4px 0';
+                movementTitle.style.fontWeight = '600';
+                movementTitle.textContent = 'Movement Parameters';
+                section.appendChild(movementTitle);
+
+                const movementGrid = document.createElement('div');
+                movementGrid.style.display = 'grid';
+                movementGrid.style.gridTemplateColumns = 'repeat(3, 50px)';
+                movementGrid.style.gap = '6px';
+                section.appendChild(movementGrid);
+
+                // Add movement parameter dials
+                addTonnetzDial('stepSize', 'Step', 1, 3, 1, 'stepSize', 1);
+                addTonnetzDial('transform', 'Trans', 0, 1, 0.01, 'transformProbability', 0.3);
+                addTonnetzDial('return', 'Return', 0, 1, 0.01, 'returnProbability', 0.1);
+
+                // Sequence control section
+                const sequenceTitle = document.createElement('div');
+                sequenceTitle.style.margin = '8px 0 4px 0';
+                sequenceTitle.style.fontWeight = '600';
+                sequenceTitle.textContent = 'Sequence Control';
+                section.appendChild(sequenceTitle);
+
+                // Sequence Length control
+                const lengthLabel = document.createElement("label");
+                lengthLabel.htmlFor = `edit-tonnetz-length-${node.id}`;
+                lengthLabel.textContent = "Length:";
+                lengthLabel.style.marginRight = "6px";
+                const lengthSelect = document.createElement("select");
+                lengthSelect.id = `edit-tonnetz-length-${node.id}`;
+                const lengths = [2, 4, 6, 8, 12, 16, 24, 32];
+                const curLength = node.audioParams?.sequenceLength || 8;
+                lengths.forEach(len => {
+                    const o = document.createElement('option');
+                    o.value = len; o.textContent = `${len} steps`;
+                    if (len === curLength) o.selected = true;
+                    lengthSelect.appendChild(o);
+                });
+                lengthSelect.addEventListener('change', (e) => {
+                    selectedArray.forEach(elData => {
+                        const n = findNodeById(elData.id);
+                        if (n && n.type === TONNETZ_TYPE) {
+                            if (!n.audioParams) n.audioParams = {};
+                            n.audioParams.sequenceLength = parseInt(e.target.value);
+                            n.patternIndex = 0; // Reset sequence
+                        }
+                    });
+                    saveState();
+                });
+                section.appendChild(lengthLabel);
+                section.appendChild(lengthSelect);
+
+                // Current position display
+                const positionTitle = document.createElement('div');
+                positionTitle.style.margin = '8px 0 4px 0';
+                positionTitle.style.fontWeight = '600';
+                positionTitle.textContent = 'Current Position';
+                section.appendChild(positionTitle);
+
+                const positionInfo = document.createElement('div');
+                positionInfo.style.padding = '6px';
+                positionInfo.style.backgroundColor = 'rgba(0,0,0,0.1)';
+                positionInfo.style.borderRadius = '4px';
+                positionInfo.style.fontSize = '12px';
+                const currentPos = node.currentPos || { x: 0, y: 0 };
+                const currentNote = ((7 * currentPos.x + 4 * currentPos.y) % 12 + 12) % 12;
+                const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                positionInfo.textContent = `Coordinates: (${currentPos.x}, ${currentPos.y}) - Note: ${noteNames[currentNote]}`;
+                section.appendChild(positionInfo);
+
+                // Center Instrument UI via module
+                const centerSec = buildTonnetzCenterInstrumentPanel(node, {
+                  document,
+                  fmSynthPresets,
+                  analogWaveformPresets,
+                  samplerWaveformTypes,
+                  SAMPLER_DEFINITIONS,
+                  addNode,
+                  findNodeById,
+                  stopNodeAudio,
+                  createAudioNodesForNode,
+                  updateNodeAudioParams,
+                  saveState,
+                  populateEditPanel
+                });
+                if (centerSec) section.appendChild(centerSec);
+
+                fragment.appendChild(section);
+
             } else if (node && (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE)) {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
@@ -25237,6 +25869,24 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     delete newNode.color;
   }
 
+  if (type === TONNETZ_TYPE) {
+    const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 240;
+    newNode.width = size;
+    newNode.height = size;
+    initTonnetzNode(newNode, {
+      DEFAULT_PULSE_INTENSITY,
+      DEFAULT_SUBDIVISION_INDEX,
+      DEFAULT_TRIGGER_INTERVAL,
+      samplerWaveformTypes,
+      SAMPLER_DEFINITIONS,
+      addNode,
+    });
+    newNode.isStartNode = false;
+    delete newNode.starPoints;
+    delete newNode.baseHue;
+    delete newNode.color;
+  }
+
   if (type === TIMELINE_GRID_TYPE) {
     newNode.width = optionalDimensions ?
       optionalDimensions.width :
@@ -25377,12 +26027,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
   }
 
-  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
+  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== TONNETZ_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
     newNode.audioNodes = createAudioNodesForNode(newNode);
     if (newNode.audioNodes) {
       updateNodeAudioParams(newNode);
     }
-  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
+  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
     newNode.audioNodes = null;
   }
 
@@ -27280,10 +27930,10 @@ function setRootNote(newRootNote, preventSave = false) {
   }
   currentRootNote = newRootMod;
 
-  // Ensure Circle of Fifths embedded instruments follow the project root (degree 0)
+  // Ensure Circle of Fifths and Tonnetz embedded instruments follow the project root (degree 0)
   try {
     nodes.forEach((n)=>{
-      if (n && n.type === CIRCLE_FIFTHS_TYPE && n.audioParams?.centerAttachedNodeId) {
+      if (n && (n.type === CIRCLE_FIFTHS_TYPE || n.type === TONNETZ_TYPE) && n.audioParams?.centerAttachedNodeId) {
         const child = findNodeById(n.audioParams.centerAttachedNodeId);
         if (child && child.audioParams) {
           child.audioParams.scaleIndex = 0;

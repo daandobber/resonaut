@@ -163,20 +163,26 @@ export function handleCirclePulse(currentNode, incomingConnection, deps) {
   const fire = (neighborNode) => {
     const baseIndex = neighborNode?.audioParams && typeof neighborNode.audioParams.scaleIndex === 'number' ? neighborNode.audioParams.scaleIndex : 0;
     const basePulse = { intensity: pulseIntensity, color: currentNode.color ?? null, particleMultiplier: isChord ? 0.7 : 0.9 };
-    // Visual: report the actual absolute scale indices (more accurate for piano UI)
+    // Calculate all scale indices first and deduplicate to prevent same note triggering multiple times
+    const scaleIndices = degOffsets.map((off) => 
+      Math.max(MIN_SCALE_INDEX, Math.min(MAX_SCALE_INDEX, baseIndex + stepDegree + off))
+    );
+    const uniqueScaleIndices = [...new Set(scaleIndices)]; // Remove duplicates
+    
+    // Visual: report the actual unique scale indices (more accurate for piano UI)
     try {
       if (deps && typeof deps.highlightCircleDegreeBars === 'function') {
-        const scaleIndices = degOffsets.map((off) => baseIndex + stepDegree + off);
-        deps.highlightCircleDegreeBars(currentNode.id, { scaleIndices }, pulseIntensity);
+        deps.highlightCircleDegreeBars(currentNode.id, { scaleIndices: uniqueScaleIndices }, pulseIntensity);
       }
     } catch {}
-    degOffsets.forEach((off) => {
+    
+    uniqueScaleIndices.forEach((scaleIndex) => {
       // Per-note velocity jitter
       const jitterAmt = Math.max(0, Math.min(1, ap.velocityJitter || 0));
       const velMul = 1 + (Math.random() * 2 - 1) * jitterAmt; // 1±jitter
       const notePulse = { ...basePulse, intensity: Math.max(0.05, Math.min(1.5, basePulse.intensity * velMul)) };
       const override = {
-        scaleIndexOverride: Math.max(MIN_SCALE_INDEX, Math.min(MAX_SCALE_INDEX, baseIndex + stepDegree + off)),
+        scaleIndexOverride: scaleIndex,
       };
       triggerNodeEffect(neighborNode, notePulse, null, 0.3, override);
     });
