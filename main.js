@@ -5736,7 +5736,7 @@ export function triggerNodeEffect(
         osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.08);
         
         // Much punchier volume envelope - fast attack, punchy decay
-        const boostedVol = finalVol * 10.0; // 10x volume boost to match other synths
+        const boostedVol = finalVol * 50.0; // 50x volume boost - make it LOUD!
         gain.gain.setValueAtTime(boostedVol, now);
         gain.gain.exponentialRampToValueAtTime(boostedVol * 0.5, now + 0.01); // Quick punch
         gain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay);
@@ -5746,19 +5746,31 @@ export function triggerNodeEffect(
         const harmonicGain = audioContext.createGain();
         harmonic.frequency.setValueAtTime(kickStartFreq * 1.5, now);
         harmonic.frequency.exponentialRampToValueAtTime(targetFreq * 1.3, now + 0.04);
-        harmonicGain.gain.setValueAtTime(boostedVol * 0.3, now);
+        harmonicGain.gain.setValueAtTime(boostedVol * 0.4, now);
         harmonicGain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay * 0.6);
+        
+        // Add sub-harmonic for massive low end
+        const subHarmonic = audioContext.createOscillator();
+        const subGain = audioContext.createGain();
+        subHarmonic.frequency.setValueAtTime(targetFreq * 0.5, now); // Sub bass
+        subHarmonic.type = 'sine';
+        subGain.gain.setValueAtTime(boostedVol * 0.6, now);
+        subGain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay * 1.2);
         
         // Connect everything
         osc.connect(gain);
         harmonic.connect(harmonicGain);
+        subHarmonic.connect(subGain);
         gain.connect(mainGain);
         harmonicGain.connect(mainGain);
+        subGain.connect(mainGain);
         
         osc.start(now);
         harmonic.start(now);
+        subHarmonic.start(now);
         osc.stop(now + soundParams.decay + 0.05);
         harmonic.stop(now + soundParams.decay * 0.6 + 0.05);
+        subHarmonic.stop(now + soundParams.decay * 1.2 + 0.05);
       } else if (node.type === "drum_snare") {
         const noiseDur = soundParams.noiseDecay ?? 0.15;
         const bodyDecay = soundParams.decay ?? 0.2;
