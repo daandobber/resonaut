@@ -202,8 +202,33 @@ export async function showAnalogOrbMenu(node) {
       node.audioNodes?.mainGain ||
       node.audioNodes?.output ||
       node.audioNodes?.mix;
+    console.log('Oscilloscope connection attempt:', { 
+      nodeId: node.id, 
+      audioNodes: node.audioNodes, 
+      srcNode,
+      hasGainNode: !!node.audioNodes?.gainNode,
+      hasMainGain: !!node.audioNodes?.mainGain,
+      hasOutput: !!node.audioNodes?.output,
+      hasMix: !!node.audioNodes?.mix
+    });
     if (srcNode) {
-      oscilloscope.connect(srcNode);
+      try {
+        oscilloscope.connect(srcNode);
+        console.log('Oscilloscope connected successfully to:', srcNode);
+      } catch (error) {
+        console.error('Failed to connect oscilloscope:', error);
+        // Try again after a short delay
+        setTimeout(() => {
+          try {
+            oscilloscope.connect(srcNode);
+            console.log('Oscilloscope connected on retry');
+          } catch (retryError) {
+            console.error('Retry failed:', retryError);
+          }
+        }, 100);
+      }
+    } else {
+      console.warn('No valid audio node found for oscilloscope connection');
     }
   }
 

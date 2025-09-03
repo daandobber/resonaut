@@ -3,7 +3,9 @@
     "allow": [
       "Bash(node:*)",
       "Bash(python:*)",
-      "Bash(npx http-server:*)"
+      "Bash(npx http-server:*)",
+      "Bash(npm run dev:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []

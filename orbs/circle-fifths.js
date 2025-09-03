@@ -1,5 +1,8 @@
 // Circle of Fifths module: encapsulates init, pulse handling, and center-instrument UI
 
+import { showTonePanel } from './analog-orb-ui.js';
+import { showAlienPanel } from './alien-orb.js';
+
 export const CIRCLE_FIFTHS_TYPE = 'circle_fifths';
 
 export const ZODIAC_SIGNS = [
@@ -242,6 +245,17 @@ export function buildCenterInstrumentPanel(node, deps) {
     updateNodeAudioParams,
     saveState,
     draw,
+    showSamplerPanel,
+    showSamplerOrbMenu,
+    showResonauterPanel,
+    showResonauterOrbMenu,
+    showAnalogOrbMenu,
+    showMotorOrbMenu,
+    showClockworkOrbMenu,
+    showRadioOrbPanel,
+    showToneFmSynthMenu,
+    showPulseSynthMenu,
+    showAlienOrbMenu
   } = deps;
 
   const container = document.createElement('div');
@@ -419,9 +433,46 @@ export function buildCenterInstrumentPanel(node, deps) {
         Object.assign(t.audioParams, fmPreset.details);
         t.audioParams.engine = 'tonefm';
       } else if (analogPreset && analogPreset.details) {
-        // Analog synth
-        Object.assign(t.audioParams, analogPreset.details);
+        // Analog synth - need to flatten nested envelope parameters and map parameter names
+        const details = { ...analogPreset.details };
+        
+        // Map oscillator type parameter names
+        if (details.osc1Type !== undefined) {
+          details.osc1Waveform = details.osc1Type;
+          delete details.osc1Type;
+        }
+        if (details.osc2Type !== undefined) {
+          details.osc2Waveform = details.osc2Type;
+          delete details.osc2Type;
+        }
+        
+        // Ensure osc2 is enabled if preset uses it
+        if (details.osc2Level !== undefined && details.osc2Level > 0) {
+          details.osc2Enabled = true;
+        }
+        
+        // Flatten ampEnv nested parameters
+        if (details.ampEnv) {
+          if (details.ampEnv.attack !== undefined) details.ampEnvAttack = details.ampEnv.attack;
+          if (details.ampEnv.decay !== undefined) details.ampEnvDecay = details.ampEnv.decay;
+          if (details.ampEnv.sustain !== undefined) details.ampEnvSustain = details.ampEnv.sustain;
+          if (details.ampEnv.release !== undefined) details.ampEnvRelease = details.ampEnv.release;
+          delete details.ampEnv;
+        }
+        
+        // Flatten filterEnv nested parameters
+        if (details.filterEnv) {
+          if (details.filterEnv.attack !== undefined) details.filterEnvAttack = details.filterEnv.attack;
+          if (details.filterEnv.decay !== undefined) details.filterEnvDecay = details.filterEnv.decay;
+          if (details.filterEnv.sustain !== undefined) details.filterEnvSustain = details.filterEnv.sustain;
+          if (details.filterEnv.release !== undefined) details.filterEnvRelease = details.filterEnv.release;
+          delete details.filterEnv;
+        }
+        
+        // Apply flattened parameters
+        Object.assign(t.audioParams, details);
         t.audioParams.engine = 'tone';
+        console.log('Applied analog preset parameters:', details, 'Full audioParams:', t.audioParams);
       } else if (samplerPreset) {
         // Sampler - no engine needed
       }
@@ -434,8 +485,13 @@ export function buildCenterInstrumentPanel(node, deps) {
     if (oldPitch !== undefined) t.audioParams.pitch = oldPitch;
     if (oldScaleIndex !== undefined) t.audioParams.scaleIndex = oldScaleIndex;
     
+    console.log('Before recreating audio nodes:', t.audioParams);
     t.audioNodes = createAudioNodesForNode(t);
-    if (t.audioNodes) updateNodeAudioParams(t);
+    console.log('After creating audio nodes:', t.audioNodes);
+    if (t.audioNodes) {
+      updateNodeAudioParams(t);
+      console.log('After updating audio params');
+    }
     saveState();
     draw();
   };
@@ -445,6 +501,49 @@ export function buildCenterInstrumentPanel(node, deps) {
     applyPreset();
   });
   presetSelect.addEventListener('change', applyPreset);
+
+  // Add synth parameter button
+  const synthParamBtn = document.createElement('button');
+  synthParamBtn.textContent = '⚙️ Parameters';
+  synthParamBtn.style.marginLeft = '12px';
+  synthParamBtn.style.padding = '4px 8px';
+  synthParamBtn.style.backgroundColor = '#333';
+  synthParamBtn.style.color = '#fff';
+  synthParamBtn.style.border = '1px solid #555';
+  synthParamBtn.style.borderRadius = '4px';
+  synthParamBtn.style.cursor = 'pointer';
+  synthParamBtn.addEventListener('click', () => {
+    const t = ensureEmbedded();
+    if (!t) return;
+    
+    // Open appropriate synth panel based on node type and engine
+    if (t.type === 'sound' && t.audioParams) {
+      if (t.audioParams.waveform && t.audioParams.waveform.startsWith('sampler_')) {
+        // Sampler
+        if (showSamplerOrbMenu) showSamplerOrbMenu(t);
+      } else if (t.audioParams.engine === 'tonefm') {
+        // FM synth
+        if (showToneFmSynthMenu) showToneFmSynthMenu(t);
+      } else if (t.audioParams.engine === 'tone') {
+        // Analog synth
+        if (showAnalogOrbMenu) showAnalogOrbMenu(t);
+      } else if (t.audioParams.engine === 'pulse') {
+        // Pulse synth
+        if (showPulseSynthMenu) showPulseSynthMenu(t);
+      }
+    } else if (t.type === 'alien_orb') {
+      if (showAlienOrbMenu) showAlienOrbMenu(t);
+    } else if (t.type === 'resonauter') {
+      if (showResonauterOrbMenu) showResonauterOrbMenu(t);
+    } else if (t.type === 'motor_orb') {
+      if (showMotorOrbMenu) showMotorOrbMenu(t);
+    } else if (t.type === 'clockwork_orb') {
+      if (showClockworkOrbMenu) showClockworkOrbMenu(t);
+    } else if (t.type === 'radio_orb') {
+      if (showRadioOrbPanel) showRadioOrbPanel(t);
+    }
+  });
+  container.appendChild(synthParamBtn);
 
   return container;
 }
