@@ -4,6 +4,8 @@ export async function playWithToneSampler(
   freq,
   startTime,
   attack,
+  decay,
+  sustain,
   release,
   velocity,
   destination,
@@ -42,19 +44,34 @@ export async function playWithToneSampler(
   if (safeVelocity !== velocity) {
     // invalid velocity
   }
+  // ADSR Envelope
   gain.gain.setValueAtTime(0, actualStart);
+  
+  // Attack: 0 -> velocity
   gain.gain.linearRampToValueAtTime(safeVelocity, actualStart + attack);
-  gain.gain.setTargetAtTime(0, actualStart + attack + buffer.duration, release / 4);
-
+  
+  // Decay: velocity -> sustain * velocity
+  const sustainLevel = safeVelocity * Math.max(0, Math.min(1, sustain));
+  if (decay > 0.001) {
+    gain.gain.setTargetAtTime(sustainLevel, actualStart + attack, decay / 3);
+  }
+  
   source.connect(gain);
   gain.connect(dest);
+
+  // Sustain: hold sustain level during sample playback
+  const sustainTime = Math.max(0, buffer.duration - attack - Math.min(decay, buffer.duration * 0.5));
+  const releaseStart = actualStart + attack + decay + sustainTime;
+  
+  // Release: sustain -> 0
+  gain.gain.setTargetAtTime(0.001, releaseStart, release / 3);
 
   try {
     source.start(actualStart, 0, buffer.duration);
   } catch (e) {
     return;
   }
-  const stopTime = actualStart + buffer.duration + release;
+  const stopTime = actualStart + attack + decay + sustainTime + release;
   source.stop(stopTime);
 
 

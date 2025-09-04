@@ -40,7 +40,7 @@ function rotateArray(arr, rotate) {
 function buildDots(node) {
   const ap = node.audioParams || {};
   const dots = [];
-  const n = Math.max(1, Math.floor(ap.numDots || 24));
+  const n = Math.max(1, Math.floor(ap.numDots || 6));
   const qDen = Math.max(1, Math.floor(ap.quantizedOffsetDenom || 12));
   const freeAmt = Math.max(0, Math.min(1, ap.freeOffset ?? 0.3));
   const speedOffset = Math.max(-1, Math.min(1, ap.speedOffset ?? 0));
@@ -81,10 +81,6 @@ export function initGalacticNode(newNode, deps) {
   ap.syncSubdivisionIndex = ap.syncSubdivisionIndex ?? DEFAULT_SUBDIVISION_INDEX;
   ap.triggerInterval = ap.triggerInterval ?? DEFAULT_TRIGGER_INTERVAL;
   ap.advanceOnPulse = ap.advanceOnPulse ?? false;
-  // Euclidean controls
-  ap.euclidSteps = ap.euclidSteps ?? 16;
-  ap.euclidBeats = ap.euclidBeats ?? 5;
-  ap.euclidRotate = ap.euclidRotate ?? 0;
   // Harmony shaping reused from circle engine
   ap.randomChordProbability = ap.randomChordProbability ?? 0.6;
   // For Galactic Bloom we default to single notes (no explicit chords)
@@ -96,16 +92,15 @@ export function initGalacticNode(newNode, deps) {
   ap.spinSpeed = ap.spinSpeed ?? 0.4;
   ap.spinRPS = ap.spinRPS ?? 0.25; // rotations per second for continuous mode
   ap.spinSyncEnabled = ap.spinSyncEnabled ?? true; // follow BPM when available
-  ap.spinSubdivisionIndex = ap.spinSubdivisionIndex ?? (typeof DEFAULT_SUBDIVISION_INDEX !== 'undefined' ? DEFAULT_SUBDIVISION_INDEX : 0);
+  ap.galacticRotationIndex = ap.galacticRotationIndex ?? 3; // Default to "1/4" option
   ap.spinSpeedScale = ap.spinSpeedScale ?? 1.0; // extra scaling for fine-tune (0.25..4)
   // Per-step probability and velocity range
   ap.noteProbability = ap.noteProbability ?? 1.0; // 0..1
   ap.velMin = ap.velMin ?? 0.6; // 0..1
   ap.velMax = ap.velMax ?? 1.0; // 0..1
   // Spokes/dots/offsets
-  ap.numSpokes = ap.numSpokes ?? 12;
-  ap.numDots = ap.numDots ?? 24;
-  ap.loopLength = ap.loopLength ?? 16; // pulses per full rotation
+  ap.numSpokes = ap.numSpokes ?? 3;
+  ap.numDots = ap.numDots ?? 6;
   ap.quantizedOffsetDenom = ap.quantizedOffsetDenom ?? 12;
   ap.freeOffset = ap.freeOffset ?? 0.3;
   ap.speedOffset = ap.speedOffset ?? 0.0; // -1..1
@@ -172,10 +167,9 @@ export function handleGalacticPulse(currentNode, incomingConnection, deps) {
   const ap = currentNode.audioParams || {};
   if (!Array.isArray(currentNode._galDots)) buildDots(currentNode);
   const dots = currentNode._galDots || [];
-  const spokes = Math.max(1, Math.floor(ap.numSpokes || 12));
+  const spokes = Math.max(1, Math.floor(ap.numSpokes || 3));
   const stepAngle = (Math.PI * 2) / spokes;
-  const loopLen = Math.max(1, Math.floor(ap.loopLength || 16));
-  const dPhi = (Math.PI * 2) / loopLen; // rotation per incoming pulse
+  const dPhi = (Math.PI * 2) / 16; // rotation per incoming pulse - 16 pulses per full rotation
 
   // Trigger bars
   const barIdx = Math.max(0, Math.floor(currentNode.barIndex || 0)) % 8;
@@ -203,29 +197,51 @@ export function handleGalacticPulse(currentNode, incomingConnection, deps) {
   const prevIntensity = apBefore.pulseIntensity;
   apBefore.randomChordProbability = 0; // single notes
 
-  // Trigger for each dot crossing a spoke; cap per tick to avoid floods
+  // Trigger for each rotating dot crossing a stationary spoke
   const maxPerTick = Math.min(8, Math.max(1, Math.floor(dots.length / 4)));
   let count = 0;
-  const spokeRot = ap.spokeRotate || 0;
-  for (const d of dots) {
+  const mod = (x) => ((x % (Math.PI*2)) + (Math.PI*2)) % (Math.PI*2);
+  
+  // For each dot, check if it crossed any spoke
+  for (let d = 0; d < dots.length; d++) {
     if (count >= maxPerTick) break;
-    const a0 = (d.baseAngle + (ap.globalOffset||0) + d.speed * prevPhase) + spokeRot;
-    const a1 = (d.baseAngle + (ap.globalOffset||0) + d.speed * newPhase) + spokeRot;
-    const mod = (x) => ((x % (Math.PI*2)) + (Math.PI*2)) % (Math.PI*2);
-    const b0 = Math.floor(mod(a0) / stepAngle);
-    const b1 = Math.floor(mod(a1) / stepAngle);
-    if (b0 !== b1) {
-      // probability gate per crossing
-      const p = Math.max(0, Math.min(1, apBefore.noteProbability ?? 1));
-      if (Math.random() > p) continue;
-      // intensity
-      const vmin = Math.max(0, Math.min(1, apBefore.velMin ?? 0.6));
-      const vmax = Math.max(vmin, Math.min(1, apBefore.velMax ?? 1.0));
-      const vel = vmin + Math.random() * (vmax - vmin);
-      apBefore.pulseIntensity = vel;
-      currentNode.segmentIndex = b1 % segs; // map spoke to degree bucket
-      handleCircleFifthsPulse(currentNode, incomingConnection, deps);
-      count++;
+    const dot = dots[d];
+    
+    // Calculate dot angle at previous and current phase (dots rotate)
+    const dotA0 = dot.baseAngle + (ap.globalOffset || 0) + dot.speed * prevPhase;
+    const dotA1 = dot.baseAngle + (ap.globalOffset || 0) + dot.speed * newPhase;
+    const dot0 = mod(dotA0);
+    const dot1 = mod(dotA1);
+    
+    // Check if this dot crossed any spoke
+    for (let s = 0; s < spokes; s++) {
+      if (ap.spokeEnabled && ap.spokeEnabled[s] === false) continue;
+      
+      // Spoke is stationary
+      const spokeAngle = mod(ap.spokeAngles ? ap.spokeAngles[s] : ((ap.spokeRotate || 0) + s * stepAngle));
+      
+      // Check if rotating dot crossed this stationary spoke
+      const crossed = dot1 >= dot0 ? (spokeAngle > dot0 && spokeAngle <= dot1) : (spokeAngle > dot0 || spokeAngle <= dot1);
+      
+      if (crossed) {
+        // probability gate per crossing
+        const p = Math.max(0, Math.min(1, apBefore.noteProbability ?? 1));
+        if (Math.random() > p) continue;
+        
+        // intensity
+        const vmin = Math.max(0, Math.min(1, apBefore.velMin ?? 0.6));
+        const vmax = Math.max(vmin, Math.min(1, apBefore.velMax ?? 1.0));
+        const vel = vmin + Math.random() * (vmax - vmin);
+        apBefore.pulseIntensity = vel;
+        
+        // Each dot can have its own musical content - for now use dot index to vary the note
+        // Map dot index to degree bucket for different harmonic content per dot
+        const dotSegment = d % segs;
+        currentNode.segmentIndex = dotSegment;
+        handleCircleFifthsPulse(currentNode, incomingConnection, deps);
+        count++;
+        break; // Only trigger once per dot per tick
+      }
     }
   }
   apBefore.randomChordProbability = prevProb;
@@ -243,7 +259,7 @@ export function updateGalacticBloom(node, deltaTime, deps, { audioActive = true,
   const ap = node.audioParams || {};
   if (!Array.isArray(node._galDots)) buildDots(node);
   const dots = node._galDots || [];
-  const spokes = Math.max(1, Math.floor(ap.numSpokes || 12));
+  const spokes = Math.max(1, Math.floor(ap.numSpokes || 3));
   if (!Array.isArray(node._spokeGlow) || node._spokeGlow.length !== spokes) {
     node._spokeGlow = Array(spokes).fill(0);
   }
@@ -259,8 +275,27 @@ export function updateGalacticBloom(node, deltaTime, deps, { audioActive = true,
   const stepAngle = (Math.PI * 2) / spokes; // used as fallback for activeSeg only
   let spinRPS = Math.max(0, ap.spinRPS ?? 0.25);
   if (isGlobalSyncEnabled && !ap.ignoreGlobalSync && ap.spinSyncEnabled) {
-    const idx = Math.max(0, Math.min(subdivisionOptions.length - 1, ap.spinSubdivisionIndex ?? 0));
-    const rotBeats = subdivisionOptions[idx] && typeof subdivisionOptions[idx].value === 'number' ? subdivisionOptions[idx].value : 4; // default 4 beats/rotation
+    // Custom rotation options for galactic bloom
+    const galacticRotationOptions = [
+      { label: "1/16", value: 0.25 },
+      { label: "1/8", value: 0.5 },
+      { label: "1/5", value: 0.8 },
+      { label: "1/4", value: 1 },
+      { label: "1/3", value: 4/3 },
+      { label: "1/2", value: 2 },
+      { label: "1", value: 4 },
+      { label: "2", value: 8 },
+      { label: "3", value: 12 },
+      { label: "4", value: 16 },
+      { label: "5", value: 20 },
+      { label: "6", value: 24 },
+      { label: "7", value: 28 },
+      { label: "8", value: 32 },
+      { label: "9", value: 36 },
+      { label: "10", value: 40 }
+    ];
+    const idx = Math.max(0, Math.min(galacticRotationOptions.length - 1, ap.galacticRotationIndex ?? 3));
+    const rotBeats = galacticRotationOptions[idx] && typeof galacticRotationOptions[idx].value === 'number' ? galacticRotationOptions[idx].value : 4; // default 4 beats/rotation
     if (secondsPerBeat > 0 && rotBeats > 0) {
       spinRPS = 1 / (secondsPerBeat * rotBeats);
     }
@@ -288,34 +323,54 @@ export function updateGalacticBloom(node, deltaTime, deps, { audioActive = true,
   const maxPerTick = Math.min(12, Math.max(1, Math.floor(dots.length / 3)));
   const mod = (x) => ((x % (Math.PI*2)) + (Math.PI*2)) % (Math.PI*2);
   const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  for (const d of dots) {
+  
+  // For each rotating dot, check if it crossed any stationary spoke
+  for (let d = 0; d < dots.length; d++) {
     if (count >= maxPerTick) break;
-    const a0 = (d.baseAngle + (ap.globalOffset||0) + d.speed * prevPhase);
-    const a1 = (d.baseAngle + (ap.globalOffset||0) + d.speed * newPhase);
-    const m0 = mod(a0), m1 = mod(a1);
-    // Test crossing against actual spoke angles
-    let crossedIndex = -1;
+    const dot = dots[d];
+    
+    // Calculate dot angle at previous and current phase (dots rotate)
+    const dotA0 = dot.baseAngle + (ap.globalOffset || 0) + dot.speed * prevPhase;
+    const dotA1 = dot.baseAngle + (ap.globalOffset || 0) + dot.speed * newPhase;
+    const dot0 = mod(dotA0);
+    const dot1 = mod(dotA1);
+    
+    let crossedSpoke = null;
+    // Check if this rotating dot crossed any stationary spoke
     for (let s = 0; s < spokes; s++) {
       if (ap.spokeEnabled[s] === false) continue;
-      const sa = mod(ap.spokeAngles[s]);
-      const crossed = m1 >= m0 ? (sa > m0 && sa <= m1) : (sa > m0 || sa <= m1);
-      if (crossed) { crossedIndex = s; break; }
+      
+      // Spoke is stationary
+      const spokeAngle = mod(ap.spokeAngles ? ap.spokeAngles[s] : ((ap.spokeRotate || 0) + s * (Math.PI * 2) / spokes));
+      
+      // Check if rotating dot crossed this stationary spoke
+      const crossed = dot1 >= dot0 ? (spokeAngle > dot0 && spokeAngle <= dot1) : (spokeAngle > dot0 || spokeAngle <= dot1);
+      
+      if (crossed) {
+        crossedSpoke = { spokeIndex: s, angle: spokeAngle };
+        break; // Use first crossed spoke
+      }
     }
-    if (crossedIndex !== -1) {
+    
+    if (crossedSpoke) {
       // probability
       const p = Math.max(0, Math.min(1, ap.noteProbability ?? 1));
       if (Math.random() > p) continue;
-      const spokeIdx = crossedIndex;
+      
       // intensity
       const vmin = Math.max(0, Math.min(1, ap.velMin ?? 0.6));
       const vmax = Math.max(vmin, Math.min(1, ap.velMax ?? 1.0));
       const vel = vmin + Math.random() * (vmax - vmin);
       const prevIntensity = ap.pulseIntensity;
       ap.pulseIntensity = vel;
-      node.segmentIndex = Math.floor(m1 / segAngle) % segs;
+      
+      // Each dot has its own musical content - use dot index for different harmonic content
+      const dotSegment = d % segs;
+      node.segmentIndex = dotSegment;
       node.lastGlowSeg = node.segmentIndex;
       node.lastGlowAt = nowMs;
-      if (Array.isArray(node._spokeGlow)) node._spokeGlow[spokeIdx] = nowMs;
+      if (Array.isArray(node._spokeGlow)) node._spokeGlow[crossedSpoke.spokeIndex] = nowMs;
+      
       try {
         // Trigger directly through the Circle-of-Fifths engine (single-note)
         handleCircleFifthsPulse(

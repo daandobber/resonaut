@@ -5636,6 +5636,8 @@ export function triggerNodeEffect(
               targetSamplerIndividualPeak = 0.001;
             }
             const samplerAttack = params.sampleAttack ?? 0.005;
+            const samplerDecay = params.sampleDecay ?? 0.1;
+            const samplerSustain = params.sampleSustain ?? 0.7;
             const samplerRelease = params.sampleRelease ?? 0.2;
             const filterInput =
               lowPassFilter && lowPassFilter.input
@@ -5647,6 +5649,8 @@ export function triggerNodeEffect(
               freq,
               scheduledStartTime,
               samplerAttack,
+              samplerDecay,
+              samplerSustain,
               samplerRelease,
               targetSamplerIndividualPeak,
               filterInput,
@@ -13338,7 +13342,7 @@ function drawNode(node) {
                 const dots = node._galDots || [];
                 const phase = node._galPhase || 0;
                 const spokeRot = ap.spokeRotate || 0;
-                const spokes = Math.max(1, Math.floor(ap.numSpokes || 12));
+                const spokes = Math.max(1, Math.floor(ap.numSpokes || 3));
       const stepAngle = (Math.PI * 2) / spokes;
       const segs = node.segments || 12;
       const activeSeg = Number.isFinite(node.segmentIndex) ? node.segmentIndex : 0;
@@ -13348,6 +13352,7 @@ function drawNode(node) {
       const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const useSpokeAngles = Array.isArray(node.audioParams?.spokeAngles) && node.audioParams.spokeAngles.length === spokes;
       for (let k = 0; k < spokes; k++) {
+        // Spokes are stationary trigger lines
         const a = useSpokeAngles ? node.audioParams.spokeAngles[k] : (spokeRot + k * stepAngle);
         const enabled = !Array.isArray(node.audioParams?.spokeEnabled) || node.audioParams.spokeEnabled[k] !== false;
         // base line
@@ -13371,12 +13376,12 @@ function drawNode(node) {
         }
       }
 
-      // Build current dot positions (for linking)
+      // Build current dot positions (rotating - each dot is a different note/chord)
       const pts = [];
       ctx.lineWidth = Math.max(1 / viewScale, 1 / viewScale);
       for (let i = 0; i < dots.length; i++) {
         const d = dots[i];
-        const ang = d.baseAngle + (ap.globalOffset||0) + d.speed * phase;
+        const ang = d.baseAngle + (ap.globalOffset||0) + d.speed * phase; // Dots rotate, each with musical content
         const r = radius * d.r;
         const x = cx + Math.cos(ang) * r;
         const y = cy + Math.sin(ang) * r;
@@ -13421,25 +13426,6 @@ function drawNode(node) {
       }
     } catch {}
 
-    // Glow pulse segment
-    try {
-      const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      const glowAt = node.lastGlowAt || 0;
-      const life = 700; // ms
-      const age = nowMs - glowAt;
-      if (age >= 0 && age < life) {
-        const t = 1 - age / life; // 1..0
-        ctx.save();
-        ctx.globalAlpha = 0.25 + 0.55 * t;
-        ctx.shadowBlur = 36 * t / viewScale;
-        ctx.shadowColor = colorWithAlpha(accent, 0.9);
-        ctx.fillStyle = colorWithAlpha(accent, 0.35);
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius * (0.35 + 0.55 * t), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-    } catch {}
 
     // Center attachment visual (reuse circle semantics)
     const cr = 4 / viewScale;
@@ -16084,7 +16070,7 @@ function drawAddPreview() {
       };
       drawNode(previewNode);
     } else if (nodeTypeToAdd === GALACTIC_BLOOM_TYPE) {
-      const size = 240;
+      const size = 480;
       const previewNode = {
         id: -1,
         x: mousePos.x,
@@ -16099,9 +16085,6 @@ function drawAddPreview() {
           ignoreGlobalSync: true,
           syncSubdivisionIndex: DEFAULT_SUBDIVISION_INDEX,
           triggerInterval: DEFAULT_TRIGGER_INTERVAL,
-          euclidSteps: 16,
-          euclidBeats: 5,
-          euclidRotate: 0,
         },
       };
       drawNode(previewNode);
@@ -22107,8 +22090,29 @@ function populateEditPanel() {
                   rotLenLabel.textContent = 'Rotation Length:';
                   rotLenLabel.style.marginRight = '6px';
                   const rotLenSelect = document.createElement('select');
-                  const currentIdx = node.audioParams?.spinSubdivisionIndex ?? DEFAULT_SUBDIVISION_INDEX;
-                  subdivisionOptions.forEach((opt, idx) => {
+                  
+                  // Custom rotation options for galactic bloom
+                  const galacticRotationOptions = [
+                    { label: "1/16", value: 0.25 },
+                    { label: "1/8", value: 0.5 },
+                    { label: "1/5", value: 0.8 },
+                    { label: "1/4", value: 1 },
+                    { label: "1/3", value: 4/3 },
+                    { label: "1/2", value: 2 },
+                    { label: "1", value: 4 },
+                    { label: "2", value: 8 },
+                    { label: "3", value: 12 },
+                    { label: "4", value: 16 },
+                    { label: "5", value: 20 },
+                    { label: "6", value: 24 },
+                    { label: "7", value: 28 },
+                    { label: "8", value: 32 },
+                    { label: "9", value: 36 },
+                    { label: "10", value: 40 }
+                  ];
+                  
+                  const currentIdx = node.audioParams?.galacticRotationIndex ?? 3; // Default to "1/4"
+                  galacticRotationOptions.forEach((opt, idx) => {
                     const o = document.createElement('option');
                     o.value = idx;
                     o.textContent = opt.label;
@@ -22117,7 +22121,7 @@ function populateEditPanel() {
                   });
                   rotLenSelect.addEventListener('change', (e) => {
                     const idx = parseInt(e.target.value, 10);
-                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.spinSubdivisionIndex = idx; }});
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.galacticRotationIndex = idx; }});
                     saveState();
                   });
                   const rotRow = document.createElement('div');
@@ -22128,53 +22132,8 @@ function populateEditPanel() {
                   if (!node.audioParams?.ignoreGlobalSync) section.appendChild(rotRow);
                 }
 
-                // Euclidean: Steps
-                const steps = Math.max(1, node.audioParams?.euclidSteps ?? 16);
-                const stepsSlider = createSlider(
-                  `edit-gal-steps-${node.id}`,
-                  `Steps (${steps}):`,
-                  1, 64, 1,
-                  steps,
-                  saveState,
-                  (e_input) => {
-                    const newVal = Math.max(1, parseInt(e_input.target.value,10)||1);
-                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.euclidSteps = newVal; n._euclidSig = null; n.galaxyStep = 0; }});
-                    e_input.target.previousElementSibling.textContent = `Steps (${newVal}):`;
-                  }
-                );
-                section.appendChild(stepsSlider);
 
-                // Euclidean: Beats
-                const beats = Math.max(0, Math.min(steps, node.audioParams?.euclidBeats ?? 5));
-                const beatsSlider = createSlider(
-                  `edit-gal-beats-${node.id}`,
-                  `Beats (${beats}):`,
-                  0, 64, 1,
-                  beats,
-                  saveState,
-                  (e_input) => {
-                    const newVal = Math.max(0, parseInt(e_input.target.value,10)||0);
-                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.euclidBeats = newVal; n._euclidSig = null; n.galaxyStep = 0; }});
-                    e_input.target.previousElementSibling.textContent = `Beats (${newVal}):`;
-                  }
-                );
-                section.appendChild(beatsSlider);
 
-                // Euclidean: Rotate
-                const rot = node.audioParams?.euclidRotate ?? 0;
-                const rotateSlider = createSlider(
-                  `edit-gal-rotate-${node.id}`,
-                  `Rotate (${rot}):`,
-                  -64, 64, 1,
-                  rot,
-                  saveState,
-                  (e_input) => {
-                    const newVal = parseInt(e_input.target.value,10)||0;
-                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.euclidRotate = newVal; n._euclidSig = null; }});
-                    e_input.target.previousElementSibling.textContent = `Rotate (${newVal}):`;
-                  }
-                );
-                section.appendChild(rotateSlider);
 
                 // Probability (0..100%)
                 const prob = Math.round(100 * (node.audioParams?.noteProbability ?? 1));
@@ -22236,7 +22195,7 @@ function populateEditPanel() {
                 const accent = getComputedStyle(document.body||document.documentElement).getPropertyValue("--start-node-color").trim() || '#88e';
                 const rebuild = () => {
                   barCircle.innerHTML = '';
-                  const spokes = node.audioParams?.numSpokes ?? 12;
+                  const spokes = node.audioParams?.numSpokes ?? 3;
                   if (!Array.isArray(node.audioParams.spokeEnabled) || node.audioParams.spokeEnabled.length !== spokes) {
                     const arr = Array(spokes).fill(true);
                     node.audioParams.spokeEnabled = arr;
@@ -22277,7 +22236,7 @@ function populateEditPanel() {
                         const cxp = rect.left + rect.width/2;
                         const cyp = rect.top + rect.height/2;
                         const ang = Math.atan2(ev.clientY - cyp, ev.clientX - cxp);
-                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 12; if (!Array.isArray(n.audioParams.spokeAngles) || n.audioParams.spokeAngles.length !== spokes) { n.audioParams.spokeAngles = Array.from({length: spokes}, (_,i)=>(-Math.PI/2 + i*(Math.PI*2/spokes))); } n.audioParams.spokeAngles[idx] = ((ang % (Math.PI*2)) + Math.PI*2) % (Math.PI*2); }});
+                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 3; if (!Array.isArray(n.audioParams.spokeAngles) || n.audioParams.spokeAngles.length !== spokes) { n.audioParams.spokeAngles = Array.from({length: spokes}, (_,i)=>(-Math.PI/2 + i*(Math.PI*2/spokes))); } n.audioParams.spokeAngles[idx] = ((ang % (Math.PI*2)) + Math.PI*2) % (Math.PI*2); }});
                         saveState();
                         rebuild();
                         draw();
@@ -22294,7 +22253,7 @@ function populateEditPanel() {
                         document.addEventListener('pointerup', onPointerUp);
                       });
                       btn.addEventListener('click',()=>{
-                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 12; if (!Array.isArray(n.audioParams.spokeEnabled) || n.audioParams.spokeEnabled.length !== spokes) { n.audioParams.spokeEnabled = Array(spokes).fill(true); } n.audioParams.spokeEnabled[idx] = !(n.audioParams.spokeEnabled[idx]===false); }});
+                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 3; if (!Array.isArray(n.audioParams.spokeEnabled) || n.audioParams.spokeEnabled.length !== spokes) { n.audioParams.spokeEnabled = Array(spokes).fill(true); } n.audioParams.spokeEnabled[idx] = !(n.audioParams.spokeEnabled[idx]===false); }});
                         saveState();
                         bars[idx] = !(bars[idx]===false);
                         rebuild();
@@ -22307,12 +22266,12 @@ function populateEditPanel() {
                 barsWrap.appendChild(barCircle);
                 section.appendChild(barsWrap);
 
-                // Spokes, Dots, Loop Length, Offsets
-                const spokes = node.audioParams?.numSpokes ?? 12;
+                // Spokes, Dots, Offsets
+                const spokes = node.audioParams?.numSpokes ?? 3;
                 const spokesSlider = createSlider(
                   `edit-gal-spokes-${node.id}`,
                   `Number Lines (${spokes}):`,
-                  3, 48, 1,
+                  1, 16, 1,
                   spokes,
                   saveState,
                   (e_input) => {
@@ -22323,7 +22282,7 @@ function populateEditPanel() {
                 );
                 section.appendChild(spokesSlider);
 
-                const dots = node.audioParams?.numDots ?? 24;
+                const dots = node.audioParams?.numDots ?? 6;
                 const dotsSlider = createSlider(
                   `edit-gal-dots-${node.id}`,
                   `Number Dots (${dots}):`,
@@ -22338,20 +22297,6 @@ function populateEditPanel() {
                 );
                 section.appendChild(dotsSlider);
 
-                const loopLen = node.audioParams?.loopLength ?? 16;
-                const loopSlider = createSlider(
-                  `edit-gal-loop-${node.id}`,
-                  `Loop Length (${loopLen} pulses):`,
-                  1, 128, 1,
-                  loopLen,
-                  saveState,
-                  (e_input) => {
-                    const v = Math.max(1, parseInt(e_input.target.value,10)||16);
-                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.loopLength = v; }});
-                    e_input.target.previousElementSibling.textContent = `Loop Length (${v} pulses):`;
-                  }
-                );
-                section.appendChild(loopSlider);
 
                 const qDen = node.audioParams?.quantizedOffsetDenom ?? 12;
                 const qSlider = createSlider(
@@ -25712,8 +25657,10 @@ function showSamplerOrbMenu(node) {
     const controls = [
         {id:'sampleStart',min:0,max:1,label:'STA'},
         {id:'sampleEnd',min:0,max:1,label:'END'},
-        {id:'sampleAttack',min:0,max:1,label:'F.IN'},
-        {id:'sampleRelease',min:0,max:1.5,label:'F.OUT'},
+        {id:'sampleAttack',min:0,max:1,label:'ATK'},
+        {id:'sampleDecay',min:0,max:2,label:'DEC'},
+        {id:'sampleSustain',min:0,max:1,label:'SUS'},
+        {id:'sampleRelease',min:0,max:3,label:'REL'},
         {id:'sampleGain',min:0,max:2,label:'VOL'},
         {id:'sampleCrush',min:0,max:1,label:'CRSH'}
     ];
@@ -25735,13 +25682,17 @@ function showSamplerOrbMenu(node) {
             ratio = Math.max(0, Math.min(1, ratio));
             const newVal = info.min + ratio * (info.max - info.min);
             node.audioParams[info.id] = newVal;
-            if(info.id==='sampleStart' || info.id==='sampleEnd' || info.id==='sampleAttack' || info.id==='sampleRelease'){
+            if(info.id==='sampleStart' || info.id==='sampleEnd' || info.id==='sampleAttack' || info.id==='sampleDecay' || info.id==='sampleSustain' || info.id==='sampleRelease'){
                 let st=node.audioParams.sampleStart ?? 0;
                 let en=node.audioParams.sampleEnd ?? 1;
                 if(en < st){ if(info.id==='sampleStart') { en = st; node.audioParams.sampleEnd = en; } else { st = en; node.audioParams.sampleStart = st; } }
                 let atk = node.audioParams.sampleAttack ?? 0;
+                let dec = node.audioParams.sampleDecay ?? 0.1;
+                let sus = node.audioParams.sampleSustain ?? 0.7;
                 let rel = node.audioParams.sampleRelease ?? 0;
                 node.audioParams.sampleAttack = atk;
+                node.audioParams.sampleDecay = dec;
+                node.audioParams.sampleSustain = sus;
                 node.audioParams.sampleRelease = rel;
                 drawSamplerWaveform(
                     buffer,
@@ -25755,8 +25706,16 @@ function showSamplerOrbMenu(node) {
                     const pctA=((atk - controls[2].min)/(controls[2].max-controls[2].min))*100;
                     samplerSliders.sampleAttack.setVal(pctA);
                 }
+                if(samplerSliders.sampleDecay && info.id!=='sampleDecay'){
+                    const pctD=((dec - controls[3].min)/(controls[3].max-controls[3].min))*100;
+                    samplerSliders.sampleDecay.setVal(pctD);
+                }
+                if(samplerSliders.sampleSustain && info.id!=='sampleSustain'){
+                    const pctS=((sus - controls[4].min)/(controls[4].max-controls[4].min))*100;
+                    samplerSliders.sampleSustain.setVal(pctS);
+                }
                 if(samplerSliders.sampleRelease && info.id!=='sampleRelease'){
-                    const pctR=((rel - controls[3].min)/(controls[3].max-controls[3].min))*100;
+                    const pctR=((rel - controls[5].min)/(controls[5].max-controls[5].min))*100;
                     samplerSliders.sampleRelease.setVal(pctR);
                 }
             }
@@ -27583,7 +27542,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   }
 
   if (type === GALACTIC_BLOOM_TYPE) {
-    const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 240;
+    const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 480;
     newNode.width = size;
     newNode.height = size;
     initGalacticNode(newNode, {
