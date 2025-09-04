@@ -6,34 +6,53 @@
     <title>Resonaut</title>
     <link rel="stylesheet" href="style.css">
     <style>
-      /* Performance: Scale/Key Sequencer */
+      /* Performance: Scale/Key Sequencer (grid, 4 columns, squarish blocks) */
+      #scaleKeySeqBlock h4 { font-size: 0.95em; letter-spacing: 0.5px; margin-bottom: 6px; }
       .scale-key-seq-blocks {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 6px;
-      }
-      .scale-key-seq-block {
-        display: inline-flex;
-        align-items: center;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 6px;
-        border: 1px solid var(--button-hover, #666);
-        padding: 6px;
-        border-radius: 4px;
-        background: rgba(0,0,0,0.08);
+        padding: 6px 0;
       }
-      .scale-key-seq-block select,
-      .scale-key-seq-block input[type="number"] {
-        height: 24px;
-      }
-      .scale-key-seq-block .seq-remove {
-        background: transparent;
-        border: 1px solid var(--button-hover, #666);
-        border-radius: 3px;
-        cursor: pointer;
-        padding: 2px 6px;
+      .scale-key-seq-block { 
+        position: relative;
+        min-height: 46px;
+        border: 1px solid var(--timeline-grid-default-border-color, var(--button-hover, #666));
+        border-radius: 8px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.18));
+        color: var(--text-color, #fff);
+        padding: 4px 6px 6px 6px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
       }
       .scale-key-seq-block.playing { outline: 2px solid var(--start-node-color, #ffd700); }
+      .scale-key-seq-header { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:2px; }
+      .scale-key-seq-title { font-size: 10.5px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .scale-key-seq-remove { position:absolute; right: 4px; top: 4px; background: transparent; border: 0; color: var(--text-color, #fff); opacity: 0.55; cursor: pointer; font-size: 12px; line-height: 1; }
+      .scale-key-seq-remove:hover { opacity: 1; }
+      .scale-key-seq-controlsTop { display:grid; grid-template-columns: 36px 36px; gap: 4px; align-items:center; }
+      .scale-key-seq-scaleRow { margin-top: 4px; }
+      .scale-key-seq-controlsTop select, .scale-key-seq-controlsTop input[type="number"], .scale-key-seq-scaleRow select { height: 18px; font-size: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--button-bg); border-radius: 4px; box-sizing: border-box; width: 100%; min-width: 0; }
+      .scale-key-seq-controlsTop select { text-align: center; padding: 0 2px; }
+      .scale-key-seq-controlsTop input[type="number"] { padding: 0 2px; text-align: center; }
+      .scale-key-seq-scaleRow select { width: 100%; }
+      .scale-key-seq-progress { position:absolute; left:0; top:0; height:100%; background: var(--start-node-color, rgba(255,215,0,0.6)); opacity: 0.12; width:0%; border-radius:8px; pointer-events:none; transition: width 60ms linear; }
+      .scale-key-seq-block.playing .scale-key-seq-progress { opacity: 0.22; }
+      .scale-key-seq-block.playing { outline: 2px solid var(--start-node-border, #ffd700); box-shadow: 0 0 10px rgba(0,0,0,0.4), 0 0 10px var(--start-node-color, rgba(255,215,0,0.5)); }
+      .scale-key-seq-block.playing::after { content: ""; position: absolute; left: 0; top: 0; height: 3px; width: 100%; background: var(--start-node-border, #ffd700); box-shadow: 0 0 8px var(--start-node-color, rgba(255,215,0,0.6)); border-top-left-radius: 8px; border-top-right-radius: 8px; }
+
+      /* Actions under the grid */
+      .scale-key-seq-actions button,
+      .scale-key-seq-actions select {
+        height: 22px;
+        font-size: 11px;
+        background: var(--button-bg);
+        color: var(--text-color);
+        border: 1px solid var(--button-hover);
+        border-radius: 4px;
+        padding: 0 8px;
+      }
+      .scale-key-seq-actions label { font-size: 11px; opacity: 0.85; }
+      #scaleKeySeqTimeLeft { font-size: 11px; opacity: 0.8; margin-left: 8px; }
     </style>
 </head>
 <body>
@@ -506,7 +525,7 @@
         </div>
         
         <div id="performance-panel-content" class="performance-panel">
-            <div class="performance-block">
+            <div class="performance-block" id="scaleKeySeqBlock">
                 <h4>Scale/Key Sequencer</h4>
                 <div class="mixer-control-item">
                     <label for="scaleKeySeqEnabled">Enabled</label>
@@ -517,9 +536,19 @@
                     <input type="number" id="scaleKeySeqBarsPerBlock" min="1" max="64" step="1" value="4">
                 </div>
                 <div id="scaleKeySeqBlocks" class="scale-key-seq-blocks" title="Add blocks with scale, key, and bars. Blocks play left to right."></div>
-                <div class="mixer-control-item" style="gap:8px; display:flex; flex-wrap:wrap; margin-top:8px;">
+                <div class="mixer-control-item scale-key-seq-actions" style="gap:8px; display:flex; flex-wrap:wrap; margin-top:8px; align-items:center;">
                     <button id="scaleKeySeqAddBlockBtn">Add Block</button>
                     <button id="scaleKeySeqClearBtn">Clear</button>
+                    <span id="scaleKeySeqTimeLeft" title="Time until next block"></span>
+                </div>
+                <div class="mixer-control-item scale-key-seq-actions" style="gap:8px; display:flex; flex-wrap:wrap; margin-top:6px; align-items:center;">
+                    <label for="scaleKeySeqProgSelect">Progression</label>
+                    <select id="scaleKeySeqProgSelect" title="Choose a common chord progression"></select>
+                    <label for="scaleKeySeqProgRootSelect">Root</label>
+                    <select id="scaleKeySeqProgRootSelect"></select>
+                    <label for="scaleKeySeqProgScaleSelect">Scale</label>
+                    <select id="scaleKeySeqProgScaleSelect"></select>
+                    <button id="scaleKeySeqAddProgBtn" title="Add blocks for the selected progression">Add Progression</button>
                 </div>
             </div>
             <div class="performance-block">

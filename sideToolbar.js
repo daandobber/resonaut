@@ -47,24 +47,49 @@ export function populateSideToolbar(contentType, title) {
       break;
     case "samplers":
       if (typeof SAMPLER_DEFINITIONS !== "undefined" && SAMPLER_DEFINITIONS.length > 0) {
-        window.samplerWaveformTypes.forEach((sampler) => {
-          const button = document.createElement("button");
-          button.classList.add("waveform-button", "sampler-button");
-          button.dataset.type = sampler.type;
-          button.textContent = sampler.label;
-          button.disabled = sampler.loadFailed;
-          if (sampler.loadFailed) {
-            button.title = `${sampler.label} sample failed to load`;
-            button.classList.add("disabled");
-          }
-          if (window.nodeTypeToAdd === "sound" && window.waveformToAdd === sampler.type) {
-            button.classList.add("selected");
-          }
-          button.addEventListener("click", () => {
-            if (!button.disabled) window.handleWaveformSelect(button, sampler.type);
-          });
-          groupDiv.appendChild(button);
+        const groups = {};
+        (window.samplerWaveformTypes || []).forEach((s) => {
+          const cat = s.category || "Other";
+          if (!groups[cat]) groups[cat] = [];
+          groups[cat].push(s);
         });
+        const catPriority = (name) => (name === 'Drums' ? 3 : name === 'Percussion' ? 2 : name === 'FX' ? 1 : 0);
+        const sortedCats = Object.keys(groups).sort((a, b) => {
+          const pa = catPriority(a);
+          const pb = catPriority(b);
+          if (pa !== pb) return pa - pb; // Others first, then FX, then Percussion, then Drums
+          return (a || '').localeCompare(b || '');
+        });
+        sortedCats.forEach((cat) => {
+          const titleEl = document.createElement("div");
+          titleEl.className = "sampler-category-title";
+          titleEl.textContent = cat;
+          groupDiv.appendChild(titleEl);
+
+          const grid = document.createElement("div");
+          grid.className = "sampler-grid";
+          const items = groups[cat].slice().sort((a,b)=> (a.label||"").localeCompare(b.label||""));
+          items.forEach((sampler) => {
+            const button = document.createElement("button");
+            button.classList.add("waveform-button", "sampler-button", "compact");
+            button.dataset.type = sampler.type;
+            button.textContent = sampler.label;
+            button.disabled = sampler.loadFailed;
+            if (sampler.loadFailed) {
+              button.title = `${sampler.label} sample failed to load`;
+              button.classList.add("disabled");
+            }
+            if (window.nodeTypeToAdd === "sound" && window.waveformToAdd === sampler.type) {
+              button.classList.add("selected");
+            }
+            button.addEventListener("click", () => {
+              if (!button.disabled) window.handleWaveformSelect(button, sampler.type);
+            });
+            grid.appendChild(button);
+          });
+          groupDiv.appendChild(grid);
+        });
+
         if (
           window.nodeTypeToAdd === "sound" &&
           (window.waveformToAdd === null ||

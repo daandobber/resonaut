@@ -682,6 +682,11 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 .panel .type-button:hover, .panel .waveform-button:hover, .panel .sampler-button:hover, .panel .drum-element-button:hover { background-color: var(--button-hover); }
 .panel .type-button.selected, .panel .waveform-button.selected, .panel .sampler-button.selected, .panel .drum-element-button.selected { background-color: var(--button-active); border-color: var(--text-color); color: white; }
 .panel .type-button.disabled, .panel .waveform-button.disabled, .panel .sampler-button.disabled, .panel .drum-element-button.disabled { background-color: var(--button-disabled-bg); color: var(--button-disabled-color); cursor: not-allowed; border-color: var(--button-bg); text-decoration: line-through; opacity: 0.7; }
+
+/* Compact grouped sampler menu */
+#sideToolbarContent .sampler-category-title { font-size: 0.85em; opacity: 0.85; margin: 6px 0 2px; padding-left: 2px; }
+#sideToolbarContent .sampler-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.panel .sampler-button.compact { padding: 6px 6px; font-size: 0.8em; }
 .panel-section:last-child { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
 .panel label { font-size: 0.9em; margin: 10px 0 3px 0; display: block; opacity: 0.9; }
 .panel input[type="range"], .panel input[type="text"], .panel input[type="color"], .panel select, .panel input[type="number"] { background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 6px; border-radius: 3px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-size: 0.9em; transition: background-color 0.2s ease, border-color 0.2s ease; vertical-align: middle; cursor: pointer; }

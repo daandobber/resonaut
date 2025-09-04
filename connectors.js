@@ -20,10 +20,10 @@ function getCrankRadarHandleGripPos(n) {
 function getConnectionPoint(node, useHandle) {
   if (
     typeof useHandle === 'number' &&
-    (node.type === 'grid_sequencer' || node.type === 'pulsar_grid' || node.type === 'circle_fifths')
+    (node.type === 'grid_sequencer' || node.type === 'pulsar_grid' || node.type === 'circle_fifths' || node.type === 'galactic_bloom')
   ) {
     // Grid and Pulsar grid are rectangular; Circle-of-fifths is circular.
-    if (node.type === 'circle_fifths') {
+    if (node.type === 'circle_fifths' || node.type === 'galactic_bloom') {
       // Handle -1: left input; 0: center/right output
       const offset = 12;
       if (useHandle < 0) {

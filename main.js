@@ -65,6 +65,7 @@ import { createDailyTipManager } from './utils/dailyTips.js';
 import * as el from './utils/domElements.js';
 import { ONE_WAY_TYPE, drawArrow, getArrowPosition } from './connectors.js';
 import { CIRCLE_FIFTHS_TYPE, applyZodiacPresetToCircle, initCircleNode as initCircleFifthsNode, handleCirclePulse as handleCircleFifthsPulse, buildCenterInstrumentPanel as buildCircleCenterPanel } from './orbs/circle-fifths.js';
+import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGalacticDots, updateGalacticBloom } from './orbs/galactic-bloom.js';
 import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS } from './orbs/tonnetz-sequencer.js';
 import { PULSE_BURST_TYPE, initPulseBurstNode, handlePulseBurstPulse, buildPulseBurstPanel } from './orbs/pulse-burst.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
@@ -356,6 +357,11 @@ const {
   scaleKeySeqBlocks,
   scaleKeySeqAddBlockBtn,
   scaleKeySeqClearBtn,
+  scaleKeySeqTimeLeft,
+  scaleKeySeqProgSelect,
+  scaleKeySeqProgRootSelect,
+  scaleKeySeqProgScaleSelect,
+  scaleKeySeqAddProgBtn,
   canvasSwitcherEl,
   canvasSwitcherToggle,
   helpWizard,
@@ -576,6 +582,18 @@ if (toolbarPulsars && typeof document.createElement === 'function') {
     toolbarPulsars.insertBefore(tonnetzBtn, btn.nextSibling);
   } catch { toolbarPulsars.appendChild(tonnetzBtn); }
   
+  // Add Galactic Bloom (Euclidean, Milky Way) button
+  const galBtn = document.createElement('button');
+  galBtn.id = 'addGalacticBloomBtn';
+  galBtn.title = 'Add Galactic Bloom Sequencer (Euclidean)';
+  galBtn.textContent = '✦✹';
+  galBtn.addEventListener('click', (e) => {
+    setupAddTool(e.currentTarget, GALACTIC_BLOOM_TYPE, false);
+  });
+  try {
+    toolbarPulsars.insertBefore(galBtn, tonnetzBtn.nextSibling);
+  } catch { toolbarPulsars.appendChild(galBtn); }
+
 }
 const addTimelineGridBtn =
   typeof document !== 'undefined' && typeof document.getElementById === 'function'
@@ -1375,6 +1393,7 @@ const samplerWaveformTypes =
         type: `sampler_${sampler.id}`,
         label: sampler.label,
         icon: sampler.icon,
+        category: sampler.category,
         loadFailed: sampler.loadFailed,
       }))
     : [];
@@ -1601,9 +1620,9 @@ function getCrankRadarHandleGripPos(n) {
 function getConnectionPoint(node, useHandle) {
   if (
     typeof useHandle === 'number' &&
-    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid' || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE)
+    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid' || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE || node.type === GALACTIC_BLOOM_TYPE)
   ) {
-    if (node.type === CIRCLE_FIFTHS_TYPE) {
+    if (node.type === CIRCLE_FIFTHS_TYPE || node.type === GALACTIC_BLOOM_TYPE) {
       const offset = 12;
       if (useHandle < 0) return { x: node.x - offset, y: node.y };
       return { x: node.x + offset, y: node.y };
@@ -3436,7 +3455,12 @@ let scaleKeySeqState = {
   blocks: [], // { scaleKey: string, root: number, bars: number }
   currentIdx: 0,
   timer: null,
+  raf: null,
+  barWidth: 48, // px per bar
+  currentStartTime: 0,
+  currentEndTime: 0,
 };
+let scaleKeySeqUIInitialized = false;
 
 function getSecondsPerBeatForSeq() {
   const bpm = (typeof globalBPM === 'number' && globalBPM > 0) ? globalBPM : 120;
@@ -3459,8 +3483,9 @@ function applyScaleKeySeqBlock(block) {
 
 function highlightActiveScaleKeyBlock() {
   if (!scaleKeySeqBlocks) return;
-  const children = Array.from(scaleKeySeqBlocks.children);
-  children.forEach((el, i) => {
+  const timeline = scaleKeySeqBlocks.querySelector('.scale-key-seq-timeline');
+  const blocks = Array.from(timeline ? timeline.querySelectorAll('.scale-key-seq-block') : []);
+  blocks.forEach((el, i) => {
     if (!el || !el.classList) return;
     if (i === scaleKeySeqState.currentIdx) el.classList.add('playing'); else el.classList.remove('playing');
   });
@@ -3476,16 +3501,21 @@ function stepScaleKeySequencer() {
   const beatsPerBar = 4;
   const bars = Math.max(1, parseInt(block?.bars ?? scaleKeySeqState.defaultBars, 10) || 4);
   const durationSec = Math.max(0.01, beatsPerBar * bars * getSecondsPerBeatForSeq());
+  const now = audioContext?.currentTime || (performance.now()/1000);
+  scaleKeySeqState.currentStartTime = now;
+  scaleKeySeqState.currentEndTime = now + durationSec;
   clearTimeout(scaleKeySeqState.timer);
   scaleKeySeqState.timer = setTimeout(() => {
     scaleKeySeqState.currentIdx = (idx + 1) % scaleKeySeqState.blocks.length;
     stepScaleKeySequencer();
   }, durationSec * 1000);
+  startScaleKeySeqAnimation();
 }
 
 function stopScaleKeySequencer() {
   clearTimeout(scaleKeySeqState.timer);
   scaleKeySeqState.timer = null;
+  cancelAnimationFrame(scaleKeySeqState.raf);
   if (scaleKeySeqBlocks) Array.from(scaleKeySeqBlocks.children).forEach(el => el.classList?.remove('playing'));
 }
 
@@ -3500,54 +3530,77 @@ function renderScaleKeySeqBlocksUI() {
   scaleKeySeqBlocks.innerHTML = '';
   const scaleKeys = Object.keys(scales || {});
   const noteNames = NOTE_NAMES || ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-
   scaleKeySeqState.blocks.forEach((blk, idx) => {
+    const bars = Math.max(1, parseInt(blk.bars ?? scaleKeySeqState.defaultBars, 10) || 4);
     const wrap = document.createElement('div');
     wrap.className = 'scale-key-seq-block';
-    // Scale select
-    const selScale = document.createElement('select');
-    scaleKeys.forEach(k => {
-      const opt = document.createElement('option');
-      opt.value = k; opt.textContent = (scales[k]?.name || k);
-      if (blk.scaleKey === k) opt.selected = true;
-      selScale.appendChild(opt);
-    });
-    selScale.addEventListener('change', (e) => { blk.scaleKey = e.target.value; saveState(); });
-    // Root select
-    const selRoot = document.createElement('select');
-    noteNames.forEach((nn, i) => {
-      const opt = document.createElement('option'); opt.value = i; opt.textContent = nn;
-      if (((blk.root % 12)+12)%12 === i) opt.selected = true;
-      selRoot.appendChild(opt);
-    });
-    selRoot.addEventListener('change', (e) => { blk.root = parseInt(e.target.value, 10) || 0; saveState(); });
-    // Bars input
-    const barsInput = document.createElement('input');
-    barsInput.type = 'number'; barsInput.min = '1'; barsInput.max = '64'; barsInput.step = '1';
-    barsInput.value = blk.bars ?? scaleKeySeqState.defaultBars ?? 4;
-    barsInput.title = 'Bars for this block';
-    barsInput.addEventListener('change', (e) => {
-      const v = Math.max(1, Math.min(64, parseInt(e.target.value, 10) || 4));
-      blk.bars = v; e.target.value = v; saveState(); rescheduleScaleKeySequencer();
-    });
-    // Remove button
+    wrap.dataset.index = String(idx);
+
+    const progress = document.createElement('div');
+    progress.className = 'scale-key-seq-progress';
+    wrap.appendChild(progress);
+
+    // Remove button (top-right)
     const rem = document.createElement('button');
-    rem.textContent = '×'; rem.className = 'seq-remove'; rem.title = 'Remove block';
-    rem.addEventListener('click', () => {
-      const wasPlayingIdx = scaleKeySeqState.currentIdx;
-      scaleKeySeqState.blocks.splice(idx, 1);
-      if (scaleKeySeqState.currentIdx >= scaleKeySeqState.blocks.length) scaleKeySeqState.currentIdx = 0;
-      renderScaleKeySeqBlocksUI(); saveState(); rescheduleScaleKeySequencer();
-    });
-    wrap.appendChild(selScale);
-    wrap.appendChild(selRoot);
-    const lblBars = document.createElement('span'); lblBars.textContent = 'bars'; lblBars.style.marginLeft = '4px';
-    wrap.appendChild(barsInput);
-    wrap.appendChild(lblBars);
+    rem.className = 'scale-key-seq-remove'; rem.textContent='×'; rem.title='Remove block';
+    rem.addEventListener('click', ()=>{ scaleKeySeqState.blocks.splice(idx,1); if (scaleKeySeqState.currentIdx >= scaleKeySeqState.blocks.length) scaleKeySeqState.currentIdx = 0; renderScaleKeySeqBlocksUI(); saveState(); rescheduleScaleKeySequencer(); });
     wrap.appendChild(rem);
+
+    // Top row: Root + Bars
+    const controlsTop = document.createElement('div');
+    controlsTop.className = 'scale-key-seq-controlsTop';
+    const selRoot = document.createElement('select');
+    noteNames.forEach((nn,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=nn; if((((blk.root%12)+12)%12)===i) o.selected=true; selRoot.appendChild(o); });
+    selRoot.addEventListener('change', (e)=>{ blk.root = parseInt(e.target.value,10)||0; saveState(); });
+    const barsInput = document.createElement('input'); barsInput.type='number'; barsInput.min='1'; barsInput.max='64'; barsInput.step='1'; barsInput.value=String(bars); barsInput.title='Bars';
+    barsInput.addEventListener('change',(e)=>{ const v=Math.max(1,Math.min(64,parseInt(e.target.value,10)||bars)); blk.bars=v; barsInput.value=String(v); saveState(); rescheduleScaleKeySequencer(); });
+    controlsTop.appendChild(selRoot); controlsTop.appendChild(barsInput);
+    wrap.appendChild(controlsTop);
+
+    // Bottom row: Scale
+    const scaleRow = document.createElement('div');
+    scaleRow.className = 'scale-key-seq-scaleRow';
+    const selScale = document.createElement('select');
+    scaleKeys.forEach(k => { const o = document.createElement('option'); o.value=k; o.textContent=scales[k]?.name||k; if (blk.scaleKey===k) o.selected=true; selScale.appendChild(o); });
+    selScale.addEventListener('change', (e)=>{ blk.scaleKey = e.target.value; saveState(); });
+    scaleRow.appendChild(selScale);
+    wrap.appendChild(scaleRow);
+
     scaleKeySeqBlocks.appendChild(wrap);
   });
   highlightActiveScaleKeyBlock();
+}
+
+function startScaleKeySeqAnimation() {
+  cancelAnimationFrame(scaleKeySeqState.raf);
+  const loop = () => {
+    const now = audioContext?.currentTime || (performance.now()/1000);
+    const start = scaleKeySeqState.currentStartTime || now;
+    const end = scaleKeySeqState.currentEndTime || now;
+    const total = Math.max(0.0001, end - start);
+    const t = Math.max(0, Math.min(1, (now - start) / total));
+
+    if (scaleKeySeqBlocks) {
+      const blocks = Array.from(scaleKeySeqBlocks.querySelectorAll('.scale-key-seq-block'));
+      const idx = scaleKeySeqState.currentIdx;
+      blocks.forEach((el, i) => {
+        const prog = el.querySelector('.scale-key-seq-progress');
+        if (!prog) return;
+        prog.style.width = (i === idx) ? `${t*100}%` : '0%';
+      });
+    }
+
+    if (typeof scaleKeySeqTimeLeft !== 'undefined' && scaleKeySeqTimeLeft && isFinite(total)) {
+      const remaining = Math.max(0, (end - now));
+      const beatsPerBar = 4;
+      const spb = getSecondsPerBeatForSeq();
+      const barsLeft = remaining / (beatsPerBar * spb);
+      scaleKeySeqTimeLeft.textContent = `${barsLeft.toFixed(2)} bars left`;
+    }
+
+    scaleKeySeqState.raf = requestAnimationFrame(loop);
+  };
+  scaleKeySeqState.raf = requestAnimationFrame(loop);
 }
 
 function initializeScaleKeySequencerUI() {
@@ -3556,7 +3609,50 @@ function initializeScaleKeySequencerUI() {
   scaleKeySeqDefaultBarsInput.value = scaleKeySeqState.defaultBars;
   scaleKeySeqEnabled.checked = scaleKeySeqState.enabled;
 
-  scaleKeySeqEnabled.addEventListener('change', (e) => {
+  // Populate progression UI (always visible)
+  const noteNames = NOTE_NAMES || ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+  const progressionDefs = {
+    "I–V–vi–IV": [0,4,5,3],
+    "ii–V–I": [1,4,0],
+    "I–IV–V–I": [0,3,4,0],
+    "vi–IV–I–V": [5,3,0,4],
+    "I–vi–IV–V": [0,5,3,4],
+    "I–V–IV–V": [0,4,3,4]
+  };
+  if (scaleKeySeqProgSelect) {
+    scaleKeySeqProgSelect.innerHTML = '';
+    Object.keys(progressionDefs).forEach(label => {
+      const opt = document.createElement('option'); opt.value = label; opt.textContent = label; scaleKeySeqProgSelect.appendChild(opt);
+    });
+  }
+  if (scaleKeySeqProgRootSelect) {
+    scaleKeySeqProgRootSelect.innerHTML = '';
+    noteNames.forEach((nn, i) => { const opt=document.createElement('option'); opt.value=i; opt.textContent=nn; if (i===((currentRootNote%12+12)%12)) opt.selected=true; scaleKeySeqProgRootSelect.appendChild(opt); });
+  }
+  if (scaleKeySeqProgScaleSelect) {
+    scaleKeySeqProgScaleSelect.innerHTML = '';
+    Object.keys(scales||{}).forEach(k=>{ const opt=document.createElement('option'); opt.value=k; opt.textContent=scales[k]?.name||k; if (k===currentScaleKey) opt.selected=true; scaleKeySeqProgScaleSelect.appendChild(opt); });
+  }
+  if (!scaleKeySeqUIInitialized && scaleKeySeqAddProgBtn) {
+    scaleKeySeqAddProgBtn.addEventListener('click', ()=>{
+      const label = scaleKeySeqProgSelect?.value || 'I–V–vi–IV';
+      const degrees = progressionDefs[label] || [0,4,5,3];
+      const baseRoot = parseInt(scaleKeySeqProgRootSelect?.value ?? ((currentRootNote%12+12)%12), 10) || 0;
+      const scaleKey = scaleKeySeqProgScaleSelect?.value || currentScaleKey || 'major';
+      const scaleDef = scales[scaleKey] || scales['major'];
+      const scaleSteps = Array.isArray(scaleDef?.notes) ? scaleDef.notes : [0,2,4,5,7,9,11];
+      const defaultBars = Math.max(1, Math.min(64, parseInt(scaleKeySeqDefaultBarsInput?.value ?? 4, 10) || 4));
+
+      degrees.forEach((deg)=>{
+        const step = scaleSteps[(deg % scaleSteps.length + scaleSteps.length) % scaleSteps.length] || 0;
+        const root = (baseRoot + step) % 12;
+        scaleKeySeqState.blocks.push({ scaleKey, root, bars: defaultBars });
+      });
+      renderScaleKeySeqBlocksUI(); saveState(); if (scaleKeySeqState.enabled && scaleKeySeqState.blocks.length>0) rescheduleScaleKeySequencer();
+    });
+  }
+
+  if (!scaleKeySeqUIInitialized) scaleKeySeqEnabled.addEventListener('change', (e) => {
     scaleKeySeqState.enabled = !!e.target.checked;
     saveState();
     if (scaleKeySeqState.enabled) {
@@ -3572,12 +3668,12 @@ function initializeScaleKeySequencerUI() {
     }
   });
 
-  scaleKeySeqDefaultBarsInput.addEventListener('change', (e) => {
+  if (!scaleKeySeqUIInitialized) scaleKeySeqDefaultBarsInput.addEventListener('change', (e) => {
     const v = Math.max(1, Math.min(64, parseInt(e.target.value, 10) || 4));
     scaleKeySeqState.defaultBars = v; e.target.value = v; saveState();
   });
 
-  scaleKeySeqAddBlockBtn.addEventListener('click', () => {
+  if (!scaleKeySeqUIInitialized) scaleKeySeqAddBlockBtn.addEventListener('click', () => {
     const newBlock = {
       scaleKey: currentScaleKey || 'major',
       root: typeof currentRootNote === 'number' ? currentRootNote : 0,
@@ -3588,13 +3684,14 @@ function initializeScaleKeySequencerUI() {
     if (scaleKeySeqState.enabled && scaleKeySeqState.blocks.length === 1) rescheduleScaleKeySequencer();
   });
 
-  scaleKeySeqClearBtn.addEventListener('click', () => {
+  if (!scaleKeySeqUIInitialized) scaleKeySeqClearBtn.addEventListener('click', () => {
     scaleKeySeqState.blocks = [];
     scaleKeySeqState.currentIdx = 0;
     renderScaleKeySeqBlocksUI(); saveState(); stopScaleKeySequencer();
   });
 
   renderScaleKeySeqBlocksUI();
+  scaleKeySeqUIInitialized = true;
 }
 
 function updateMeterVisual(analyser, meterFillEl) {
@@ -6901,6 +6998,20 @@ function propagateTrigger(
         MAX_SCALE_INDEX,
         DELAY_FACTOR,
         highlightCircleDegreeBars,
+      });
+    } else if (
+      currentNode.type === GALACTIC_BLOOM_TYPE
+    ) {
+      // Euclidean-gated Circle-of-Fifths behavior
+      playPrimaryAudioEffect = false;
+      canPropagateOriginalPulseFurther = false;
+      handleGalacticPulse(currentNode, incomingConnection, {
+        findNodeById,
+        triggerNodeEffect,
+        MIN_SCALE_INDEX,
+        MAX_SCALE_INDEX,
+        DELAY_FACTOR,
+        highlightCircleDegreeBars, // reuse piano visual for degree highlights
       });
     } else if (
       currentNode.type === TONNETZ_TYPE
@@ -11466,13 +11577,15 @@ function animationLoop() {
       (n.manualAdvanceIncrement || n.pulseAdvanceRemaining),
   );
   if (!(isAudioReady && isPlaying && audioContext && audioContext.state === "running")) {
-    if (queuedRadarStep) {
-      nodes.forEach((n) => {
-        if (n.type === SPACERADAR_TYPE || n.type === CRANK_RADAR_TYPE) {
-          updateSpaceRadar(n, deltaTime);
-        }
-      });
-    }
+    // Even when audio engine is paused, animate visuals for radars and Galactic Bloom
+    nodes.forEach((n) => {
+      if (n.type === SPACERADAR_TYPE || n.type === CRANK_RADAR_TYPE) {
+        updateSpaceRadar(n, deltaTime);
+      }
+      if (n.type === GALACTIC_BLOOM_TYPE) {
+        try { updateGalacticBloom(n, deltaTime, { findNodeById, triggerNodeEffect, MIN_SCALE_INDEX, MAX_SCALE_INDEX, DELAY_FACTOR, highlightCircleDegreeBars }, { audioActive: false, secondsPerBeat, isGlobalSyncEnabled, subdivisionOptions }); } catch {}
+      }
+    });
     draw();
     previousFrameTime = now;
     return;
@@ -11550,6 +11663,11 @@ function animationLoop() {
         updateMotorOrb(node, deltaTime);
         return;
       }
+      if (node.type === GALACTIC_BLOOM_TYPE) {
+        // Always update rotation every frame for smooth motion
+        updateGalacticBloom(node, deltaTime, { findNodeById, triggerNodeEffect, MIN_SCALE_INDEX, MAX_SCALE_INDEX, DELAY_FACTOR, highlightCircleDegreeBars }, { audioActive: true, secondsPerBeat, isGlobalSyncEnabled, subdivisionOptions });
+        return;
+      }
       if (node.type === CLOCKWORK_ORB_TYPE) {
         updateClockworkOrb(node, deltaTime);
         return;
@@ -11570,6 +11688,14 @@ function animationLoop() {
         // In pulse-driven mode, grid sequencer should not advance on time
         if (
           node.type === GRID_SEQUENCER_TYPE &&
+          node.audioParams &&
+          node.audioParams.advanceOnPulse
+        ) {
+          return;
+        }
+        // In pulse-driven mode, Galactic Bloom should not advance on time
+        if (
+          node.type === GALACTIC_BLOOM_TYPE &&
           node.audioParams &&
           node.audioParams.advanceOnPulse
         ) {
@@ -13167,6 +13293,203 @@ function drawNode(node) {
       ctx.stroke();
     } catch {}
     return;
+  } else if (node.type === GALACTIC_BLOOM_TYPE) {
+    // Draw a spiral/galaxy-themed sequencer with left input and center output
+    const currentStyles = getComputedStyle(document.body || document.documentElement);
+    const border = (currentStyles.getPropertyValue("--tonnetz-border-color").trim() || "rgba(180,220,255,0.8)");
+    const accent = (currentStyles.getPropertyValue("--start-node-color").trim() || "rgba(255,220,140,0.9)");
+    const size = Math.min(node.width, node.height);
+    const radius = size * 0.45;
+    const cx = node.x;
+    const cy = node.y;
+
+    // Main disk
+    ctx.save();
+    ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
+    ctx.strokeStyle = border;
+    ctx.fillStyle = colorWithAlpha(border, 0.06);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Spiral arms
+    const arms = 4;
+    const turns = 1.5; // windings
+    const segIdx = Number.isFinite(node.segmentIndex) ? node.segmentIndex : 0;
+    for (let a = 0; a < arms; a++) {
+      const baseAngle = (a * Math.PI * 2) / arms;
+      ctx.beginPath();
+      for (let t = 0; t <= 1; t += 0.02) {
+        const ang = baseAngle + turns * Math.PI * 2 * t + segIdx * 0.02;
+        const r = (radius * (t * 0.9 + 0.1));
+        const x = cx + Math.cos(ang) * r;
+        const y = cy + Math.sin(ang) * r;
+        if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = colorWithAlpha(accent, 0.35);
+      ctx.lineWidth = Math.max(1 / viewScale, 1.5 / viewScale);
+      ctx.stroke();
+    }
+
+    // Spiral dots: orbiting points whose angles depend on node._galPhase
+    try {
+      const ap = node.audioParams || {};
+                const dots = node._galDots || [];
+                const phase = node._galPhase || 0;
+                const spokeRot = ap.spokeRotate || 0;
+                const spokes = Math.max(1, Math.floor(ap.numSpokes || 12));
+      const stepAngle = (Math.PI * 2) / spokes;
+      const segs = node.segments || 12;
+      const activeSeg = Number.isFinite(node.segmentIndex) ? node.segmentIndex : 0;
+
+      // Spokes (lines) with highlight when recently hit + on/off dimming
+      ctx.lineWidth = Math.max(1 / viewScale, 1 / viewScale);
+      const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const useSpokeAngles = Array.isArray(node.audioParams?.spokeAngles) && node.audioParams.spokeAngles.length === spokes;
+      for (let k = 0; k < spokes; k++) {
+        const a = useSpokeAngles ? node.audioParams.spokeAngles[k] : (spokeRot + k * stepAngle);
+        const enabled = !Array.isArray(node.audioParams?.spokeEnabled) || node.audioParams.spokeEnabled[k] !== false;
+        // base line
+        ctx.strokeStyle = enabled ? colorWithAlpha(border, 0.25) : colorWithAlpha(border, 0.1);
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * (radius * 0.15), cy + Math.sin(a) * (radius * 0.15));
+        ctx.lineTo(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius);
+        ctx.stroke();
+        // highlight overlay
+        const glowAt = Array.isArray(node._spokeGlow) ? node._spokeGlow[k] || 0 : 0;
+        const life = 650; // ms
+        const age = nowMs - glowAt;
+        if (glowAt && age >= 0 && age < life) {
+          const t = 1 - age / life;
+          ctx.strokeStyle = colorWithAlpha(accent, 0.35 * t + 0.25);
+          ctx.lineWidth = Math.max(2 / viewScale, 2.5 / viewScale);
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a) * (radius * 0.12), cy + Math.sin(a) * (radius * 0.12));
+          ctx.lineTo(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius);
+          ctx.stroke();
+        }
+      }
+
+      // Build current dot positions (for linking)
+      const pts = [];
+      ctx.lineWidth = Math.max(1 / viewScale, 1 / viewScale);
+      for (let i = 0; i < dots.length; i++) {
+        const d = dots[i];
+        const ang = d.baseAngle + (ap.globalOffset||0) + d.speed * phase;
+        const r = radius * d.r;
+        const x = cx + Math.cos(ang) * r;
+        const y = cy + Math.sin(ang) * r;
+        const bucket = Math.floor(((ang) % (Math.PI*2) + (Math.PI*2)) % (Math.PI*2) / ((Math.PI*2)/segs));
+        const isActive = (bucket % segs) === activeSeg;
+        pts.push({ x, y, ang, isActive });
+        // radial connector to center
+        ctx.strokeStyle = colorWithAlpha(accent, 0.18);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      }
+
+      // Connect dots to each other in angular order to form a rotating web
+      if (pts.length >= 2) {
+        const ordered = pts.slice().sort((a,b)=>a.ang-b.ang);
+        ctx.strokeStyle = colorWithAlpha(accent, 0.22);
+        ctx.lineWidth = Math.max(1 / viewScale, 1.2 / viewScale);
+        ctx.beginPath();
+        ctx.moveTo(ordered[0].x, ordered[0].y);
+        for (let i=1;i<ordered.length;i++) ctx.lineTo(ordered[i].x, ordered[i].y);
+        ctx.closePath();
+        ctx.stroke();
+        // Optional secondary connections every 3rd to richen the mesh
+        ctx.strokeStyle = colorWithAlpha(accent, 0.12);
+        for (let i=0;i<ordered.length;i++){
+          const j = (i+Math.floor(ordered.length/3)) % ordered.length;
+          ctx.beginPath();
+          ctx.moveTo(ordered[i].x, ordered[i].y);
+          ctx.lineTo(ordered[j].x, ordered[j].y);
+          ctx.stroke();
+        }
+        // Draw dots over the web
+        for (const p of ordered){
+          const dotR = p.isActive ? Math.max(3 / viewScale, 5 / viewScale) : Math.max(1.5 / viewScale, 3 / viewScale);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, dotR, 0, Math.PI*2);
+          ctx.fillStyle = p.isActive ? colorWithAlpha(accent, 0.92) : colorWithAlpha(accent, 0.6);
+          ctx.fill();
+        }
+      }
+    } catch {}
+
+    // Glow pulse segment
+    try {
+      const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const glowAt = node.lastGlowAt || 0;
+      const life = 700; // ms
+      const age = nowMs - glowAt;
+      if (age >= 0 && age < life) {
+        const t = 1 - age / life; // 1..0
+        ctx.save();
+        ctx.globalAlpha = 0.25 + 0.55 * t;
+        ctx.shadowBlur = 36 * t / viewScale;
+        ctx.shadowColor = colorWithAlpha(accent, 0.9);
+        ctx.fillStyle = colorWithAlpha(accent, 0.35);
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * (0.35 + 0.55 * t), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    } catch {}
+
+    // Center attachment visual (reuse circle semantics)
+    const cr = 4 / viewScale;
+    if (node.audioParams?.centerAttachedNodeId) {
+      const att = findNodeById(node.audioParams.centerAttachedNodeId);
+      const coreR = Math.max(10 / viewScale, radius * 0.25);
+      const coreFill = colorWithAlpha(accent, 0.30);
+      const coreStroke = colorWithAlpha(accent, 0.9);
+      ctx.fillStyle = coreFill;
+      ctx.strokeStyle = coreStroke;
+      ctx.lineWidth = Math.max(2 / viewScale, 1.5 / viewScale);
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (att) { att.x = cx; att.y = cy; att.isEmbeddedInCircleId = node.id; }
+    } else {
+      // fallback: right-side connector as small dot
+      ctx.fillStyle = border;
+      ctx.beginPath();
+      ctx.arc(cx + 12, cy, cr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Left input connector
+    ctx.fillStyle = border;
+    ctx.beginPath();
+    ctx.arc(cx - 12, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rim trigger bars (8 toggles)
+    try {
+      const bars = (node.audioParams?.triggerBars) || [];
+      const activeIdx = Number.isFinite(node.barIndex) ? ((node.barIndex - 1 + 8) % 8) : 0;
+      for (let i = 0; i < 8; i++) {
+        const a = -Math.PI/2 + i * (Math.PI * 2 / 8);
+        const rx = cx + Math.cos(a) * radius;
+        const ry = cy + Math.sin(a) * radius;
+        const enabled = bars[i] !== false;
+        const isActive = i === activeIdx && enabled;
+        ctx.beginPath();
+        ctx.arc(rx, ry, Math.max(3 / viewScale, 3.5 / viewScale), 0, Math.PI * 2);
+        ctx.fillStyle = isActive
+          ? colorWithAlpha(accent, 0.95)
+          : (enabled ? colorWithAlpha(accent, 0.55) : colorWithAlpha(border, 0.25));
+        ctx.fill();
+      }
+    } catch {}
+
+    ctx.restore();
+    return;
   } else if (node.type === TONNETZ_TYPE) {
     // Draw hexagonal Tonnetz sequencer with triangular cells
     const currentStyles = getComputedStyle(document.body || document.documentElement);
@@ -13538,7 +13861,7 @@ function drawNode(node) {
         node.type === "reflector" ||
         node.type === "switch"
       ? 1.0
-      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE || node.type === PULSE_BURST_TYPE || node.type === PRORB_TYPE
+      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === GALACTIC_BLOOM_TYPE || node.type === TONNETZ_TYPE || node.type === PULSE_BURST_TYPE || node.type === PRORB_TYPE
         ? 2.0
         : 1.5;
   ctx.lineWidth = Math.max(
@@ -15757,6 +16080,28 @@ function drawAddPreview() {
           ignoreGlobalSync: false,
           syncSubdivisionIndex: DEFAULT_SUBDIVISION_INDEX,
           triggerInterval: DEFAULT_TRIGGER_INTERVAL,
+        },
+      };
+      drawNode(previewNode);
+    } else if (nodeTypeToAdd === GALACTIC_BLOOM_TYPE) {
+      const size = 240;
+      const previewNode = {
+        id: -1,
+        x: mousePos.x,
+        y: mousePos.y,
+        width: size,
+        height: size,
+        segments: 12,
+        segmentIndex: 0,
+        type: GALACTIC_BLOOM_TYPE,
+        audioParams: {
+          pulseIntensity: DEFAULT_PULSE_INTENSITY,
+          ignoreGlobalSync: true,
+          syncSubdivisionIndex: DEFAULT_SUBDIVISION_INDEX,
+          triggerInterval: DEFAULT_TRIGGER_INTERVAL,
+          euclidSteps: 16,
+          euclidBeats: 5,
+          euclidRotate: 0,
         },
       };
       drawNode(previewNode);
@@ -18747,7 +19092,8 @@ function handleMouseUp(event) {
           if (
             nodeUnderCursorOnUp.type === GRID_SEQUENCER_TYPE ||
             nodeUnderCursorOnUp.type === "pulsar_grid" ||
-            nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE
+            nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE ||
+            nodeUnderCursorOnUp.type === GALACTIC_BLOOM_TYPE
           ) {
             const rectX = nodeUnderCursorOnUp.x - nodeUnderCursorOnUp.width / 2;
             const rectY = nodeUnderCursorOnUp.y - nodeUnderCursorOnUp.height / 2;
@@ -18767,7 +19113,7 @@ function handleMouseUp(event) {
             // If target is a Grid Sequencer in pulse-advance mode, always connect to the single left input
             if (isGridSeq && advanceOnPulse) {
               connectToGridHandle = -1; // special left input
-            } else if (nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE) {
+            } else if (nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE || nodeUnderCursorOnUp.type === GALACTIC_BLOOM_TYPE) {
               // Only allow left input (-1). No outputs from circle.
               connectToGridHandle = -1;
             } else if (isInBottomArea) {
@@ -21733,6 +22079,371 @@ function populateEditPanel() {
 
                 fragment.appendChild(section);
 
+            } else if (node && node.type === GALACTIC_BLOOM_TYPE) {
+                const section = document.createElement('div');
+                section.classList.add('panel-section');
+
+                // Sync controls at the top (visible only when project sync is ON)
+                if (isGlobalSyncEnabled) {
+                  const syncRow = document.createElement('div');
+                  syncRow.style.display = 'flex';
+                  syncRow.style.alignItems = 'center';
+                  syncRow.style.gap = '8px';
+                  const syncLabel = document.createElement('label');
+                  syncLabel.textContent = 'Ignore Global Sync:';
+                  const syncCheckbox = document.createElement('input');
+                  syncCheckbox.type = 'checkbox';
+                  syncCheckbox.checked = !!(node.audioParams?.ignoreGlobalSync);
+                  syncCheckbox.addEventListener('change', (e) => {
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.ignoreGlobalSync = e.target.checked; n.audioParams.spinSyncEnabled = !e.target.checked; }});
+                    saveState();
+                    populateEditPanel();
+                  });
+                  syncRow.appendChild(syncLabel);
+                  syncRow.appendChild(syncCheckbox);
+                  section.appendChild(syncRow);
+
+                  const rotLenLabel = document.createElement('label');
+                  rotLenLabel.textContent = 'Rotation Length:';
+                  rotLenLabel.style.marginRight = '6px';
+                  const rotLenSelect = document.createElement('select');
+                  const currentIdx = node.audioParams?.spinSubdivisionIndex ?? DEFAULT_SUBDIVISION_INDEX;
+                  subdivisionOptions.forEach((opt, idx) => {
+                    const o = document.createElement('option');
+                    o.value = idx;
+                    o.textContent = opt.label;
+                    if (idx === currentIdx) o.selected = true;
+                    rotLenSelect.appendChild(o);
+                  });
+                  rotLenSelect.addEventListener('change', (e) => {
+                    const idx = parseInt(e.target.value, 10);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.spinSubdivisionIndex = idx; }});
+                    saveState();
+                  });
+                  const rotRow = document.createElement('div');
+                  rotRow.style.display = 'flex'; rotRow.style.alignItems = 'center'; rotRow.style.gap = '8px';
+                  rotRow.appendChild(rotLenLabel);
+                  rotRow.appendChild(rotLenSelect);
+                  // Only show rotation length when not ignoring global sync
+                  if (!node.audioParams?.ignoreGlobalSync) section.appendChild(rotRow);
+                }
+
+                // Euclidean: Steps
+                const steps = Math.max(1, node.audioParams?.euclidSteps ?? 16);
+                const stepsSlider = createSlider(
+                  `edit-gal-steps-${node.id}`,
+                  `Steps (${steps}):`,
+                  1, 64, 1,
+                  steps,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(1, parseInt(e_input.target.value,10)||1);
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.euclidSteps = newVal; n._euclidSig = null; n.galaxyStep = 0; }});
+                    e_input.target.previousElementSibling.textContent = `Steps (${newVal}):`;
+                  }
+                );
+                section.appendChild(stepsSlider);
+
+                // Euclidean: Beats
+                const beats = Math.max(0, Math.min(steps, node.audioParams?.euclidBeats ?? 5));
+                const beatsSlider = createSlider(
+                  `edit-gal-beats-${node.id}`,
+                  `Beats (${beats}):`,
+                  0, 64, 1,
+                  beats,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, parseInt(e_input.target.value,10)||0);
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.euclidBeats = newVal; n._euclidSig = null; n.galaxyStep = 0; }});
+                    e_input.target.previousElementSibling.textContent = `Beats (${newVal}):`;
+                  }
+                );
+                section.appendChild(beatsSlider);
+
+                // Euclidean: Rotate
+                const rot = node.audioParams?.euclidRotate ?? 0;
+                const rotateSlider = createSlider(
+                  `edit-gal-rotate-${node.id}`,
+                  `Rotate (${rot}):`,
+                  -64, 64, 1,
+                  rot,
+                  saveState,
+                  (e_input) => {
+                    const newVal = parseInt(e_input.target.value,10)||0;
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.euclidRotate = newVal; n._euclidSig = null; }});
+                    e_input.target.previousElementSibling.textContent = `Rotate (${newVal}):`;
+                  }
+                );
+                section.appendChild(rotateSlider);
+
+                // Probability (0..100%)
+                const prob = Math.round(100 * (node.audioParams?.noteProbability ?? 1));
+                const probSlider = createSlider(
+                  `edit-gal-prob-${node.id}`,
+                  `Probability (${prob}%):`,
+                  0, 1, 0.01,
+                  (node.audioParams?.noteProbability ?? 1),
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.noteProbability = newVal; }});
+                    e_input.target.previousElementSibling.textContent = `Probability (${Math.round(newVal*100)}%):`;
+                  }
+                );
+                section.appendChild(probSlider);
+
+                // Velocity range (min/max)
+                const vmin = node.audioParams?.velMin ?? 0.6;
+                const vmax = node.audioParams?.velMax ?? 1.0;
+                const vminSlider = createSlider(
+                  `edit-gal-vmin-${node.id}`,
+                  `Vel Min (${Math.round(vmin*100)}%):`,
+                  0, 1, 0.01,
+                  vmin,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.velMin = Math.min(newVal, (n.audioParams.velMax ?? 1)); }});
+                    e_input.target.previousElementSibling.textContent = `Vel Min (${Math.round(newVal*100)}%):`;
+                  }
+                );
+                section.appendChild(vminSlider);
+                const vmaxSlider = createSlider(
+                  `edit-gal-vmax-${node.id}`,
+                  `Vel Max (${Math.round(vmax*100)}%):`,
+                  0, 1, 0.01,
+                  vmax,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.velMax = Math.max(newVal, (n.audioParams.velMin ?? 0)); }});
+                    e_input.target.previousElementSibling.textContent = `Vel Max (${Math.round(newVal*100)}%):`;
+                  }
+                );
+                section.appendChild(vmaxSlider);
+
+                // Trigger bars (8 toggle buttons)
+                const barsWrap = document.createElement('div');
+                barsWrap.style.marginTop = '6px';
+                const barsLabel = document.createElement('div');
+                barsLabel.textContent = 'Trigger Lines:';
+                barsWrap.appendChild(barsLabel);
+                const barCircle = document.createElement('div');
+                barCircle.style.position = 'relative';
+                barCircle.style.width = '160px';
+                barCircle.style.height = '160px';
+                barCircle.style.margin = '8px auto';
+                const accent = getComputedStyle(document.body||document.documentElement).getPropertyValue("--start-node-color").trim() || '#88e';
+                const rebuild = () => {
+                  barCircle.innerHTML = '';
+                  const spokes = node.audioParams?.numSpokes ?? 12;
+                  if (!Array.isArray(node.audioParams.spokeEnabled) || node.audioParams.spokeEnabled.length !== spokes) {
+                    const arr = Array(spokes).fill(true);
+                    node.audioParams.spokeEnabled = arr;
+                  }
+                  const bars = node.audioParams.spokeEnabled;
+                  const cx = 80, cy = 80, r = 62;
+                  for (let i=0;i<spokes;i++){
+                    const a = (node.audioParams?.spokeRotate || 0) + (-Math.PI/2 + i * (Math.PI*2/spokes));
+                    const x = cx + Math.cos(a) * r;
+                    const y = cy + Math.sin(a) * r;
+                    const btn = document.createElement('button');
+                    btn.textContent = `${(i+1)}`;
+                    btn.style.position = 'absolute';
+                    btn.style.left = `${x-12}px`;
+                    btn.style.top = `${y-12}px`;
+                    btn.style.width = '24px';
+                    btn.style.height = '24px';
+                    btn.style.padding = '0';
+                    btn.style.fontSize = '10px';
+                    btn.style.borderRadius = '50%';
+                    btn.setAttribute('aria-pressed', bars[i] !== false ? 'true' : 'false');
+                    if (bars[i] !== false) {
+                      btn.className = 'themed-button';
+                      btn.style.opacity = '1';
+                      btn.style.background = accent;
+                      btn.style.color = '#122';
+                    } else {
+                      btn.className = '';
+                      btn.style.opacity = '0.6';
+                      btn.style.background = '#233a66';
+                      btn.style.color = '#9ab';
+                    }
+                    ((idx)=>{
+                      let dragging = false;
+                      const onPointerMove = (ev) => {
+                        if (!dragging) return;
+                        const rect = barCircle.getBoundingClientRect();
+                        const cxp = rect.left + rect.width/2;
+                        const cyp = rect.top + rect.height/2;
+                        const ang = Math.atan2(ev.clientY - cyp, ev.clientX - cxp);
+                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 12; if (!Array.isArray(n.audioParams.spokeAngles) || n.audioParams.spokeAngles.length !== spokes) { n.audioParams.spokeAngles = Array.from({length: spokes}, (_,i)=>(-Math.PI/2 + i*(Math.PI*2/spokes))); } n.audioParams.spokeAngles[idx] = ((ang % (Math.PI*2)) + Math.PI*2) % (Math.PI*2); }});
+                        saveState();
+                        rebuild();
+                        draw();
+                      };
+                      const onPointerUp = () => {
+                        dragging = false;
+                        document.removeEventListener('pointermove', onPointerMove);
+                        document.removeEventListener('pointerup', onPointerUp);
+                      };
+                      btn.addEventListener('pointerdown', (ev)=>{
+                        dragging = true;
+                        ev.preventDefault();
+                        document.addEventListener('pointermove', onPointerMove);
+                        document.addEventListener('pointerup', onPointerUp);
+                      });
+                      btn.addEventListener('click',()=>{
+                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 12; if (!Array.isArray(n.audioParams.spokeEnabled) || n.audioParams.spokeEnabled.length !== spokes) { n.audioParams.spokeEnabled = Array(spokes).fill(true); } n.audioParams.spokeEnabled[idx] = !(n.audioParams.spokeEnabled[idx]===false); }});
+                        saveState();
+                        bars[idx] = !(bars[idx]===false);
+                        rebuild();
+                      });
+                    })(i);
+                    barCircle.appendChild(btn);
+                  }
+                };
+                rebuild();
+                barsWrap.appendChild(barCircle);
+                section.appendChild(barsWrap);
+
+                // Spokes, Dots, Loop Length, Offsets
+                const spokes = node.audioParams?.numSpokes ?? 12;
+                const spokesSlider = createSlider(
+                  `edit-gal-spokes-${node.id}`,
+                  `Number Lines (${spokes}):`,
+                  3, 48, 1,
+                  spokes,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(3, parseInt(e_input.target.value,10)||12);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.numSpokes = v; }});
+                    e_input.target.previousElementSibling.textContent = `Number Lines (${v}):`;
+                  }
+                );
+                section.appendChild(spokesSlider);
+
+                const dots = node.audioParams?.numDots ?? 24;
+                const dotsSlider = createSlider(
+                  `edit-gal-dots-${node.id}`,
+                  `Number Dots (${dots}):`,
+                  2, 100, 1,
+                  dots,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(2, parseInt(e_input.target.value,10)||24);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.numDots = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `Number Dots (${v}):`;
+                  }
+                );
+                section.appendChild(dotsSlider);
+
+                const loopLen = node.audioParams?.loopLength ?? 16;
+                const loopSlider = createSlider(
+                  `edit-gal-loop-${node.id}`,
+                  `Loop Length (${loopLen} pulses):`,
+                  1, 128, 1,
+                  loopLen,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(1, parseInt(e_input.target.value,10)||16);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.loopLength = v; }});
+                    e_input.target.previousElementSibling.textContent = `Loop Length (${v} pulses):`;
+                  }
+                );
+                section.appendChild(loopSlider);
+
+                const qDen = node.audioParams?.quantizedOffsetDenom ?? 12;
+                const qSlider = createSlider(
+                  `edit-gal-qden-${node.id}`,
+                  `Q.Offset (1/${qDen}):`,
+                  1, 64, 1,
+                  qDen,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(1, parseInt(e_input.target.value,10)||12);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.quantizedOffsetDenom = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `Q.Offset (1/${v}):`;
+                  }
+                );
+                section.appendChild(qSlider);
+
+                const free = node.audioParams?.freeOffset ?? 0.3;
+                const freeSlider = createSlider(
+                  `edit-gal-free-${node.id}`,
+                  `F.Offset (${free.toFixed(3)}):`,
+                  0, 1, 0.001,
+                  free,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.freeOffset = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `F.Offset (${v.toFixed(3)}):`;
+                  }
+                );
+                section.appendChild(freeSlider);
+
+                const sOff = node.audioParams?.speedOffset ?? 0;
+                const sSlider = createSlider(
+                  `edit-gal-speedoff-${node.id}`,
+                  `Speed Offset (${sOff.toFixed(3)}):`,
+                  -1, 1, 0.001,
+                  sOff,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(-1, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.speedOffset = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `Speed Offset (${v.toFixed(3)}):`;
+                  }
+                );
+                section.appendChild(sSlider);
+
+                // Rotation speed (rotations per second) — hidden if syncing
+                const rps = node.audioParams?.spinRPS ?? 0.25;
+                const rpsSlider = createSlider(
+                  `edit-gal-rps-${node.id}`,
+                  `Rotation Speed (${rps.toFixed(2)} rps):`,
+                  0, 4, 0.01,
+                  rps,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(0, Math.min(4, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.spinRPS = v; }});
+                    e_input.target.previousElementSibling.textContent = `Rotation Speed (${v.toFixed(2)} rps):`;
+                  }
+                );
+                if (!(isGlobalSyncEnabled && !node.audioParams?.ignoreGlobalSync)) {
+                  section.appendChild(rpsSlider);
+                }
+
+                // Center Instrument UI (reuse Circle-of-Fifths panel)
+                const centerSec = buildCircleCenterPanel(node, {
+                  document,
+                  fmSynthPresets,
+                  analogWaveformPresets,
+                  samplerWaveformTypes,
+                  SAMPLER_DEFINITIONS,
+                  addNode,
+                  findNodeById,
+                  stopNodeAudio,
+                  createAudioNodesForNode,
+                  updateNodeAudioParams,
+                  saveState,
+                  draw,
+                  showAnalogOrbMenu,
+                  showToneFmSynthMenu,
+                  showPulseSynthMenu,
+                  showSamplerOrbMenu,
+                  showAlienOrbMenu,
+                  showResonauterOrbMenu,
+                  showMotorOrbMenu,
+                  showClockworkOrbMenu,
+                  showRadioOrbPanel,
+                });
+                if (centerSec) section.appendChild(centerSec);
+
+                fragment.appendChild(section);
+
             } else if (node && node.type === TONNETZ_TYPE) {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
@@ -23937,15 +24648,48 @@ function populateReplacePresetMenu(contentType, title) {
   else if (contentType === 'samplers') presets = samplerWaveformTypes;
   else if (contentType === 'drumElements') presets = drumElementTypes;
 
-  presets.forEach(p => {
-    const btn = document.createElement('button');
-    const cls = contentType === 'drumElements' ? 'drum-element-button' : 'waveform-button';
-    btn.classList.add(cls);
-    btn.dataset.type = p.type;
-    btn.textContent = p.label;
-    btn.addEventListener('click', () => applyReplacement(p.type, contentType));
-    groupDiv.appendChild(btn);
-  });
+  if (contentType === 'samplers') {
+    const groups = {};
+    (presets || []).forEach((p) => {
+      const cat = p.category || 'Other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(p);
+    });
+    const catPriority = (name) => (name === 'Drums' ? 3 : name === 'Percussion' ? 2 : name === 'FX' ? 1 : 0);
+    Object.keys(groups).sort((a,b)=>{
+      const pa = catPriority(a);
+      const pb = catPriority(b);
+      if (pa !== pb) return pa - pb; // Others first, then FX, then Percussion, then Drums
+      return (a||'').localeCompare(b||'');
+    }).forEach(cat => {
+      const titleEl = document.createElement('div');
+      titleEl.className = 'sampler-category-title';
+      titleEl.textContent = cat;
+      groupDiv.appendChild(titleEl);
+
+      const grid = document.createElement('div');
+      grid.className = 'sampler-grid';
+      groups[cat].slice().sort((a,b)=> (a.label||'').localeCompare(b.label||'')).forEach(p => {
+        const btn = document.createElement('button');
+        btn.classList.add('waveform-button', 'sampler-button', 'compact');
+        btn.dataset.type = p.type;
+        btn.textContent = p.label;
+        btn.addEventListener('click', () => applyReplacement(p.type, contentType));
+        grid.appendChild(btn);
+      });
+      groupDiv.appendChild(grid);
+    });
+  } else {
+    presets.forEach(p => {
+      const btn = document.createElement('button');
+      const cls = contentType === 'drumElements' ? 'drum-element-button' : 'waveform-button';
+      btn.classList.add(cls);
+      btn.dataset.type = p.type;
+      btn.textContent = p.label;
+      btn.addEventListener('click', () => applyReplacement(p.type, contentType));
+      groupDiv.appendChild(btn);
+    });
+  }
 
   sideToolbarContent.appendChild(groupDiv);
   sideToolbar.classList.add('narrow');
@@ -26838,6 +27582,24 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     delete newNode.color;
   }
 
+  if (type === GALACTIC_BLOOM_TYPE) {
+    const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 240;
+    newNode.width = size;
+    newNode.height = size;
+    initGalacticNode(newNode, {
+      DEFAULT_PULSE_INTENSITY,
+      DEFAULT_SUBDIVISION_INDEX,
+      DEFAULT_TRIGGER_INTERVAL,
+      samplerWaveformTypes,
+      SAMPLER_DEFINITIONS,
+      addNode,
+    });
+    newNode.isStartNode = true;
+    delete newNode.starPoints;
+    delete newNode.baseHue;
+    delete newNode.color;
+  }
+
   if (type === TONNETZ_TYPE) {
     const size = optionalDimensions ? Math.min(optionalDimensions.width, optionalDimensions.height) : 240;
     newNode.width = size;
@@ -27006,12 +27768,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
   }
 
-  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== TONNETZ_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
+  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== GALACTIC_BLOOM_TYPE && newNode.type !== TONNETZ_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
     newNode.audioNodes = createAudioNodesForNode(newNode);
     if (newNode.audioNodes) {
       updateNodeAudioParams(newNode);
     }
-  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
+  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === GALACTIC_BLOOM_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
     newNode.audioNodes = null;
   }
 
@@ -28917,7 +29679,7 @@ function setRootNote(newRootNote, preventSave = false) {
   // Ensure Circle of Fifths and Tonnetz embedded instruments follow the project root (degree 0)
   try {
     nodes.forEach((n)=>{
-      if (n && (n.type === CIRCLE_FIFTHS_TYPE || n.type === TONNETZ_TYPE) && n.audioParams?.centerAttachedNodeId) {
+      if (n && (n.type === CIRCLE_FIFTHS_TYPE || n.type === GALACTIC_BLOOM_TYPE || n.type === TONNETZ_TYPE) && n.audioParams?.centerAttachedNodeId) {
         const child = findNodeById(n.audioParams.centerAttachedNodeId);
         if (child && child.audioParams) {
           child.audioParams.scaleIndex = 0;
