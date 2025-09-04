@@ -4747,11 +4747,63 @@ export function triggerNodeEffect(
       const sus = params.ampEnvSustain ?? 0.6;
       const rel = params.ampEnvRelease ?? 0.08;
 
-      if (oscillator1 && oscillator1.frequency) {
-        oscillator1.frequency.setValueAtTime(
-          effectivePitch,
-          now,
-        );
+      // For chord notes (override present), create short-lived Tone pulse voices per tone
+      if (transpositionOverride && typeof transpositionOverride.scaleIndexOverride === 'number') {
+        try {
+          const voiceStartTime = now + Math.random() * 0.002;
+          const atk = params.ampEnvAttack ?? 0.005;
+          const dec = params.ampEnvDecay ?? 0.05;
+          const sus = params.ampEnvSustain ?? 0.6;
+          const rel = params.ampEnvRelease ?? 0.08;
+
+          const osc = new Tone.PulseOscillator({
+            frequency: effectivePitch,
+            width: Math.max(0.01, Math.min(0.99, params.duty ?? 0.5)),
+          });
+          try { osc.detune.value = params.detune ?? 0; } catch {}
+          const g = new Tone.Gain(0);
+          osc.connect(g);
+          // Mix into main gain (Tone graph)
+          g.connect(node.audioNodes.gainNode);
+
+          const peak = Math.max(0.01, Math.min(1.5, intensity));
+          g.gain.setValueAtTime(0, voiceStartTime);
+          g.gain.linearRampToValueAtTime(peak, voiceStartTime + atk);
+          g.gain.exponentialRampToValueAtTime(Math.max(0.01, peak * sus), voiceStartTime + atk + dec);
+
+          try { osc.start(voiceStartTime); } catch {}
+          const noteOffTime = voiceStartTime + atk + dec + 0.3;
+          g.gain.exponentialRampToValueAtTime(0.001, noteOffTime + rel);
+
+          // Ensure master gain is open while voices play
+          try {
+            if (node.audioNodes.gainNode && node.audioNodes.gainNode.gain) {
+              node.audioNodes.gainNode.gain.setValueAtTime(1.0, now);
+              node.audioNodes.gainNode.gain.setTargetAtTime(0.0001, noteOffTime, rel / 4 + 0.001);
+            }
+          } catch {}
+          setTimeout(() => {
+            try { osc.stop(); } catch {}
+            try { osc.disconnect(); g.disconnect(); } catch {}
+          }, (noteOffTime + rel + 0.1) * 1000);
+
+          setTimeout(() => {
+            const stillNode = findNodeById(node.id);
+            if (stillNode) stillNode.isTriggered = false;
+          }, (noteOffTime - now + rel) * 1000 + 100);
+          return;
+        } catch (e) {
+          // Fallback to monophonic behavior below
+        }
+      }
+
+      // Monophonic fallback for non-chord usage
+      // Set carrier frequency using Tone-safe API so the FM voice pool can read it
+      if (audioNodes.setCarrierFrequency) {
+        try { audioNodes.setCarrierFrequency(effectivePitch); } catch {}
+      } else if (oscillator1 && oscillator1.frequency) {
+        // Fallback: direct set (may use different clock)
+        try { oscillator1.frequency.value = effectivePitch; } catch {}
       }
 
       if (audioNodes.triggerStart) {
@@ -4809,88 +4861,23 @@ export function triggerNodeEffect(
       node.isTriggered = true;
       node.animationState = 1;
 
-      // Create polyphonic voice for chord sequences
-      if (transpositionOverride && typeof transpositionOverride.scaleIndexOverride === "number") {
-        try {
-          console.log('Creating polyphonic FM voice for note:', transpositionOverride.scaleIndexOverride, 'pitch:', effectivePitch);
-          
-          // Create FM synthesis components for this voice
-          const carrier = audioContext.createOscillator();
-          const modulator = audioContext.createOscillator();
-          const modGain = audioContext.createGain();
-          const ampGain = audioContext.createGain();
-          
-          // Add slight timing offset to prevent phase cancellation
-          const voiceStartTime = now + Math.random() * 0.005;
-          
-          // Set up FM parameters
-          carrier.type = params.carrierWaveform || 'sine';
-          modulator.type = params.modulatorWaveform || 'sine';
-          carrier.frequency.setValueAtTime(effectivePitch, voiceStartTime);
-          modulator.frequency.setValueAtTime(effectivePitch * (params.modulatorRatio || 2), voiceStartTime);
-          
-          // Set modulation depth
-          const modDepth = (params.modulatorDepthScale || 3) * 10;
-          modGain.gain.setValueAtTime(modDepth, voiceStartTime);
-          
-          // Set up envelope
-          const peak = Math.max(0.01, Math.min(1.5, baseVolumeSettingForFinalEnvelope * intensity * oscillatorVolumeMultiplier));
-          const atk = params.carrierEnvAttack ?? 0.01;
-          const dec = params.carrierEnvDecay ?? 0.3;
-          const sus = params.carrierEnvSustain ?? 0;
-          const rel = params.carrierEnvRelease ?? 0.3;
-          
-          // Apply amplitude envelope
-          ampGain.gain.setValueAtTime(0, voiceStartTime);
-          ampGain.gain.linearRampToValueAtTime(peak, voiceStartTime + atk);
-          ampGain.gain.exponentialRampToValueAtTime(Math.max(0.01, peak * sus), voiceStartTime + atk + dec);
-          
-          // Connect FM chain
-          modulator.connect(modGain);
-          modGain.connect(carrier.frequency);
-          carrier.connect(ampGain);
-          ampGain.connect(node.audioNodes.mainGain);
-          
-          // Start oscillators
-          carrier.start(voiceStartTime);
-          modulator.start(voiceStartTime);
-          
-          // Schedule note off and cleanup
-          const noteOffTime = voiceStartTime + atk + dec + 0.5; // Longer hold
-          ampGain.gain.exponentialRampToValueAtTime(0.001, noteOffTime + rel);
-          
-          setTimeout(() => {
-            try {
-              carrier.stop();
-              modulator.stop();
-              carrier.disconnect();
-              modulator.disconnect();
-              modGain.disconnect();
-              ampGain.disconnect();
-            } catch (e) {}
-          }, (noteOffTime + rel + 0.1) * 1000);
-          
-          return;
-        } catch (e) {
-          console.error('Error creating polyphonic FM voice:', e);
-          // Fall through to monophonic behavior
-        }
-      }
+      // Use Tone FM voice pool for polyphony; pass frequency explicitly
+      // (Older manual WebAudio poly layer removed to avoid context mismatch and silence)
 
       const atk = params.carrierEnvAttack ?? 0.01;
       const dec = params.carrierEnvDecay ?? 0.3;
       const sus = params.carrierEnvSustain ?? 0;
       const rel = params.carrierEnvRelease ?? 0.3;
 
-      if (oscillator1 && oscillator1.frequency) {
-        oscillator1.frequency.setValueAtTime(
-          effectivePitch,
-          now,
-        );
-      }
-
+      // Prefer explicit frequency to ensure proper polyphony from sequencers
       if (audioNodes.triggerStart) {
-        audioNodes.triggerStart(now, intensity);
+        try {
+          audioNodes.triggerStart(now, effectivePitch, intensity);
+        } catch (e) {
+          // Fallback: set carrier then use legacy signature
+          try { if (audioNodes.setCarrierFrequency) audioNodes.setCarrierFrequency(effectivePitch); } catch {}
+          try { audioNodes.triggerStart(now, intensity); } catch {}
+        }
       }
 
       // Handle orbitones for FM synth
@@ -4978,73 +4965,63 @@ export function triggerNodeEffect(
       node.isTriggered = true;
       node.animationState = 1;
 
-      // Create polyphonic voice for chord sequences
+      // Tone-based lightweight polyphony for analog engine
       if (transpositionOverride && typeof transpositionOverride.scaleIndexOverride === "number") {
         try {
-          console.log('Creating polyphonic analog voice for note:', transpositionOverride.scaleIndexOverride, 'pitch:', effectivePitch);
-          
-          // Create new oscillators for this voice
-          const osc1 = audioContext.createOscillator();
-          const osc2 = audioContext.createOscillator();
-          const ampGain = audioContext.createGain();
-          const osc1Gain = audioContext.createGain();
-          const osc2Gain = audioContext.createGain();
-          
-          // Add slight timing offset to prevent phase cancellation
-          const voiceStartTime = now + Math.random() * 0.005;
-          
-          // Set up oscillator parameters
-          osc1.type = params.osc1Waveform || 'sawtooth';
-          osc2.type = params.osc2Waveform || 'sawtooth';
-          osc1.frequency.setValueAtTime(effectivePitch * Math.pow(2, params.osc1Octave || 0), voiceStartTime);
-          osc2.frequency.setValueAtTime(effectivePitch * Math.pow(2, params.osc2Octave || 0), voiceStartTime);
-          
-          // Set oscillator levels
-          osc1Gain.gain.setValueAtTime(params.osc1Level ?? 1.0, voiceStartTime);
-          osc2Gain.gain.setValueAtTime(params.osc2Enabled ? (params.osc2Level ?? 1.0) : 0, voiceStartTime);
-          
-          // Set up envelope
-          const peak = Math.max(0.01, Math.min(1.5, baseVolumeSettingForFinalEnvelope * intensity * oscillatorVolumeMultiplier));
+          // Create temporary Tone oscillators per note and mix into the main gain
+          const voiceStartTime = now + Math.random() * 0.003;
           const atk = params.ampEnvAttack ?? 0.01;
           const dec = params.ampEnvDecay ?? 0.3;
           const sus = params.ampEnvSustain ?? 0.7;
           const rel = params.ampEnvRelease ?? 0.3;
-          
-          // Apply amplitude envelope
-          ampGain.gain.setValueAtTime(0, voiceStartTime);
-          ampGain.gain.linearRampToValueAtTime(peak, voiceStartTime + atk);
-          ampGain.gain.exponentialRampToValueAtTime(Math.max(0.01, peak * sus), voiceStartTime + atk + dec);
-          
-          // Connect the voice
-          osc1.connect(osc1Gain);
-          osc2.connect(osc2Gain);
-          osc1Gain.connect(ampGain);
-          osc2Gain.connect(ampGain);
-          ampGain.connect(node.audioNodes.mainGain);
-          
-          // Start oscillators
-          osc1.start(voiceStartTime);
-          osc2.start(voiceStartTime);
-          
-          // Schedule note off and cleanup
-          const noteOffTime = voiceStartTime + atk + dec + 0.5; // Longer hold
-          ampGain.gain.exponentialRampToValueAtTime(0.001, noteOffTime + rel);
-          
+
+          const osc1 = new Tone.Oscillator({ type: sanitizeWaveformType(params.osc1Waveform || 'sawtooth') });
+          const osc2 = new Tone.Oscillator({ type: sanitizeWaveformType(params.osc2Waveform || 'sawtooth') });
+          const osc1GainTmp = new Tone.Gain(params.osc1Level ?? 1.0);
+          const osc2GainTmp = new Tone.Gain(params.osc2Enabled ? (params.osc2Level ?? 1.0) : 0);
+          const ampGainTmp = new Tone.Gain(0);
+
+          osc1.connect(osc1GainTmp);
+          osc2.connect(osc2GainTmp);
+          osc1GainTmp.connect(ampGainTmp);
+          osc2GainTmp.connect(ampGainTmp);
+          // node.audioNodes.gainNode is a Tone.Gain
+          ampGainTmp.connect(node.audioNodes.gainNode);
+
+          // Frequencies
+          const f1 = effectivePitch * Math.pow(2, params.osc1Octave || 0);
+          const f2 = effectivePitch * Math.pow(2, params.osc2Octave || 0);
+          try { osc1.frequency.setValueAtTime(f1, voiceStartTime); } catch {}
+          try { osc2.frequency.setValueAtTime(f2, voiceStartTime); } catch {}
+
+          // Envelope on voice gain
+          const peak = Math.max(0.01, Math.min(1.5, baseVolumeSettingForFinalEnvelope * intensity * oscillatorVolumeMultiplier));
+          ampGainTmp.gain.setValueAtTime(0, voiceStartTime);
+          ampGainTmp.gain.linearRampToValueAtTime(peak, voiceStartTime + atk);
+          ampGainTmp.gain.exponentialRampToValueAtTime(Math.max(0.01, peak * sus), voiceStartTime + atk + dec);
+
+          // Start/stop
+          try { osc1.start(voiceStartTime); } catch {}
+          try { osc2.start(voiceStartTime); } catch {}
+
+          const noteOffTime = voiceStartTime + atk + dec + 0.5;
+          ampGainTmp.gain.exponentialRampToValueAtTime(0.001, noteOffTime + rel);
           setTimeout(() => {
-            try {
-              osc1.stop();
-              osc2.stop();
-              osc1.disconnect();
-              osc2.disconnect();
-              ampGain.disconnect();
-              osc1Gain.disconnect();
-              osc2Gain.disconnect();
-            } catch (e) {}
+            try { osc1.stop(); osc2.stop(); } catch {}
+            try { osc1.disconnect(); osc2.disconnect(); ampGainTmp.disconnect(); osc1GainTmp.disconnect(); osc2GainTmp.disconnect(); } catch {}
           }, (noteOffTime + rel + 0.1) * 1000);
-          
+
+          // Ensure the main output Gain is opened while note is active
+          try {
+            if (node.audioNodes.gainNode && node.audioNodes.gainNode.gain) {
+              node.audioNodes.gainNode.gain.setValueAtTime(1.0, now);
+              node.audioNodes.gainNode.gain.setTargetAtTime(0.0001, noteOffTime, rel / 4 + 0.001);
+            }
+          } catch {}
+
           return;
         } catch (e) {
-          console.error('Error creating polyphonic analog voice:', e);
+          console.error('Error creating Tone poly voice for analog:', e);
           // Fall through to monophonic behavior
         }
       }
@@ -5687,6 +5664,37 @@ export function triggerNodeEffect(
       if (stillNode) stillNode.isTriggered = false;
     }, (params.noteLength || 0.4) * 1000);
   } else if (node.type === ALIEN_ORB_TYPE) {
+    // For chord notes coming from sequencers, spawn a short-lived alien voice per note
+    if (transpositionOverride && typeof transpositionOverride.scaleIndexOverride === 'number') {
+      try {
+        const tmp = createAlienSynth(node.audioParams.engine, effectivePitch, true);
+        const g = tmp && tmp.mix && tmp.mix.gain ? tmp.mix.gain : null;
+        const baseAmp = (node.audioNodes && node.audioNodes.baseGain) || 1;
+        const orbitMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.5;
+        const vol = baseAmp * (node.audioParams.orbitonesEnabled ? 1.0 - orbitMix : 1.0) * (intensity ?? 1.0);
+        if (g) {
+          g.cancelScheduledValues(now);
+          g.setValueAtTime(Math.min(1.0, Math.max(0.01, vol)), now);
+          g.setTargetAtTime(0.0, now + 0.5, 0.2);
+        }
+        // schedule cleanup across potential engines
+        setTimeout(() => {
+          try {
+            if (tmp.osc) tmp.osc.stop();
+            if (tmp.carrier) tmp.carrier.stop();
+            if (tmp.mod) tmp.mod.stop();
+            if (tmp.noise) tmp.noise.stop();
+            if (tmp.osc1) tmp.osc1.stop();
+          } catch {}
+          try {
+            if (tmp.mix) tmp.mix.disconnect();
+          } catch {}
+        }, 800);
+        return;
+      } catch (e) {
+        // Fall through to legacy behavior if temp voice fails
+      }
+    }
     if (!node.audioNodes) return;
     node.isTriggered = true;
     node.animationState = 1;
@@ -21228,6 +21236,16 @@ function populateEditPanel() {
                   updateNodeAudioParams,
                   saveState,
                   draw,
+                  // Provide synth UI openers so the Parameters button works
+                  showAnalogOrbMenu,
+                  showToneFmSynthMenu,
+                  showPulseSynthMenu,
+                  showSamplerOrbMenu,
+                  showAlienOrbMenu,
+                  showResonauterOrbMenu,
+                  showMotorOrbMenu,
+                  showClockworkOrbMenu,
+                  showRadioOrbPanel,
                 });
                 section.appendChild(centerSec);
 
@@ -21499,7 +21517,17 @@ function populateEditPanel() {
                   createAudioNodesForNode,
                   updateNodeAudioParams,
                   saveState,
-                  populateEditPanel
+                  populateEditPanel,
+                  // Provide synth UI openers so the Parameters button works
+                  showAnalogOrbMenu,
+                  showToneFmSynthMenu,
+                  showPulseSynthMenu,
+                  showSamplerOrbMenu,
+                  showAlienOrbMenu,
+                  showResonauterOrbMenu,
+                  showMotorOrbMenu,
+                  showClockworkOrbMenu,
+                  showRadioOrbPanel,
                 });
                 if (centerSec) section.appendChild(centerSec);
 

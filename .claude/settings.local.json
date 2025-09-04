@@ -5,7 +5,10 @@
       "Bash(python:*)",
       "Bash(npx http-server:*)",
       "Bash(npm run dev:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run:*)",
+      "Bash(npm test)"
     ],
     "deny": [],
     "ask": []

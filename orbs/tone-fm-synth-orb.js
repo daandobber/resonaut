@@ -151,12 +151,64 @@ export function createToneFmSynthOrb(node) {
     return { osc, env, modGain, outGain, lfo };
   }
 
-  const op1 = createOperator('carrier', 'carrier');
-  const op2 = createOperator('modulator');
-  const op3 = createOperator('modulator2');
-  const op4 = createOperator('modulator3');
+  function createVoice() {
+    const voiceOp1 = createOperator('carrier', 'carrier');
+    const voiceOp2 = createOperator('modulator');
+    const voiceOp3 = createOperator('modulator2');
+    const voiceOp4 = createOperator('modulator3');
+    
+    const voiceOperators = [null, voiceOp1, voiceOp2, voiceOp3, voiceOp4];
+    
+    // Start oscillators
+    [voiceOp1, voiceOp2, voiceOp3, voiceOp4].forEach(o => o.osc.start());
+    
+    // Apply initial detune values
+    voiceOp1.osc.detune.value = p.carrierDetune ?? p.detune ?? 0;
+    voiceOp2.osc.detune.value = p.modulatorDetune ?? 0;
+    voiceOp3.osc.detune.value = p.modulator2Detune ?? 0;
+    voiceOp4.osc.detune.value = p.modulator3Detune ?? 0;
+    
+    let isActive = false;
+    let currentFreq = null;
+    
+    return {
+      operators: voiceOperators,
+      isActive: () => isActive,
+      getCurrentFreq: () => currentFreq,
+      triggerStart: (time, frequency, velocity = 1) => {
+        currentFreq = frequency;
+        isActive = true;
+        
+        voiceOp1.osc.frequency.setValueAtTime(frequency, time);
+        voiceOp2.osc.frequency.setValueAtTime(frequency * (p.modulatorRatio ?? 1), time);
+        voiceOp3.osc.frequency.setValueAtTime(frequency * (p.modulator2Ratio ?? 1), time);
+        voiceOp4.osc.frequency.setValueAtTime(frequency * (p.modulator3Ratio ?? 1), time);
+        
+        voiceOp1.env.triggerAttack(time, velocity);
+        voiceOp2.env.triggerAttack(time);
+        voiceOp3.env.triggerAttack(time);
+        voiceOp4.env.triggerAttack(time);
+      },
+      triggerStop: (time) => {
+        isActive = false;
+        currentFreq = null;
+        
+        voiceOp1.env.triggerRelease(time);
+        voiceOp2.env.triggerRelease(time);
+        voiceOp3.env.triggerRelease(time);
+        voiceOp4.env.triggerRelease(time);
+      }
+    };
+  }
 
-  // Filter and effects chain
+  // Create voice pool
+  const voices = [];
+  for (let i = 0; i < 4; i++) {
+    voices.push(createVoice());
+  }
+  let currentVoiceIndex = 0;
+
+  // Shared filter and effects chain
   const filter = new Tone.Filter(p.filterCutoff ?? 20000, p.filterType ?? 'lowpass');
   filter.Q.value = p.filterResonance ?? 1;
 
@@ -205,48 +257,65 @@ export function createToneFmSynthOrb(node) {
     gainNode.connect(Tone.getContext().destination);
   }
 
-  const operators = [null, op1, op2, op3, op4];
-
   function applyAlgorithm(index = 0) {
     const alg = fmAlgorithms[index] || fmAlgorithms[0];
-    for (let i = 1; i <= 4; i++) {
-      operators[i].modGain.disconnect();
-      operators[i].outGain.disconnect();
-    }
-    alg.connections.forEach(({ source, target }) => {
-      operators[source].modGain.connect(operators[target].osc.frequency);
+    
+    // Apply algorithm to all voices
+    voices.forEach(voice => {
+      const operators = voice.operators;
+      // Disconnect all operators
+      for (let i = 1; i <= 4; i++) {
+        operators[i].modGain.disconnect();
+        operators[i].outGain.disconnect();
+      }
+      // Reconnect based on algorithm
+      alg.connections.forEach(({ source, target }) => {
+        operators[source].modGain.connect(operators[target].osc.frequency);
+      });
+      alg.carriers.forEach(idx => {
+        operators[idx].outGain.connect(filter);
+      });
     });
-    alg.carriers.forEach(idx => {
-      operators[idx].outGain.connect(filter);
-    });
+    
+    // Sync parameters after algorithm change
+    broadcastAllParameters();
   }
   applyAlgorithm(p.algorithm ?? 0);
 
-  // Start oscillators
-  [op1, op2, op3, op4].forEach(o => o.osc.start());
+  const triggerStart = (time, freqOrVelocity = 1, maybeVelocity = null) => {
+    // Allow explicit frequency for external polyphonic triggers (e.g., sequencers)
+    // Usage:
+    //  - triggerStart(time, velocity)                  // legacy
+    //  - triggerStart(time, frequency, velocity)       // preferred for chords
+    let currentFreq;
+    let velocity;
+    if (typeof maybeVelocity === 'number') {
+      currentFreq = freqOrVelocity;
+      velocity = maybeVelocity;
+    } else {
+      velocity = freqOrVelocity;
+      currentFreq = firstVoice.operators[1].osc.frequency.value;
+    }
 
-  const triggerStart = (time, velocity = 1) => {
-    const baseFreq = op1.osc.frequency.value;
-    op2.osc.frequency.setValueAtTime(baseFreq * (p.modulatorRatio ?? 1), time);
-    op3.osc.frequency.setValueAtTime(baseFreq * (p.modulator2Ratio ?? 1), time);
-    op4.osc.frequency.setValueAtTime(baseFreq * (p.modulator3Ratio ?? 1), time);
-    op1.env.triggerAttack(time, velocity);
-    op2.env.triggerAttack(time);
-    op3.env.triggerAttack(time);
-    op4.env.triggerAttack(time);
+    // Find an available voice (inactive) or use round-robin
+    let selectedVoice = voices.find(voice => !voice.isActive());
+    if (!selectedVoice) {
+      selectedVoice = voices[currentVoiceIndex];
+      currentVoiceIndex = (currentVoiceIndex + 1) % voices.length;
+    }
+
+    // Trigger the selected voice with the provided/current frequency
+    selectedVoice.triggerStart(time, currentFreq, velocity);
   };
 
   const triggerStop = (time) => {
-    op1.env.triggerRelease(time);
-    op2.env.triggerRelease(time);
-    op3.env.triggerRelease(time);
-    op4.env.triggerRelease(time);
+    // Stop all active voices (for backward compatibility with monophonic behavior)
+    voices.forEach(voice => {
+      if (voice.isActive()) {
+        voice.triggerStop(time);
+      }
+    });
   };
-
-  op1.osc.detune.value = p.carrierDetune ?? p.detune ?? 0;
-  op2.osc.detune.value = p.modulatorDetune ?? 0;
-  op3.osc.detune.value = p.modulator2Detune ?? 0;
-  op4.osc.detune.value = p.modulator3Detune ?? 0;
 
   function createOrbitone(freq) {
     const orbOp1 = createOperator('carrier', 'carrier');
@@ -314,21 +383,130 @@ export function createToneFmSynthOrb(node) {
     };
   }
 
+  // Parameter synchronization system
+  function syncParameterAcrossVoices(paramPath, sourceVoiceIndex = 0) {
+    const sourceVoice = voices[sourceVoiceIndex];
+    if (!sourceVoice) return;
+    
+    try {
+      // Get the value from source voice
+      const pathParts = paramPath.split('.');
+      let sourceObj = sourceVoice;
+      for (const part of pathParts) {
+        sourceObj = sourceObj[part];
+        if (sourceObj === undefined || sourceObj === null) return;
+      }
+      
+      // Extract the actual value (handle Tone.js parameters)
+      let sourceValue;
+      if (typeof sourceObj === 'object' && sourceObj.value !== undefined) {
+        sourceValue = sourceObj.value;
+      } else if (typeof sourceObj === 'number' || typeof sourceObj === 'string') {
+        sourceValue = sourceObj;
+      } else {
+        return; // Can't sync this type of parameter
+      }
+      
+      // Apply to all other voices
+      voices.forEach((voice, index) => {
+        if (index === sourceVoiceIndex) return;
+        
+        try {
+          let target = voice;
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            target = target[pathParts[i]];
+            if (!target) return;
+          }
+          
+          const finalProp = pathParts[pathParts.length - 1];
+          if (target[finalProp] && typeof target[finalProp].value !== 'undefined') {
+            target[finalProp].value = sourceValue;
+          } else if (typeof target[finalProp] === 'function') {
+            target[finalProp](sourceValue);
+          } else if (target[finalProp] !== undefined) {
+            target[finalProp] = sourceValue;
+          }
+        } catch (e) {
+          // Silently skip parameters that can't be synced
+        }
+      });
+    } catch (e) {
+      // Silently skip if synchronization fails
+    }
+  }
+
+  // Simplified parameter broadcasting - only sync essential parameters safely
+  function broadcastAllParameters() {
+    // Only sync parameters that are known to be safe and essential
+    try {
+      const sourceVoice = voices[0];
+      
+      // Sync waveform types (strings)
+      voices.forEach((voice, index) => {
+        if (index === 0) return;
+        try {
+          voice.operators[1].osc.type = sourceVoice.operators[1].osc.type;
+          voice.operators[2].osc.type = sourceVoice.operators[2].osc.type;
+          voice.operators[3].osc.type = sourceVoice.operators[3].osc.type;
+          voice.operators[4].osc.type = sourceVoice.operators[4].osc.type;
+        } catch (e) {}
+      });
+      
+      // Sync detune values (but not frequency - each voice has its own frequency)
+      voices.forEach((voice, index) => {
+        if (index === 0) return;
+        try {
+          voice.operators[1].osc.detune.value = sourceVoice.operators[1].osc.detune.value;
+          voice.operators[2].osc.detune.value = sourceVoice.operators[2].osc.detune.value;
+          voice.operators[3].osc.detune.value = sourceVoice.operators[3].osc.detune.value;
+          voice.operators[4].osc.detune.value = sourceVoice.operators[4].osc.detune.value;
+        } catch (e) {}
+      });
+      
+      // Sync modulation gain values
+      voices.forEach((voice, index) => {
+        if (index === 0) return;
+        try {
+          voice.operators[2].modGain.gain.value = sourceVoice.operators[2].modGain.gain.value;
+          voice.operators[3].modGain.gain.value = sourceVoice.operators[3].modGain.gain.value;
+          voice.operators[4].modGain.gain.value = sourceVoice.operators[4].modGain.gain.value;
+        } catch (e) {}
+      });
+    } catch (e) {
+      // Silently fail if sync not possible
+    }
+  }
+
+  // Set up parameter monitoring on the first voice
+  function setupParameterMonitoring() {
+    // This would ideally intercept parameter changes, but for now we'll rely on periodic sync
+    // In a more sophisticated implementation, we could use Proxy or override setter methods
+  }
+
+  setupParameterMonitoring();
+  
+  // Initial parameter sync
+  broadcastAllParameters();
+
+  // Expose the first voice's operators for UI compatibility
+  const firstVoice = voices[0];
+
   return {
-    oscillator1: op1.osc,
-    carrierEnv: op1.env,
-    modulatorOsc1: op2.osc,
-    modulatorGain1: op2.modGain,
-    modulatorEnv1: op2.env,
-    modulatorLfo1: op2.lfo,
-    modulatorOsc2: op3.osc,
-    modulatorGain2: op3.modGain,
-    modulatorEnv2: op3.env,
-    modulatorLfo2: op3.lfo,
-    modulatorOsc3: op4.osc,
-    modulatorGain3: op4.modGain,
-    modulatorEnv3: op4.env,
-    modulatorLfo3: op4.lfo,
+    // Backward compatibility - expose first voice components
+    oscillator1: firstVoice.operators[1].osc,
+    carrierEnv: firstVoice.operators[1].env,
+    modulatorOsc1: firstVoice.operators[2].osc,
+    modulatorGain1: firstVoice.operators[2].modGain,
+    modulatorEnv1: firstVoice.operators[2].env,
+    modulatorLfo1: firstVoice.operators[2].lfo,
+    modulatorOsc2: firstVoice.operators[3].osc,
+    modulatorGain2: firstVoice.operators[3].modGain,
+    modulatorEnv2: firstVoice.operators[3].env,
+    modulatorLfo2: firstVoice.operators[3].lfo,
+    modulatorOsc3: firstVoice.operators[4].osc,
+    modulatorGain3: firstVoice.operators[4].modGain,
+    modulatorEnv3: firstVoice.operators[4].env,
+    modulatorLfo3: firstVoice.operators[4].lfo,
     lowPassFilter: filter,
     gainNode,
     reverbSendGain,
@@ -339,5 +517,44 @@ export function createToneFmSynthOrb(node) {
     triggerStop,
     setAlgorithm: applyAlgorithm,
     createOrbitone,
+    
+    // Voice pool access and parameter management
+    voices,
+    syncParameterAcrossVoices,
+    broadcastAllParameters,
+    
+    // Parameter broadcasting methods for UI compatibility
+    setCarrierFrequency: (freq) => {
+      firstVoice.operators[1].osc.frequency.value = freq;
+      // Note: Don't sync this across voices as each voice needs its own frequency
+    },
+    setModulatorRatio: (ratio) => {
+      voices.forEach(voice => {
+        const carrierFreq = voice.operators[1].osc.frequency.value;
+        voice.operators[2].osc.frequency.value = carrierFreq * ratio;
+      });
+    },
+    setModulator2Ratio: (ratio) => {
+      voices.forEach(voice => {
+        const carrierFreq = voice.operators[1].osc.frequency.value;
+        voice.operators[3].osc.frequency.value = carrierFreq * ratio;
+      });
+    },
+    setModulator3Ratio: (ratio) => {
+      voices.forEach(voice => {
+        const carrierFreq = voice.operators[1].osc.frequency.value;
+        voice.operators[4].osc.frequency.value = carrierFreq * ratio;
+      });
+    },
+    
+    // Enhanced algorithm setter that applies to all voices
+    setAlgorithmAll: (index) => {
+      applyAlgorithm(index);
+    },
+    
+    // Manual parameter sync trigger for UI updates
+    syncParameters: () => {
+      broadcastAllParameters();
+    },
   };
 }
