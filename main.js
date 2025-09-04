@@ -321,6 +321,13 @@ const {
   performancePanel,
   performancePanelCloseBtn,
   openPerformancePanelBtn,
+  djEqHi,
+  djEqMid,
+  djEqLow,
+  djEqHiValue,
+  djEqMidValue,
+  djEqLowValue,
+  djEqBypassToggle,
   mrfaToggle,
   mrfaBandSliders,
   perfResoSlider,
@@ -343,6 +350,12 @@ const {
   perfReverbDecayValue,
   perfReverbDampSlider,
   perfReverbDampValue,
+  // Performance: Scale/Key Sequencer
+  scaleKeySeqEnabled,
+  scaleKeySeqDefaultBarsInput,
+  scaleKeySeqBlocks,
+  scaleKeySeqAddBlockBtn,
+  scaleKeySeqClearBtn,
   canvasSwitcherEl,
   canvasSwitcherToggle,
   helpWizard,
@@ -666,6 +679,11 @@ let perfResoEnabled = false, perfReverbEnabled = false;
 let mrfaEnabled = false;
 window.isRecording = false;
 let originalMasterGainDestination = null;
+// DJ EQ and post-mix bus
+let postMasterBus;
+let djEqLowNode, djEqMidNode, djEqHiNode;
+let djEqActiveGain, djEqBypassGain;
+let djEqBypassed = true;
 const NUM_TAPE_TRACKS = 4;
 let currentTapeTrack = 0;
 let configuredTapeLoopDurationSeconds = 4;
@@ -1874,6 +1892,37 @@ export async function setupAudio() {
     masterAnalyser.fftSize = 256;
     masterAnalyser.smoothingTimeConstant = 0.7;
 
+    // Post-master bus and DJ EQ filters feeding the analyser
+    postMasterBus = audioContext.createGain();
+    postMasterBus.gain.value = 1.0;
+    djEqLowNode = audioContext.createBiquadFilter();
+    djEqLowNode.type = 'lowshelf';
+    djEqLowNode.frequency.value = 180;
+    djEqLowNode.gain.value = 0;
+    djEqMidNode = audioContext.createBiquadFilter();
+    djEqMidNode.type = 'peaking';
+    djEqMidNode.frequency.value = 1000;
+    djEqMidNode.Q.value = 1.0;
+    djEqMidNode.gain.value = 0;
+    djEqHiNode = audioContext.createBiquadFilter();
+    djEqHiNode.type = 'highshelf';
+    djEqHiNode.frequency.value = 6000;
+    djEqHiNode.gain.value = 0;
+
+    postMasterBus.connect(djEqLowNode);
+    djEqLowNode.connect(djEqMidNode);
+    djEqMidNode.connect(djEqHiNode);
+    djEqActiveGain = audioContext.createGain();
+    djEqActiveGain.gain.value = 0.0; // default: bypass on
+    djEqHiNode.connect(djEqActiveGain);
+    djEqActiveGain.connect(masterAnalyser);
+
+    // Bypass path: straight to analyser (starts disabled)
+    djEqBypassGain = audioContext.createGain();
+    djEqBypassGain.gain.value = 1.0; // default: bypass on
+    postMasterBus.connect(djEqBypassGain);
+    djEqBypassGain.connect(masterAnalyser);
+
 
     masterGain.connect(masterPannerNode);
     mrfaInput = audioContext.createGain();
@@ -1889,7 +1938,8 @@ export async function setupAudio() {
     mrfaWetGain.connect(mrfaOutput);
     mrfaDryGain.connect(mrfaOutput);
     mrfaOutput.connect(mrfaDirectGain);
-    mrfaDirectGain.connect(masterAnalyser);
+    // Route MRFA direct path through postMasterBus -> DJ EQ -> masterAnalyser
+    mrfaDirectGain.connect(postMasterBus);
     masterAnalyser.connect(originalMasterGainDestination);
 
     for (let i = 0; i < NUM_TAPE_TRACKS; i++) {
@@ -2068,7 +2118,8 @@ export async function setupAudio() {
     perfResoFeedback.connect(perfResoDelay);
     perfResoDelay.connect(perfResoFilter);
     perfResoFilter.connect(perfResoGain);
-    perfResoGain.connect(masterAnalyser);
+    // Route perf resonator wet through EQ/post bus as well
+    perfResoGain.connect(postMasterBus);
 
     perfReverbInput = audioContext.createGain();
     perfReverbInput.gain.value = perfReverbEnabled ? 1.0 : 0.0;
@@ -3263,6 +3314,55 @@ function initializeGlobalEffectSliders() {
         perfReverbDampSlider.addEventListener("change", saveState);
     }
 
+    // DJ EQ controls
+    if (djEqHi && djEqHiValue && djEqHiNode) {
+        djEqHi.value = djEqHiNode.gain.value;
+        djEqHiValue.textContent = `${parseFloat(djEqHi.value).toFixed(1)}dB`;
+        djEqHi.addEventListener("input", (e) => {
+            const v = clamp(parseFloat(e.target.value), -24, 24);
+            djEqHiNode.gain.setTargetAtTime(v, audioContext.currentTime, 0.01);
+            djEqHiValue.textContent = `${v.toFixed(1)}dB`;
+        });
+        djEqHi.addEventListener("change", saveState);
+    }
+    if (djEqMid && djEqMidValue && djEqMidNode) {
+        djEqMid.value = djEqMidNode.gain.value;
+        djEqMidValue.textContent = `${parseFloat(djEqMid.value).toFixed(1)}dB`;
+        djEqMid.addEventListener("input", (e) => {
+            const v = clamp(parseFloat(e.target.value), -24, 24);
+            djEqMidNode.gain.setTargetAtTime(v, audioContext.currentTime, 0.01);
+            djEqMidValue.textContent = `${v.toFixed(1)}dB`;
+        });
+        djEqMid.addEventListener("change", saveState);
+    }
+    if (djEqLow && djEqLowValue && djEqLowNode) {
+        djEqLow.value = djEqLowNode.gain.value;
+        djEqLowValue.textContent = `${parseFloat(djEqLow.value).toFixed(1)}dB`;
+        djEqLow.addEventListener("input", (e) => {
+            const v = clamp(parseFloat(e.target.value), -24, 24);
+            djEqLowNode.gain.setTargetAtTime(v, audioContext.currentTime, 0.01);
+            djEqLowValue.textContent = `${v.toFixed(1)}dB`;
+        });
+        djEqLow.addEventListener("change", saveState);
+    }
+
+    // Bypass toggle
+    if (djEqBypassToggle && djEqActiveGain && djEqBypassGain) {
+        djEqBypassToggle.checked = djEqBypassed;
+        const applyBypass = (byp) => {
+            djEqBypassed = byp;
+            const on = byp ? 0.0 : 1.0;
+            const off = byp ? 1.0 : 0.0;
+            djEqActiveGain.gain.setTargetAtTime(on, audioContext.currentTime, 0.01);
+            djEqBypassGain.gain.setTargetAtTime(off, audioContext.currentTime, 0.01);
+        };
+        applyBypass(djEqBypassed);
+        djEqBypassToggle.addEventListener('change', (e) => {
+            applyBypass(!!e.target.checked);
+            saveState();
+        });
+    }
+
 
 
     if (perfResoToggle && perfResoGain) {
@@ -3317,11 +3417,184 @@ function initializeGlobalEffectSliders() {
             slider.addEventListener("change", saveState);
         });
     }
+
+    // Initialize Scale/Key Sequencer UI
+    try { initializeScaleKeySequencerUI(); } catch (e) { /* ignore */ }
 }
 
 function updateMRFADirectGain() {
     if (!mrfaDirectGain) return;
     mrfaDirectGain.gain.setTargetAtTime(1.0, audioContext.currentTime, 0.01);
+}
+
+// ----------------------
+// Performance: Scale/Key Sequencer
+// ----------------------
+let scaleKeySeqState = {
+  enabled: false,
+  defaultBars: 4,
+  blocks: [], // { scaleKey: string, root: number, bars: number }
+  currentIdx: 0,
+  timer: null,
+};
+
+function getSecondsPerBeatForSeq() {
+  const bpm = (typeof globalBPM === 'number' && globalBPM > 0) ? globalBPM : 120;
+  return 60.0 / bpm;
+}
+
+function applyScaleKeySeqBlock(block) {
+  if (!block) return;
+  try {
+    if (block.scaleKey && typeof changeScale === 'function') {
+      changeScale(block.scaleKey);
+    }
+  } catch {}
+  try {
+    if (typeof block.root === 'number' && typeof setRootNote === 'function') {
+      setRootNote(((block.root % 12) + 12) % 12, true);
+    }
+  } catch {}
+}
+
+function highlightActiveScaleKeyBlock() {
+  if (!scaleKeySeqBlocks) return;
+  const children = Array.from(scaleKeySeqBlocks.children);
+  children.forEach((el, i) => {
+    if (!el || !el.classList) return;
+    if (i === scaleKeySeqState.currentIdx) el.classList.add('playing'); else el.classList.remove('playing');
+  });
+}
+
+function stepScaleKeySequencer() {
+  if (!scaleKeySeqState.enabled || scaleKeySeqState.blocks.length === 0) return;
+  const idx = ((scaleKeySeqState.currentIdx % scaleKeySeqState.blocks.length) + scaleKeySeqState.blocks.length) % scaleKeySeqState.blocks.length;
+  const block = scaleKeySeqState.blocks[idx];
+  applyScaleKeySeqBlock(block);
+  highlightActiveScaleKeyBlock();
+
+  const beatsPerBar = 4;
+  const bars = Math.max(1, parseInt(block?.bars ?? scaleKeySeqState.defaultBars, 10) || 4);
+  const durationSec = Math.max(0.01, beatsPerBar * bars * getSecondsPerBeatForSeq());
+  clearTimeout(scaleKeySeqState.timer);
+  scaleKeySeqState.timer = setTimeout(() => {
+    scaleKeySeqState.currentIdx = (idx + 1) % scaleKeySeqState.blocks.length;
+    stepScaleKeySequencer();
+  }, durationSec * 1000);
+}
+
+function stopScaleKeySequencer() {
+  clearTimeout(scaleKeySeqState.timer);
+  scaleKeySeqState.timer = null;
+  if (scaleKeySeqBlocks) Array.from(scaleKeySeqBlocks.children).forEach(el => el.classList?.remove('playing'));
+}
+
+function rescheduleScaleKeySequencer() {
+  if (!scaleKeySeqState.enabled) return;
+  stopScaleKeySequencer();
+  stepScaleKeySequencer();
+}
+
+function renderScaleKeySeqBlocksUI() {
+  if (!scaleKeySeqBlocks) return;
+  scaleKeySeqBlocks.innerHTML = '';
+  const scaleKeys = Object.keys(scales || {});
+  const noteNames = NOTE_NAMES || ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+  scaleKeySeqState.blocks.forEach((blk, idx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'scale-key-seq-block';
+    // Scale select
+    const selScale = document.createElement('select');
+    scaleKeys.forEach(k => {
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = (scales[k]?.name || k);
+      if (blk.scaleKey === k) opt.selected = true;
+      selScale.appendChild(opt);
+    });
+    selScale.addEventListener('change', (e) => { blk.scaleKey = e.target.value; saveState(); });
+    // Root select
+    const selRoot = document.createElement('select');
+    noteNames.forEach((nn, i) => {
+      const opt = document.createElement('option'); opt.value = i; opt.textContent = nn;
+      if (((blk.root % 12)+12)%12 === i) opt.selected = true;
+      selRoot.appendChild(opt);
+    });
+    selRoot.addEventListener('change', (e) => { blk.root = parseInt(e.target.value, 10) || 0; saveState(); });
+    // Bars input
+    const barsInput = document.createElement('input');
+    barsInput.type = 'number'; barsInput.min = '1'; barsInput.max = '64'; barsInput.step = '1';
+    barsInput.value = blk.bars ?? scaleKeySeqState.defaultBars ?? 4;
+    barsInput.title = 'Bars for this block';
+    barsInput.addEventListener('change', (e) => {
+      const v = Math.max(1, Math.min(64, parseInt(e.target.value, 10) || 4));
+      blk.bars = v; e.target.value = v; saveState(); rescheduleScaleKeySequencer();
+    });
+    // Remove button
+    const rem = document.createElement('button');
+    rem.textContent = '×'; rem.className = 'seq-remove'; rem.title = 'Remove block';
+    rem.addEventListener('click', () => {
+      const wasPlayingIdx = scaleKeySeqState.currentIdx;
+      scaleKeySeqState.blocks.splice(idx, 1);
+      if (scaleKeySeqState.currentIdx >= scaleKeySeqState.blocks.length) scaleKeySeqState.currentIdx = 0;
+      renderScaleKeySeqBlocksUI(); saveState(); rescheduleScaleKeySequencer();
+    });
+    wrap.appendChild(selScale);
+    wrap.appendChild(selRoot);
+    const lblBars = document.createElement('span'); lblBars.textContent = 'bars'; lblBars.style.marginLeft = '4px';
+    wrap.appendChild(barsInput);
+    wrap.appendChild(lblBars);
+    wrap.appendChild(rem);
+    scaleKeySeqBlocks.appendChild(wrap);
+  });
+  highlightActiveScaleKeyBlock();
+}
+
+function initializeScaleKeySequencerUI() {
+  if (!scaleKeySeqEnabled || !scaleKeySeqDefaultBarsInput || !scaleKeySeqAddBlockBtn || !scaleKeySeqClearBtn) return;
+  // Defaults
+  scaleKeySeqDefaultBarsInput.value = scaleKeySeqState.defaultBars;
+  scaleKeySeqEnabled.checked = scaleKeySeqState.enabled;
+
+  scaleKeySeqEnabled.addEventListener('change', (e) => {
+    scaleKeySeqState.enabled = !!e.target.checked;
+    saveState();
+    if (scaleKeySeqState.enabled) {
+      if (scaleKeySeqState.blocks.length === 0) {
+        // Bootstrap first block from current state for convenience
+        scaleKeySeqState.blocks.push({ scaleKey: (currentScaleKey || 'major'), root: (currentRootNote || 0), bars: scaleKeySeqState.defaultBars || 4 });
+        renderScaleKeySeqBlocksUI();
+      }
+      scaleKeySeqState.currentIdx = 0;
+      rescheduleScaleKeySequencer();
+    } else {
+      stopScaleKeySequencer();
+    }
+  });
+
+  scaleKeySeqDefaultBarsInput.addEventListener('change', (e) => {
+    const v = Math.max(1, Math.min(64, parseInt(e.target.value, 10) || 4));
+    scaleKeySeqState.defaultBars = v; e.target.value = v; saveState();
+  });
+
+  scaleKeySeqAddBlockBtn.addEventListener('click', () => {
+    const newBlock = {
+      scaleKey: currentScaleKey || 'major',
+      root: typeof currentRootNote === 'number' ? currentRootNote : 0,
+      bars: scaleKeySeqState.defaultBars || 4,
+    };
+    scaleKeySeqState.blocks.push(newBlock);
+    renderScaleKeySeqBlocksUI(); saveState();
+    if (scaleKeySeqState.enabled && scaleKeySeqState.blocks.length === 1) rescheduleScaleKeySequencer();
+  });
+
+  scaleKeySeqClearBtn.addEventListener('click', () => {
+    scaleKeySeqState.blocks = [];
+    scaleKeySeqState.currentIdx = 0;
+    renderScaleKeySeqBlocksUI(); saveState(); stopScaleKeySequencer();
+  });
+
+  renderScaleKeySeqBlocksUI();
 }
 
 function updateMeterVisual(analyser, meterFillEl) {
@@ -8022,7 +8295,7 @@ function createCircleDegreeDisplay(node) {
   return wrap;
 }
 
-function highlightTonnetzPosition(nodeId, pos, scaleIndices, intensity) {
+function highlightTonnetzPosition(nodeId, pos, scaleIndices, intensity, extraPositions = []) {
   try {
     const node = findNodeById(nodeId);
     if (!node || node.type !== TONNETZ_TYPE) return;
@@ -8035,10 +8308,43 @@ function highlightTonnetzPosition(nodeId, pos, scaleIndices, intensity) {
     node.highlightData.currentPosition = pos;
     node.highlightData.scaleIndices = scaleIndices || [];
     node.highlightData.intensity = Math.max(0, Math.min(1, intensity || 1));
+    node.highlightData.extraPositions = Array.isArray(extraPositions) ? extraPositions : [];
     node.highlightData.timestamp = Date.now();
+
+    // Compute the played pitch classes (0..11) for dot highlighting
+    try {
+      const pcs = new Set();
+      (scaleIndices || []).forEach((si) => {
+        const freq = getFrequency(currentScale, si, 0, currentRootNote, globalTransposeOffset);
+        const midi = Math.round(frequencyToMidi(freq));
+        if (Number.isFinite(midi)) pcs.add(((midi % 12) + 12) % 12);
+      });
+      node.highlightData.playedPCs = pcs;
+    } catch {
+      // Ensure we always store a Set for downstream checks
+      node.highlightData.playedPCs = new Set();
+    }
+
+    // Record short-lived wave bursts so mesh ripples are only driven by recent hits
+    try {
+      const now = Date.now();
+      const WAVE_LIFE = 1200; // ms
+      if (!node.highlightData.waveBursts) node.highlightData.waveBursts = [];
+      // prune old
+      node.highlightData.waveBursts = node.highlightData.waveBursts.filter(b => (now - b.t) < WAVE_LIFE);
+      // add center burst
+      node.highlightData.waveBursts.push({ x: pos.x, y: pos.y, t: now, s: Math.max(0, Math.min(1, intensity || 1)) });
+      // add neighbor bursts (lower strength)
+      if (Array.isArray(extraPositions)) {
+        extraPositions.forEach(p => {
+          if (p && Number.isFinite(p.x) && Number.isFinite(p.y))
+            node.highlightData.waveBursts.push({ x: p.x, y: p.y, t: now, s: Math.max(0, Math.min(1, (intensity || 1) * 0.6)) });
+        });
+      }
+    } catch {}
     
     // Add visual pulse effect that maintains minimum visibility for sequencers
-    const decayTime = 800; // Shorter decay for more responsive feel
+    const decayTime = 900; // slightly longer for smoother fade
     const startIntensity = node.highlightData.intensity;
     const minIntensity = 0.2; // Keep some highlight visible for active sequencers
     
@@ -8050,17 +8356,14 @@ function highlightTonnetzPosition(nodeId, pos, scaleIndices, intensity) {
     const animate = () => {
       const elapsed = Date.now() - node.highlightData.timestamp;
       
-      if (elapsed > decayTime) {
-        // For sequencers, maintain minimum visibility instead of going to 0
-        node.highlightData.intensity = minIntensity;
-        node.highlightData.animationId = requestAnimationFrame(animate);
-        return;
-      }
-      
-      // Exponential decay with minimum floor
-      const progress = elapsed / decayTime;
-      const decayedIntensity = startIntensity * Math.exp(-progress * 2);
-      node.highlightData.intensity = Math.max(minIntensity, decayedIntensity);
+      // Exponential decay target with minimum floor
+      const progress = Math.min(1, elapsed / decayTime);
+      const target = Math.max(minIntensity, startIntensity * Math.exp(-progress * 1.6));
+
+      // Smooth toward target (low-pass filter)
+      const prev = node.highlightData.displayIntensity ?? startIntensity;
+      const smoothed = prev + (target - prev) * 0.2; // smoothing factor
+      node.highlightData.displayIntensity = smoothed;
       
       // Continue animation indefinitely for active sequencers
       node.highlightData.animationId = requestAnimationFrame(animate);
@@ -8870,6 +9173,17 @@ export function saveState() {
       performanceReverbSize: perfReverbSize,
       performanceReverbDamp: perfReverbLowPass?.frequency.value ?? DEFAULT_REVERB_DAMP_FREQ,
       performanceReverbEnabled: perfReverbEnabled,
+      // Performance: Scale/Key Sequencer
+      scaleKeySequencer: {
+          enabled: !!scaleKeySeqState.enabled,
+          defaultBars: scaleKeySeqState.defaultBars || 4,
+          blocks: scaleKeySeqState.blocks || [],
+          currentIdx: 0
+      },
+      djEqHiGain: djEqHiNode?.gain.value ?? 0,
+      djEqMidGain: djEqMidNode?.gain.value ?? 0,
+      djEqLowGain: djEqLowNode?.gain.value ?? 0,
+      djEqBypassed: djEqBypassed,
       mrfaEnabled: mrfaEnabled,
       mrfaBandValues: mrfaGains.map(g => g.gain.value),
       userDefinedGroups: userDefinedGroups.map(group => ({...group, nodeIds: Array.from(group.nodeIds) })),
@@ -9043,10 +9357,52 @@ async function loadState(stateToLoad) {
     if (perfReverbLowPass && stateToLoad.performanceReverbDamp !== undefined) {
         perfReverbLowPass.frequency.value = stateToLoad.performanceReverbDamp;
     }
+    // Restore DJ EQ state
+    if (djEqHiNode && stateToLoad.djEqHiGain !== undefined) {
+        djEqHiNode.gain.value = stateToLoad.djEqHiGain;
+        if (djEqHi) djEqHi.value = djEqHiNode.gain.value;
+        if (djEqHiValue) djEqHiValue.textContent = `${djEqHiNode.gain.value.toFixed(1)}dB`;
+    }
+    if (djEqMidNode && stateToLoad.djEqMidGain !== undefined) {
+        djEqMidNode.gain.value = stateToLoad.djEqMidGain;
+        if (djEqMid) djEqMid.value = djEqMidNode.gain.value;
+        if (djEqMidValue) djEqMidValue.textContent = `${djEqMidNode.gain.value.toFixed(1)}dB`;
+    }
+    if (djEqLowNode && stateToLoad.djEqLowGain !== undefined) {
+        djEqLowNode.gain.value = stateToLoad.djEqLowGain;
+        if (djEqLow) djEqLow.value = djEqLowNode.gain.value;
+        if (djEqLowValue) djEqLowValue.textContent = `${djEqLowNode.gain.value.toFixed(1)}dB`;
+    }
+    if (stateToLoad.djEqBypassed !== undefined && djEqActiveGain && djEqBypassGain) {
+        djEqBypassed = !!stateToLoad.djEqBypassed;
+        if (djEqBypassToggle) djEqBypassToggle.checked = djEqBypassed;
+        const on = djEqBypassed ? 0.0 : 1.0;
+        const off = djEqBypassed ? 1.0 : 0.0;
+        djEqActiveGain.gain.value = on;
+        djEqBypassGain.gain.value = off;
+    }
     if (mrfaWetGain) mrfaWetGain.gain.value = mrfaEnabled ? 1.0 : 0.0;
     if (mrfaDryGain) mrfaDryGain.gain.value = mrfaEnabled ? 0.0 : 1.0;
     if (mrfaDirectGain) mrfaDirectGain.gain.value = 1.0;
     updateMRFADirectGain();
+    // Restore Scale/Key Sequencer
+    if (stateToLoad.scaleKeySequencer) {
+        try {
+            const s = stateToLoad.scaleKeySequencer;
+            scaleKeySeqState.enabled = !!s.enabled;
+            scaleKeySeqState.defaultBars = Math.max(1, Math.min(64, parseInt(s.defaultBars ?? 4, 10) || 4));
+            scaleKeySeqState.blocks = Array.isArray(s.blocks) ? s.blocks.map(b => ({
+                scaleKey: (b && b.scaleKey) || currentScaleKey || 'major',
+                root: typeof b?.root === 'number' ? b.root : (currentRootNote || 0),
+                bars: Math.max(1, Math.min(64, parseInt(b?.bars ?? scaleKeySeqState.defaultBars, 10) || 4)),
+            })) : [];
+            scaleKeySeqState.currentIdx = 0;
+            if (scaleKeySeqEnabled) scaleKeySeqEnabled.checked = scaleKeySeqState.enabled;
+            if (scaleKeySeqDefaultBarsInput) scaleKeySeqDefaultBarsInput.value = scaleKeySeqState.defaultBars;
+            renderScaleKeySeqBlocksUI();
+            if (scaleKeySeqState.enabled) rescheduleScaleKeySequencer();
+        } catch {}
+    }
     if (stateToLoad.mrfaBandValues && mrfaGains.length === stateToLoad.mrfaBandValues.length) {
         stateToLoad.mrfaBandValues.forEach((v, idx) => {
             mrfaGains[idx].gain.value = v;
@@ -12820,42 +13176,65 @@ function drawNode(node) {
     const hexRadius = size * 0.4;
     const cx = node.x;
     const cy = node.y;
+    const ap = node.audioParams || {};
     
-    // Draw hexagonal boundary
-    ctx.strokeStyle = border;
-    ctx.lineWidth = Math.max(2 / viewScale, 1.5 / viewScale);
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const angle = (i * Math.PI) / 3;
-      const x = cx + hexRadius * Math.cos(angle);
-      const y = cy + hexRadius * Math.sin(angle);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.stroke();
+    // Outer border intentionally omitted for a cleaner look
     
     // Draw proper Tonnetz tessellation as continuous triangular mesh
-    const meshScale = hexRadius * 0.75; // Make mesh bigger to fill hexagon
-    const gridSize = 4; // Larger grid for better coverage
+    // Use axial hex coordinates with a fixed radius that matches the sequencer movement.
+    const gridRadius = 3; // must stay in sync with advanceTonnetzPosition gridLimit
+    const unit = (hexRadius * 0.92) / (gridRadius * Math.sqrt(3)); // scale so outer ring sits near border
     
-    // Create points for hexagonal triangular grid using proper Tonnetz coordinates
+    // Create points for hexagonal triangular grid using axial coordinates (q,r)
     const gridPoints = [];
-    
-    // Generate points in triangular coordinate system (axial coordinates)
-    for (let q = -gridSize; q <= gridSize; q++) {
-      for (let r = Math.max(-gridSize, -q-gridSize); r <= Math.min(gridSize, -q+gridSize); r++) {
-        // Convert axial coordinates to pixel positions
-        const x = meshScale * (3/2 * q) / gridSize;
-        const y = meshScale * (Math.sqrt(3)/2 * q + Math.sqrt(3) * r) / gridSize;
-        
-        // Only include points within hexagonal boundary
-        const distFromCenter = Math.sqrt(x*x + y*y);
-        if (distFromCenter <= hexRadius * 0.85) {
-          gridPoints.push({ q, r, s: -q-r, x: cx + x, y: cy + y });
-        }
+    for (let q = -gridRadius; q <= gridRadius; q++) {
+      const rMin = Math.max(-gridRadius, -q - gridRadius);
+      const rMax = Math.min(gridRadius, -q + gridRadius);
+      for (let r = rMin; r <= rMax; r++) {
+        const x = cx + (3/2) * q * unit;
+        const y = cy + (Math.sqrt(3)/2 * q + Math.sqrt(3) * r) * unit;
+        gridPoints.push({ q, r, s: -q - r, x, y });
       }
     }
+
+    // Prepare wavy mesh displacement based on recent highlight bursts
+    const axialToPixel = (aq, ar) => ({
+      x: cx + (3/2) * aq * unit,
+      y: cy + (Math.sqrt(3)/2 * aq + Math.sqrt(3) * ar) * unit,
+    });
+    const hl = node.highlightData || {};
+    const bursts = Array.isArray(hl.waveBursts) ? hl.waveBursts : [];
+    const nowMs = Date.now();
+    const waveSources = bursts.map(b => ({ ...axialToPixel(b.x, b.y), w: b.s, age: nowMs - b.t }));
+    const wavelength = unit * 3.2;      // spatial wavelength of ripples
+    const decay = unit * 4.5;           // how fast ripples fade with distance
+    const baseAmp = unit * 0.35;        // base displacement amplitude
+    const angular = (2 * Math.PI) / 900; // temporal speed (ms)
+    const timeLife = 1200;              // burst lifetime (ms)
+
+    // Compute displacement for a given xy
+    const displaced = (x, y) => {
+      if (!waveSources.length) return { x, y };
+      let dx = 0, dy = 0;
+      waveSources.forEach((s) => {
+        const vx = x - s.x; const vy = y - s.y;
+        const d = Math.sqrt(vx * vx + vy * vy) + 1e-6;
+        const dirx = vx / d, diry = vy / d;
+        const phase = (d / wavelength) * (2 * Math.PI) - nowMs * angular;
+        const spatialEnv = Math.exp(-d / decay);
+        const timeEnv = Math.max(0, 1 - (s.age / timeLife)); // fade out over lifetime
+        const amp = baseAmp * s.w * spatialEnv * timeEnv * Math.sin(phase);
+        dx += dirx * amp;
+        dy += diry * amp;
+      });
+      return { x: x + dx, y: y + dy };
+    };
+
+    // Precompute displaced positions for points
+    gridPoints.forEach((p) => {
+      const d = displaced(p.x, p.y);
+      p.X = d.x; p.Y = d.y;
+    });
     
     // Draw triangular mesh using the grid points
     ctx.strokeStyle = colorWithAlpha(border, 0.3);
@@ -12876,8 +13255,8 @@ function drawNode(node) {
       neighbors.forEach(neighbor => {
         if (neighbor.q > point.q || (neighbor.q === point.q && neighbor.r > point.r)) {
           ctx.beginPath();
-          ctx.moveTo(point.x, point.y);
-          ctx.lineTo(neighbor.x, neighbor.y);
+          ctx.moveTo(point.X ?? point.x, point.Y ?? point.y);
+          ctx.lineTo(neighbor.X ?? neighbor.x, neighbor.Y ?? neighbor.y);
           ctx.stroke();
         }
       });
@@ -12887,53 +13266,150 @@ function drawNode(node) {
     gridPoints.forEach(point => {
       const isCurrentPos = node.currentPos && node.currentPos.x === point.q && node.currentPos.y === point.r;
       const highlightData = node.highlightData;
-      const isHighlighted = highlightData && highlightData.currentPosition && 
-                           highlightData.currentPosition.x === point.q && 
-                           highlightData.currentPosition.y === point.r &&
-                           highlightData.intensity > 0;
+      const isHighlighted = highlightData && highlightData.currentPosition &&
+        highlightData.currentPosition.x === point.q &&
+        highlightData.currentPosition.y === point.r &&
+        highlightData.intensity > 0;
+      const isExtra = highlightData && Array.isArray(highlightData.extraPositions) &&
+        highlightData.extraPositions.some(p => p && p.x === point.q && p.y === point.r);
       
-      if (isCurrentPos || isHighlighted) {
-        const intensity = isHighlighted ? highlightData.intensity : 0.7;
-        const pulseIntensity = isHighlighted ? Math.sin(Date.now() * 0.01) * 0.3 + 0.7 : 1;
+      if (isCurrentPos || isHighlighted || isExtra) {
+        const disp = (highlightData && (highlightData.displayIntensity ?? highlightData.intensity)) || 0.6;
+        const baseInt = isHighlighted ? disp : (isExtra ? Math.min(0.5, disp) : 0.55);
+        const pulseIntensity = isHighlighted ? Math.sin(Date.now() * 0.01) * 0.25 + 0.75 : 1;
         
-        // Find surrounding triangles and fill them
-        const surroundingPoints = gridPoints.filter(p => {
-          const dq = Math.abs(p.q - point.q);
-          const dr = Math.abs(p.r - point.r);
-          const ds = Math.abs(p.s - point.s);
-          return dq <= 1 && dr <= 1 && ds <= 1 && (dq + dr + ds <= 2);
-        });
-        
-        if (surroundingPoints.length >= 3) {
-          ctx.fillStyle = colorWithAlpha(accent, 0.15 + (intensity * 0.25 * pulseIntensity));
-          ctx.beginPath();
-          ctx.moveTo(surroundingPoints[0].x, surroundingPoints[0].y);
-          for (let i = 1; i < surroundingPoints.length; i++) {
-            ctx.lineTo(surroundingPoints[i].x, surroundingPoints[i].y);
+        // Collect the six axial neighbors around this point (hex ring)
+        const axialNeighbors = [
+          { q: point.q + 1, r: point.r },       // E
+          { q: point.q + 1, r: point.r - 1 },   // NE
+          { q: point.q,     r: point.r - 1 },   // NW
+          { q: point.q - 1, r: point.r },       // W
+          { q: point.q - 1, r: point.r + 1 },   // SW
+          { q: point.q,     r: point.r + 1 },   // SE
+        ];
+
+        // Map neighbors to actual grid points inside the hex
+        const ring = axialNeighbors
+          .map(n => gridPoints.find(p => p.q === n.q && p.r === n.r))
+          .filter(Boolean);
+
+        if (ring.length >= 3) {
+          // If specific neighbors were provided (from chord), only fill those wedges.
+          const extras = (highlightData && Array.isArray(highlightData.extraPositions)) ? highlightData.extraPositions : [];
+          const hasSelection = extras.length >= 2;
+
+          const baseAlpha = 0.16 + (baseInt * 0.18 * pulseIntensity);
+          const shouldFillWedge = (idxA, idxB) => {
+            if (!hasSelection) return false; // for single-note, skip wedges, show small pulse only
+            const a = ring[idxA], b = ring[idxB];
+            const inExtrasA = extras.some(p => p.x === a.q && p.y === a.r);
+            const inExtrasB = extras.some(p => p.x === b.q && p.y === b.r);
+            return inExtrasA && inExtrasB;
+          };
+
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          for (let i = 0; i < ring.length; i++) {
+            const ni = (i + 1) % ring.length;
+            if (!shouldFillWedge(i, ni)) continue;
+            const a = ring[i];
+            const b = ring[ni];
+            ctx.fillStyle = colorWithAlpha(accent, baseAlpha * (0.9 + 0.1 * Math.sin((Date.now() * 0.005) + i)));
+            ctx.beginPath();
+            ctx.moveTo(point.X ?? point.x, point.Y ?? point.y);
+            ctx.lineTo(a.X ?? a.x, a.Y ?? a.y);
+            ctx.lineTo(b.X ?? b.x, b.Y ?? b.y);
+            ctx.closePath();
+            ctx.fill();
           }
-          ctx.closePath();
+          // soft center glow
+          const gR = Math.max(10 / viewScale, hexRadius * 0.12);
+          const grad = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, gR);
+          grad.addColorStop(0, colorWithAlpha(accent, baseAlpha * 0.6));
+          grad.addColorStop(1, colorWithAlpha(accent, 0));
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(point.X ?? point.x, point.Y ?? point.y, gR, 0, Math.PI * 2);
           ctx.fill();
+          ctx.restore();
+
+          if (!hasSelection) {
+            // Single-note: show a compact pulse at the center cell
+            ctx.fillStyle = colorWithAlpha(accent, 0.25 * baseInt * pulseIntensity);
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, Math.max(6 / viewScale, hexRadius * 0.05), 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Also softly outline the local hex around the active cell to unify the shape
+          ctx.strokeStyle = colorWithAlpha(accent, 0.35 * (0.8 + 0.2 * pulseIntensity));
+          ctx.lineWidth = Math.max(1.5 / viewScale, 1 / viewScale);
+          ctx.beginPath();
+          ctx.moveTo(ring[0].X ?? ring[0].x, ring[0].Y ?? ring[0].y);
+          for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i].X ?? ring[i].x, ring[i].Y ?? ring[i].y);
+          ctx.closePath();
+          ctx.stroke();
+        } else {
+          // Fallback: ensure we still show an activity pulse even at extreme corners
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = colorWithAlpha(accent, 0.25 * baseInt * pulseIntensity);
+          ctx.beginPath();
+          ctx.arc(point.X ?? point.x, point.Y ?? point.y, Math.max(6 / viewScale, hexRadius * 0.05), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
       }
     });
     
-    // Draw node points and labels
+    // Draw node points and optional labels
     gridPoints.forEach(point => {
-      // Draw node point
-      ctx.fillStyle = colorWithAlpha(border, 0.6);
+      // Draw node point with highlight when its pitch class is played
+      const pcBase = ((7 * point.q + 4 * point.r) % 12 + 12) % 12;
+      const transpose = ((currentRootNote + globalTransposeOffset) % 12 + 12) % 12;
+      const pc = (pcBase + transpose) % 12;
+      let played = false;
+      if (node.highlightData && node.highlightData.playedPCs) {
+        const pcs = node.highlightData.playedPCs;
+        if (pcs instanceof Set) played = pcs.has(pc);
+        else if (Array.isArray(pcs)) played = pcs.includes(pc);
+      }
+      const dotR = played ? Math.max(3.5 / viewScale, 3) : Math.max(2 / viewScale, 2);
+      ctx.save();
+      if (played) {
+        ctx.shadowBlur = Math.max(6 / viewScale, 4);
+        ctx.shadowColor = colorWithAlpha(accent, 0.9);
+      }
+      ctx.fillStyle = played ? colorWithAlpha(accent, 0.95) : colorWithAlpha(border, 0.6);
       ctx.beginPath();
-      ctx.arc(point.x, point.y, Math.max(2 / viewScale, 2), 0, Math.PI * 2);
+      ctx.arc(point.X ?? point.x, point.Y ?? point.y, dotR, 0, Math.PI * 2);
       ctx.fill();
+      if (played) {
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = colorWithAlpha(accent, 0.6);
+        ctx.lineWidth = Math.max(1 / viewScale, 0.8);
+        ctx.beginPath();
+        ctx.arc(point.X ?? point.x, point.Y ?? point.y, dotR + Math.max(2 / viewScale, 1.5), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
       
-      // Add note label
-      if (meshScale > 60 / viewScale) {
-        const note = ((7 * point.q + 4 * point.r) % 12 + 12) % 12;
+      // Add note label (transposed by current root/transpose)
+      if (ap.tonnetzShowLabels && hexRadius > 60 / viewScale) {
+        const pcBase = ((7 * point.q + 4 * point.r) % 12 + 12) % 12;
+        const transpose = ((currentRootNote + globalTransposeOffset) % 12 + 12) % 12;
+        const note = (pcBase + transpose) % 12;
         const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        // gentle wave motion when highlighted
+        const now = Date.now();
+        const disp = (node.highlightData && (node.highlightData.displayIntensity ?? node.highlightData.intensity)) || 0;
+        const phase = (point.q * 2 + point.r * 3);
+        const wave = Math.sin((now * 0.006) + phase) * (2 + 8 * disp) / viewScale; // small ripple, scaled by intensity
         ctx.fillStyle = colorWithAlpha(border, 0.9);
         ctx.font = `${Math.max(10 / viewScale, 8)}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(noteNames[note], point.x, point.y - 12 / viewScale);
+        ctx.fillText(noteNames[note], (point.X ?? point.x), (point.Y ?? point.y) - 12 / viewScale + wave);
       }
     });
     
@@ -21486,6 +21962,35 @@ function populateEditPanel() {
                 section.appendChild(lengthLabel);
                 section.appendChild(lengthSelect);
 
+                // Show Note Labels toggle
+                const labelsRow = document.createElement('div');
+                labelsRow.style.display = 'flex';
+                labelsRow.style.alignItems = 'center';
+                labelsRow.style.gap = '8px';
+                labelsRow.style.marginTop = '8px';
+                const labelsChk = document.createElement('input');
+                labelsChk.type = 'checkbox';
+                labelsChk.id = `edit-tonnetz-labels-${node.id}`;
+                labelsChk.checked = !!(node.audioParams && node.audioParams.tonnetzShowLabels);
+                const labelsLab = document.createElement('label');
+                labelsLab.textContent = 'Show Note Labels';
+                labelsLab.htmlFor = labelsChk.id;
+                labelsRow.appendChild(labelsChk);
+                labelsRow.appendChild(labelsLab);
+                labelsChk.addEventListener('change', (e) => {
+                    const val = !!e.target.checked;
+                    selectedArray.forEach(elData => {
+                        const n = findNodeById(elData.id);
+                        if (n && n.type === TONNETZ_TYPE) {
+                            if (!n.audioParams) n.audioParams = {};
+                            n.audioParams.tonnetzShowLabels = val;
+                        }
+                    });
+                    saveState();
+                    try { draw(); } catch {}
+                });
+                section.appendChild(labelsRow);
+
                 // Current position display
                 const positionTitle = document.createElement('div');
                 positionTitle.style.margin = '8px 0 4px 0';
@@ -26940,6 +27445,8 @@ if (appMenuSyncToggleBtn) {
     lastBeatTime = 0;
     updateSyncUI();
     saveState();
+    // Re-sync sequencer durations
+    try { rescheduleScaleKeySequencer(); } catch {}
   });
 }
 if (appMenuBpmInput) {
@@ -26964,6 +27471,8 @@ if (appMenuBpmInput) {
           0.05,
         );
       }
+      // Update sequencer timing on BPM change
+      try { rescheduleScaleKeySequencer(); } catch {}
     } else {
       console.warn(
         `Ongeldige BPM input: ${e.target.value}. Reset naar ${globalBPM}.`,

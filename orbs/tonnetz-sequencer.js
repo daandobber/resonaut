@@ -126,6 +126,8 @@ export function initTonnetzNode(newNode, deps) {
   ap.velocityJitter = ap.velocityJitter ?? 0.2;
   ap.harmonicSpread = ap.harmonicSpread ?? 0.3;
   ap.preset = ap.preset || 'Classical';
+  // Visuals
+  ap.tonnetzShowLabels = ap.tonnetzShowLabels ?? false; // default off
   
   // Sequence control parameters
   ap.sequenceLength = ap.sequenceLength || 8; // How many steps before restart
@@ -199,20 +201,40 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
   
   let notes = [];
   if (isChord) {
-    // Find triad containing current position
-    const triad = findTriadAtPosition(pos.x, pos.y);
-    if (triad) {
-      notes = triad.vertices.map(([x, y]) => getTonnetzNote(x, y));
-      
-      // Apply harmonic spread (voice leading)
-      if (ap.harmonicSpread > 0) {
-        notes = notes.map((note, idx) => {
-          if (idx === 0) return note; // Keep root
-          return Math.random() < ap.harmonicSpread ? note + 12 : note; // Octave up
-        });
-      }
-    } else {
-      notes = [noteClass];
+    // Build a richer chord using the six surrounding Tonnetz triangles around the current cell
+    const neighborDeltas = [
+      { x: 1, y: 0 },     // E
+      { x: 1, y: -1 },    // NE
+      { x: 0, y: -1 },    // NW
+      { x: -1, y: 0 },    // W
+      { x: -1, y: 1 },    // SW
+      { x: 0, y: 1 },     // SE
+    ];
+
+    const neighbors = neighborDeltas.map(d => ({ x: pos.x + d.x, y: pos.y + d.y }));
+
+    // Gather notes from triangles (center with each pair of adjacent neighbors)
+    let triNoteClasses = [];
+    for (let i = 0; i < neighbors.length; i++) {
+      const a = neighbors[i];
+      const b = neighbors[(i + 1) % neighbors.length];
+      // Triangle vertices: pos, a, b
+      triNoteClasses.push(getTonnetzNote(pos.x, pos.y));
+      triNoteClasses.push(getTonnetzNote(a.x, a.y));
+      triNoteClasses.push(getTonnetzNote(b.x, b.y));
+    }
+
+    // Unique and optionally limit to chord size
+    const unique = Array.from(new Set(triNoteClasses));
+    const desired = Math.max(3, Math.min(6, ap.chordSize || 4));
+    notes = unique.slice(0, desired);
+
+    // Apply harmonic spread (voice leading, lift some voices an octave)
+    if (ap.harmonicSpread > 0) {
+      notes = notes.map((note, idx) => {
+        if (idx === 0) return note; // keep one root-ish voice low
+        return Math.random() < ap.harmonicSpread ? note + 12 : note;
+      });
     }
   } else {
     notes = [noteClass];
@@ -226,6 +248,30 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
 
   const pulseIntensity = ap.pulseIntensity ?? 1.0;
 
+  // Always emit a visual highlight, even if no embedded instrument is present
+  try {
+    if (deps && typeof deps.highlightTonnetzPosition === 'function') {
+      let extras = [];
+      if (isChord) {
+        // Choose neighbor positions whose pitch classes are actually used in the chord
+        const deltas = [
+          { x: 1, y: 0 }, { x: 1, y: -1 }, { x: 0, y: -1 },
+          { x: -1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 },
+        ];
+        const centerPc = getTonnetzNote(pos.x, pos.y);
+        const targetPcs = new Set(uniqueNotes.map(n => ((n % 12) + 12) % 12));
+        deltas.forEach((d) => {
+          const nx = pos.x + d.x, ny = pos.y + d.y;
+          const pc = getTonnetzNote(nx, ny);
+          if (pc !== centerPc && targetPcs.has(pc)) {
+            extras.push({ x: nx, y: ny });
+          }
+        });
+      }
+      deps.highlightTonnetzPosition(currentNode.id, pos, scaleIndices, pulseIntensity, extras);
+    }
+  } catch {}
+
   const fire = (neighborNode) => {
     const baseIndex = neighborNode?.audioParams && typeof neighborNode.audioParams.scaleIndex === 'number' ? neighborNode.audioParams.scaleIndex : 0;
     const basePulse = { 
@@ -235,11 +281,7 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
     };
     
     // Visual feedback
-    try {
-      if (deps && typeof deps.highlightTonnetzPosition === 'function') {
-        deps.highlightTonnetzPosition(currentNode.id, pos, scaleIndices, pulseIntensity);
-      }
-    } catch {}
+    // Additional highlight already emitted above; keep this block focused on audio triggering
     
     scaleIndices.forEach((scaleIndex) => {
       // Velocity jitter
@@ -699,13 +741,8 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
   // Add synth parameter button
   const synthParamBtn = document.createElement('button');
   synthParamBtn.textContent = '⚙️ Parameters';
+  synthParamBtn.classList.add('themed-button');
   synthParamBtn.style.marginLeft = '12px';
-  synthParamBtn.style.padding = '4px 8px';
-  synthParamBtn.style.backgroundColor = '#333';
-  synthParamBtn.style.color = '#fff';
-  synthParamBtn.style.border = '1px solid #555';
-  synthParamBtn.style.borderRadius = '4px';
-  synthParamBtn.style.cursor = 'pointer';
   synthParamBtn.addEventListener('click', () => {
     const t = ensureEmbedded();
     if (!t) return;

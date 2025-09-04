@@ -5,6 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Resonaut</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+      /* Performance: Scale/Key Sequencer */
+      .scale-key-seq-blocks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .scale-key-seq-block {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--button-hover, #666);
+        padding: 6px;
+        border-radius: 4px;
+        background: rgba(0,0,0,0.08);
+      }
+      .scale-key-seq-block select,
+      .scale-key-seq-block input[type="number"] {
+        height: 24px;
+      }
+      .scale-key-seq-block .seq-remove {
+        background: transparent;
+        border: 1px solid var(--button-hover, #666);
+        border-radius: 3px;
+        cursor: pointer;
+        padding: 2px 6px;
+      }
+      .scale-key-seq-block.playing { outline: 2px solid var(--start-node-color, #ffd700); }
+    </style>
 </head>
 <body>
 
@@ -446,25 +476,29 @@
         <!-- DJ EQ Section -->
         <div class="dj-eq-section">
             <h4>DJ EQ</h4>
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;">
+                <label for="djEqBypassToggle" title="Bypass the DJ EQ (no EQ applied)">Bypass</label>
+                <input type="checkbox" id="djEqBypassToggle">
+            </div>
             <div class="dj-eq-controls">
                 <div class="dj-eq-band">
                     <label>HI</label>
                     <div class="dj-dial-container">
-                        <input type="range" id="djEqHi" class="dj-dial" min="-12" max="12" step="0.1" value="0" orient="vertical">
+                        <input type="range" id="djEqHi" class="dj-dial" min="-24" max="24" step="0.1" value="0" orient="vertical">
                         <span id="djEqHiValue" class="dj-dial-value">0dB</span>
                     </div>
                 </div>
                 <div class="dj-eq-band">
                     <label>MID</label>
                     <div class="dj-dial-container">
-                        <input type="range" id="djEqMid" class="dj-dial" min="-12" max="12" step="0.1" value="0" orient="vertical">
+                        <input type="range" id="djEqMid" class="dj-dial" min="-24" max="24" step="0.1" value="0" orient="vertical">
                         <span id="djEqMidValue" class="dj-dial-value">0dB</span>
                     </div>
                 </div>
                 <div class="dj-eq-band">
                     <label>LOW</label>
                     <div class="dj-dial-container">
-                        <input type="range" id="djEqLow" class="dj-dial" min="-12" max="12" step="0.1" value="0" orient="vertical">
+                        <input type="range" id="djEqLow" class="dj-dial" min="-24" max="24" step="0.1" value="0" orient="vertical">
                         <span id="djEqLowValue" class="dj-dial-value">0dB</span>
                     </div>
                 </div>
@@ -472,6 +506,22 @@
         </div>
         
         <div id="performance-panel-content" class="performance-panel">
+            <div class="performance-block">
+                <h4>Scale/Key Sequencer</h4>
+                <div class="mixer-control-item">
+                    <label for="scaleKeySeqEnabled">Enabled</label>
+                    <input type="checkbox" id="scaleKeySeqEnabled">
+                </div>
+                <div class="mixer-control-item">
+                    <label for="scaleKeySeqBarsPerBlock">Default Bars/Block</label>
+                    <input type="number" id="scaleKeySeqBarsPerBlock" min="1" max="64" step="1" value="4">
+                </div>
+                <div id="scaleKeySeqBlocks" class="scale-key-seq-blocks" title="Add blocks with scale, key, and bars. Blocks play left to right."></div>
+                <div class="mixer-control-item" style="gap:8px; display:flex; flex-wrap:wrap; margin-top:8px;">
+                    <button id="scaleKeySeqAddBlockBtn">Add Block</button>
+                    <button id="scaleKeySeqClearBtn">Clear</button>
+                </div>
+            </div>
             <div class="performance-block">
                 <h4>MRFA</h4>
                 <div class="mixer-control-item">

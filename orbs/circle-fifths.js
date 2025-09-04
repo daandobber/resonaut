@@ -505,13 +505,8 @@ export function buildCenterInstrumentPanel(node, deps) {
   // Add synth parameter button
   const synthParamBtn = document.createElement('button');
   synthParamBtn.textContent = '⚙️ Parameters';
+  synthParamBtn.classList.add('themed-button');
   synthParamBtn.style.marginLeft = '12px';
-  synthParamBtn.style.padding = '4px 8px';
-  synthParamBtn.style.backgroundColor = '#333';
-  synthParamBtn.style.color = '#fff';
-  synthParamBtn.style.border = '1px solid #555';
-  synthParamBtn.style.borderRadius = '4px';
-  synthParamBtn.style.cursor = 'pointer';
   synthParamBtn.addEventListener('click', () => {
     const t = ensureEmbedded();
     if (!t) return;
