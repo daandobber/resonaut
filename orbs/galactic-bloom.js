@@ -7,6 +7,26 @@ import { handleCirclePulse as handleCircleFifthsPulse, initCircleNode as initCir
 
 export const GALACTIC_BLOOM_TYPE = 'galactic_bloom';
 
+// Melodic progression patterns - define note order/movement, not scale
+export const MELODIC_PATTERNS = {
+  ascending: { name: 'Ascending', getNote: (dotIndex, totalDots) => dotIndex % 12 },
+  descending: { name: 'Descending', getNote: (dotIndex, totalDots) => (11 - dotIndex) % 12 },
+  pendulum: { name: 'Pendulum', getNote: (dotIndex, totalDots) => {
+    const cycle = Math.floor(dotIndex / 12) % 2;
+    return cycle === 0 ? dotIndex % 12 : (11 - (dotIndex % 12)) % 12;
+  }},
+  spiral: { name: 'Spiral Up', getNote: (dotIndex, totalDots) => (dotIndex * 7) % 12 },
+  cascade: { name: 'Cascade Down', getNote: (dotIndex, totalDots) => (dotIndex * 5) % 12 },
+  random: { name: 'Random Walk', getNote: (dotIndex, totalDots) => Math.floor(Math.random() * 12) },
+  octaves: { name: 'Octave Jumps', getNote: (dotIndex, totalDots) => {
+    const baseNote = dotIndex % 3;
+    return (baseNote * 4) % 12;
+  }},
+  thirds: { name: 'Circle of Thirds', getNote: (dotIndex, totalDots) => (dotIndex * 3) % 12 },
+  fourths: { name: 'Circle of Fourths', getNote: (dotIndex, totalDots) => (dotIndex * 5) % 12 },
+  fifths: { name: 'Circle of Fifths', getNote: (dotIndex, totalDots) => (dotIndex * 7) % 12 }
+};
+
 // Simple Bjorklund Euclidean pattern generator.
 export function euclideanPattern(steps, pulses) {
   steps = Math.max(1, Math.floor(steps || 1));
@@ -42,8 +62,8 @@ function buildDots(node) {
   const dots = [];
   const n = Math.max(1, Math.floor(ap.numDots || 6));
   const qDen = Math.max(1, Math.floor(ap.quantizedOffsetDenom || 12));
-  const freeAmt = Math.max(0, Math.min(1, ap.freeOffset ?? 0.3));
-  const speedOffset = Math.max(-1, Math.min(1, ap.speedOffset ?? 0));
+  const freeAmt = Math.max(0, Math.min(10, ap.freeOffset ?? 3)) / 10;
+  const speedOffset = Math.max(-10, Math.min(10, ap.speedOffset ?? 0)) / 10;
   for (let i = 0; i < n; i++) {
     const t = (i + 0.5) / n; // 0..1 radial ordering
     const r = 0.12 + 0.78 * t; // keep within ring
@@ -101,9 +121,10 @@ export function initGalacticNode(newNode, deps) {
   // Spokes/dots/offsets
   ap.numSpokes = ap.numSpokes ?? 3;
   ap.numDots = ap.numDots ?? 6;
+  ap.melodicPattern = ap.melodicPattern ?? 'ascending';
   ap.quantizedOffsetDenom = ap.quantizedOffsetDenom ?? 12;
-  ap.freeOffset = ap.freeOffset ?? 0.3;
-  ap.speedOffset = ap.speedOffset ?? 0.0; // -1..1
+  ap.freeOffset = ap.freeOffset ?? 3; // 0-10 steps
+  ap.speedOffset = ap.speedOffset ?? 0; // -10..10 steps
   ap.globalOffset = ap.globalOffset ?? 0.0; // radians
   ap.spokeRotate = ap.spokeRotate ?? 0.0; // radians
   // Per-spoke enable toggles (match number of spokes)
@@ -364,8 +385,12 @@ export function updateGalacticBloom(node, deltaTime, deps, { audioActive = true,
       const prevIntensity = ap.pulseIntensity;
       ap.pulseIntensity = vel;
       
-      // Each dot has its own musical content - use dot index for different harmonic content
-      const dotSegment = d % segs;
+      // Each dot has its own musical content - use melodic pattern for note progression
+      const selectedPattern = MELODIC_PATTERNS[ap.melodicPattern] || MELODIC_PATTERNS.ascending;
+      const numDots = dots.length;
+      
+      // Get note from melodic pattern - this determines the harmonic progression/melody
+      const dotSegment = selectedPattern.getNote(d, numDots);
       node.segmentIndex = dotSegment;
       node.lastGlowSeg = node.segmentIndex;
       node.lastGlowAt = nowMs;

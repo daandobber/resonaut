@@ -65,7 +65,7 @@ import { createDailyTipManager } from './utils/dailyTips.js';
 import * as el from './utils/domElements.js';
 import { ONE_WAY_TYPE, drawArrow, getArrowPosition } from './connectors.js';
 import { CIRCLE_FIFTHS_TYPE, applyZodiacPresetToCircle, initCircleNode as initCircleFifthsNode, handleCirclePulse as handleCircleFifthsPulse, buildCenterInstrumentPanel as buildCircleCenterPanel } from './orbs/circle-fifths.js';
-import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGalacticDots, updateGalacticBloom } from './orbs/galactic-bloom.js';
+import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGalacticDots, updateGalacticBloom, MELODIC_PATTERNS } from './orbs/galactic-bloom.js';
 import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS } from './orbs/tonnetz-sequencer.js';
 import { PULSE_BURST_TYPE, initPulseBurstNode, handlePulseBurstPulse, buildPulseBurstPanel } from './orbs/pulse-burst.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
@@ -413,6 +413,7 @@ let samplerVisualPlayhead = null;
 let samplerEnvelopeDot = null;
 let samplerPlayheadTimeout = null;
 let samplerSliders = {};
+let activeSamplerVoices = []; // Track multiple active voices
 let resonauterSpinPhase = 0;
 let currentResonauterTab = 'exc';
 const TIMELINE_GRID_TYPE = "timeline_grid";
@@ -5635,10 +5636,10 @@ export function triggerNodeEffect(
             if (targetSamplerIndividualPeak < 0.001 || noteVolumeFactor === 0) {
               targetSamplerIndividualPeak = 0.001;
             }
-            const samplerAttack = params.sampleAttack ?? 0.005;
-            const samplerDecay = params.sampleDecay ?? 0.1;
-            const samplerSustain = params.sampleSustain ?? 0.7;
-            const samplerRelease = params.sampleRelease ?? 0.2;
+            const samplerAttack = params.sampleAttack ?? 0.001;
+            const samplerDecay = params.sampleDecay ?? 0.001;
+            const samplerSustain = params.sampleSustain ?? 1.0;
+            const samplerRelease = params.sampleRelease ?? 0.001;
             const filterInput =
               lowPassFilter && lowPassFilter.input
                 ? lowPassFilter.input
@@ -5655,11 +5656,12 @@ export function triggerNodeEffect(
               targetSamplerIndividualPeak,
               filterInput,
             );
-            if (currentSamplerNode === node && isMainNote) {
+            if (currentSamplerNode === node) {
+              // Add new voice playhead for polyphonic visualization
               const delayMs = Math.max(0, (scheduledStartTime - now) * 1000);
               setTimeout(
                 () =>
-                  animateSamplerPlayhead(
+                  addSamplerVoice(
                     node,
                     params.sampleReverse ? endFrac : startFrac,
                     params.sampleReverse ? startFrac : endFrac,
@@ -10161,6 +10163,9 @@ function connectNodes(nodeA, nodeB, type = "standard", options = {}) {
   updateConstellationGroup();
   identifyAndRouteAllGroups();
   saveState();
+  
+  // Refresh sampler timeline if a sampler is involved
+  refreshSamplerTimeline();
   if (
     helpWizard &&
     !helpWizard.classList.contains("hidden") &&
@@ -10194,6 +10199,9 @@ function removeConnection(connToRemove, updateGroup = true) {
       (el) => !(el.type === "connection" && el.id === connToRemove.id),
     ),
   );
+  
+  // Refresh sampler timeline when connections are removed
+  refreshSamplerTimeline();
   if (updateGroup) {
     updateConstellationGroup();
     saveState();
@@ -10640,6 +10648,155 @@ function drawSamplerWaveform(buffer, canvas, start = 0, end = 1, attack = 0, rel
   }
 }
 
+// Extract trigger timing from connected sequencer nodes
+function getSequencerTriggerTimeline(samplerNode) {
+  if (!samplerNode || !connections || !Array.isArray(connections)) return [];
+  
+  const triggers = [];
+  const connectedSequencers = connections.filter(conn => 
+    conn.nodeBId === samplerNode.id && 
+    conn.nodeAId !== samplerNode.id
+  );
+  
+  for (const conn of connectedSequencers) {
+    const sourceNode = findNodeById(conn.nodeAId);
+    if (!sourceNode) continue;
+    
+    // Extract timing patterns based on sequencer type
+    if (sourceNode.type === TONNETZ_TYPE) {
+      const timeline = extractTonnetzTimeline(sourceNode);
+      triggers.push(...timeline);
+    } else if (sourceNode.type === CIRCLE_FIFTHS_TYPE) {
+      const timeline = extractCircleFifthsTimeline(sourceNode);
+      triggers.push(...timeline);
+    } else if (sourceNode.type === GALACTIC_BLOOM_TYPE) {
+      const timeline = extractGalacticBloomTimeline(sourceNode);
+      triggers.push(...timeline);
+    }
+  }
+  
+  
+  // Sort and remove duplicates
+  return [...new Set(triggers)].sort((a, b) => a - b);
+}
+
+// Extract timing pattern from Tonnetz sequencer
+function extractTonnetzTimeline(node) {
+  const ap = node.audioParams || {};
+  const triggers = [];
+  
+  // Basic timing based on BPM and subdivision
+  if (isGlobalSyncEnabled && globalBPM > 0) {
+    const beatsPerSecond = globalBPM / 60;
+    const subdivision = ap.syncSubdivisionIndex || 0;
+    const subdiv = subdivisionOptions[subdivision]?.value || 1;
+    const triggerInterval = subdiv / beatsPerSecond;
+    
+    // Generate triggers for a reasonable duration (e.g., 8 seconds)
+    const duration = 8;
+    for (let t = 0; t < duration; t += triggerInterval) {
+      triggers.push(t);
+    }
+  }
+  
+  return triggers;
+}
+
+// Extract timing pattern from Circle of Fifths sequencer  
+function extractCircleFifthsTimeline(node) {
+  const ap = node.audioParams || {};
+  const triggers = [];
+  
+  // Basic timing based on BPM and subdivision
+  if (isGlobalSyncEnabled && globalBPM > 0) {
+    const beatsPerSecond = globalBPM / 60;
+    const subdivision = ap.syncSubdivisionIndex || 0;
+    const subdiv = subdivisionOptions[subdivision]?.value || 1;
+    const triggerInterval = subdiv / beatsPerSecond;
+    
+    // Generate triggers for a reasonable duration (e.g., 8 seconds)
+    const duration = 8;
+    for (let t = 0; t < duration; t += triggerInterval) {
+      triggers.push(t);
+    }
+  }
+  
+  return triggers;
+}
+
+// Extract timing pattern from Galactic Bloom sequencer
+function extractGalacticBloomTimeline(node) {
+  const ap = node.audioParams || {};
+  const triggers = [];
+  
+  // Use rotation timing for galactic bloom
+  if (isGlobalSyncEnabled && globalBPM > 0) {
+    const beatsPerSecond = globalBPM / 60;
+    const rotationOptions = [
+      { label: "1/16", value: 0.25 },
+      { label: "1/8", value: 0.5 },
+      { label: "1/5", value: 0.8 },
+      { label: "1/4", value: 1 },
+      { label: "1/3", value: 4/3 },
+      { label: "1/2", value: 2 },
+      { label: "1", value: 4 },
+      { label: "2", value: 8 },
+      { label: "3", value: 12 },
+      { label: "4", value: 16 },
+      { label: "5", value: 20 },
+      { label: "6", value: 24 },
+      { label: "7", value: 28 },
+      { label: "8", value: 32 },
+      { label: "9", value: 36 },
+      { label: "10", value: 40 }
+    ];
+    
+    const rotIdx = ap.galacticRotationIndex || 3;
+    const rotBeats = rotationOptions[rotIdx]?.value || 1;
+    const rotationPeriod = rotBeats / beatsPerSecond;
+    
+    // For galactic bloom, show triggers more frequently since dots cross spokes
+    const spokes = ap.numSpokes || 3;
+    const dots = ap.numDots || 6;
+    
+    // Approximate trigger rate: dots crossing spokes creates multiple triggers per rotation
+    const triggersPerRotation = Math.min(spokes * 2, 8); // Conservative estimate
+    const triggerInterval = rotationPeriod / triggersPerRotation;
+    
+    // Generate triggers for a reasonable duration (e.g., 4 seconds to avoid clutter)
+    const duration = 4;
+    for (let t = 0; t < duration; t += triggerInterval) {
+      // Add some randomization to make it look more organic like actual crossings
+      const jitter = (Math.random() - 0.5) * triggerInterval * 0.1;
+      triggers.push(t + jitter);
+    }
+  }
+  
+  return triggers;
+}
+
+// Refresh sampler waveform timeline when connections change
+function refreshSamplerTimeline() {
+  if (currentSamplerNode && samplerWaveformCanvas) {
+    const samplerId = currentSamplerNode.audioParams.waveform?.replace('sampler_', '');
+    const definition = typeof SAMPLER_DEFINITIONS !== 'undefined' ? SAMPLER_DEFINITIONS.find(s => s.id === samplerId) : null;
+    const buffer = definition?.buffer || null;
+    
+    if (buffer) {
+      const triggerTimeline = getSequencerTriggerTimeline(currentSamplerNode);
+      drawSamplerWaveform(
+        buffer,
+        samplerWaveformCanvas,
+        currentSamplerNode.audioParams.sampleStart ?? 0,
+        currentSamplerNode.audioParams.sampleEnd ?? 1,
+        currentSamplerNode.audioParams.sampleAttack ?? 0,
+        currentSamplerNode.audioParams.sampleRelease ?? 0,
+        triggerTimeline
+      );
+    }
+  }
+}
+
 function getReversedBuffer(definition) {
   if (!definition || !definition.buffer) return null;
   if (definition.reversedBuffer) return definition.reversedBuffer;
@@ -10662,6 +10819,85 @@ function getReversedBuffer(definition) {
 }
 
 // playWithToneSampler moved to samplerPlayer.js
+
+// Add a new voice playhead for polyphonic playback
+function addSamplerVoice(node, startFrac, endFrac, duration, attack = 0, release = 0) {
+  if (!samplerWaveformCanvas || currentSamplerNode !== node) return;
+  
+  const voiceId = Date.now() + Math.random(); // Unique ID for this voice
+  const playhead = document.createElement('div');
+  playhead.className = 'sampler-playhead-voice';
+  playhead.style.cssText = `
+    position: absolute;
+    width: 2px;
+    height: 100%;
+    background: rgba(255, 120, 120, 0.8);
+    pointer-events: none;
+    z-index: 10;
+    left: ${startFrac * 100}%;
+    transition: none;
+  `;
+  
+  const displayWrap = samplerWaveformCanvas.parentElement;
+  if (displayWrap) {
+    displayWrap.appendChild(playhead);
+  }
+  
+  const voice = {
+    id: voiceId,
+    element: playhead,
+    startTime: performance.now(),
+    startFrac,
+    endFrac,
+    duration,
+    attack,
+    release
+  };
+  
+  activeSamplerVoices.push(voice);
+  animateVoicePlayhead(voice);
+  
+  return voiceId;
+}
+
+// Animate individual voice playhead
+function animateVoicePlayhead(voice) {
+  const startTime = performance.now();
+  
+  function updatePlayhead() {
+    const elapsed = (performance.now() - startTime) / 1000;
+    const progress = Math.min(1, elapsed / voice.duration);
+    
+    if (progress >= 1) {
+      // Voice finished, remove playhead
+      if (voice.element && voice.element.parentElement) {
+        voice.element.parentElement.removeChild(voice.element);
+      }
+      activeSamplerVoices = activeSamplerVoices.filter(v => v.id !== voice.id);
+      return;
+    }
+    
+    // Update playhead position
+    const currentFrac = voice.startFrac + (voice.endFrac - voice.startFrac) * progress;
+    if (voice.element) {
+      voice.element.style.left = `${currentFrac * 100}%`;
+      
+      // Add envelope visualization (opacity based on ADSR)
+      let opacity = 0.8;
+      if (elapsed < voice.attack) {
+        opacity = 0.8 * (elapsed / voice.attack); // Attack fade in
+      } else if (elapsed > voice.duration - voice.release) {
+        const releaseProgress = (elapsed - (voice.duration - voice.release)) / voice.release;
+        opacity = 0.8 * (1 - releaseProgress); // Release fade out
+      }
+      voice.element.style.background = `rgba(255, 120, 120, ${opacity})`;
+    }
+    
+    requestAnimationFrame(updatePlayhead);
+  }
+  
+  updatePlayhead();
+}
 
 function animateSamplerPlayhead(node, startFrac, endFrac, duration, attack = 0, release = 0) {
   if (attack + release > duration) {
@@ -22297,6 +22533,38 @@ function populateEditPanel() {
                 );
                 section.appendChild(dotsSlider);
 
+                // Melodic Pattern Selection
+                const currentPattern = node.audioParams?.melodicPattern ?? 'ascending';
+                const patternDiv = document.createElement('div');
+                patternDiv.className = 'control-group';
+                const patternLabel = document.createElement('label');
+                patternLabel.textContent = 'Melodic Pattern:';
+                const patternSelect = document.createElement('select');
+                patternSelect.id = `edit-gal-melody-${node.id}`;
+                patternSelect.className = 'control-select';
+                
+                Object.keys(MELODIC_PATTERNS).forEach(patternKey => {
+                  const option = document.createElement('option');
+                  option.value = patternKey;
+                  option.textContent = MELODIC_PATTERNS[patternKey].name;
+                  option.selected = patternKey === currentPattern;
+                  patternSelect.appendChild(option);
+                });
+                
+                patternSelect.addEventListener('change', (e) => {
+                  selectedArray.forEach(el => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.melodicPattern = e.target.value;
+                    }
+                  });
+                  saveState();
+                });
+                
+                patternDiv.appendChild(patternLabel);
+                patternDiv.appendChild(patternSelect);
+                section.appendChild(patternDiv);
 
                 const qDen = node.audioParams?.quantizedOffsetDenom ?? 12;
                 const qSlider = createSlider(
@@ -22313,17 +22581,17 @@ function populateEditPanel() {
                 );
                 section.appendChild(qSlider);
 
-                const free = node.audioParams?.freeOffset ?? 0.3;
+                const free = node.audioParams?.freeOffset ?? 3;
                 const freeSlider = createSlider(
                   `edit-gal-free-${node.id}`,
-                  `F.Offset (${free.toFixed(3)}):`,
-                  0, 1, 0.001,
+                  `F.Offset (${free}):`,
+                  0, 10, 1,
                   free,
                   saveState,
                   (e_input) => {
-                    const v = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    const v = Math.max(0, Math.min(10, parseInt(e_input.target.value, 10) || 3));
                     selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.freeOffset = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
-                    e_input.target.previousElementSibling.textContent = `F.Offset (${v.toFixed(3)}):`;
+                    e_input.target.previousElementSibling.textContent = `F.Offset (${v}):`;
                   }
                 );
                 section.appendChild(freeSlider);
@@ -22331,14 +22599,14 @@ function populateEditPanel() {
                 const sOff = node.audioParams?.speedOffset ?? 0;
                 const sSlider = createSlider(
                   `edit-gal-speedoff-${node.id}`,
-                  `Speed Offset (${sOff.toFixed(3)}):`,
-                  -1, 1, 0.001,
+                  `Speed Offset (${sOff}):`,
+                  -10, 10, 1,
                   sOff,
                   saveState,
                   (e_input) => {
-                    const v = Math.max(-1, Math.min(1, parseFloat(e_input.target.value)));
+                    const v = Math.max(-10, Math.min(10, parseInt(e_input.target.value, 10) || 0));
                     selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.speedOffset = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
-                    e_input.target.previousElementSibling.textContent = `Speed Offset (${v.toFixed(3)}):`;
+                    e_input.target.previousElementSibling.textContent = `Speed Offset (${v}):`;
                   }
                 );
                 section.appendChild(sSlider);
@@ -25369,6 +25637,15 @@ function hideSamplerOrbMenu() {
     const existing = document.getElementById('sampler-orb-container');
     if (existing) existing.remove();
     if (samplerPanelContent) samplerPanelContent.innerHTML = '';
+    
+    // Clean up all active voice playheads
+    activeSamplerVoices.forEach(voice => {
+        if (voice.element && voice.element.parentElement) {
+            voice.element.parentElement.removeChild(voice.element);
+        }
+    });
+    activeSamplerVoices = [];
+    
     currentSamplerNode = null;
     samplerWaveformCanvas = null;
     samplerVisualPlayhead = null;
@@ -25686,10 +25963,10 @@ function showSamplerOrbMenu(node) {
                 let st=node.audioParams.sampleStart ?? 0;
                 let en=node.audioParams.sampleEnd ?? 1;
                 if(en < st){ if(info.id==='sampleStart') { en = st; node.audioParams.sampleEnd = en; } else { st = en; node.audioParams.sampleStart = st; } }
-                let atk = node.audioParams.sampleAttack ?? 0;
-                let dec = node.audioParams.sampleDecay ?? 0.1;
-                let sus = node.audioParams.sampleSustain ?? 0.7;
-                let rel = node.audioParams.sampleRelease ?? 0;
+                let atk = node.audioParams.sampleAttack ?? 0.001;
+                let dec = node.audioParams.sampleDecay ?? 0.001;
+                let sus = node.audioParams.sampleSustain ?? 1.0;
+                let rel = node.audioParams.sampleRelease ?? 0.001;
                 node.audioParams.sampleAttack = atk;
                 node.audioParams.sampleDecay = dec;
                 node.audioParams.sampleSustain = sus;

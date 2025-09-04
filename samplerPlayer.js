@@ -44,34 +44,40 @@ export async function playWithToneSampler(
   if (safeVelocity !== velocity) {
     // invalid velocity
   }
-  // ADSR Envelope
+  // ADSR Envelope - each voice has its own independent envelope
   gain.gain.setValueAtTime(0, actualStart);
   
   // Attack: 0 -> velocity
   gain.gain.linearRampToValueAtTime(safeVelocity, actualStart + attack);
   
-  // Decay: velocity -> sustain * velocity
+  // Decay: velocity -> sustain * velocity  
   const sustainLevel = safeVelocity * Math.max(0, Math.min(1, sustain));
+  const decayEnd = actualStart + attack + decay;
   if (decay > 0.001) {
-    gain.gain.setTargetAtTime(sustainLevel, actualStart + attack, decay / 3);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.001, sustainLevel), decayEnd);
   }
   
   source.connect(gain);
   gain.connect(dest);
 
   // Sustain: hold sustain level during sample playback
-  const sustainTime = Math.max(0, buffer.duration - attack - Math.min(decay, buffer.duration * 0.5));
-  const releaseStart = actualStart + attack + decay + sustainTime;
+  const sustainTime = Math.max(0.1, buffer.duration - attack - decay); // Ensure minimum sustain
+  const releaseStart = decayEnd + sustainTime;
   
   // Release: sustain -> 0
-  gain.gain.setTargetAtTime(0.001, releaseStart, release / 3);
+  if (release > 0.001) {
+    const releaseEnd = releaseStart + release;
+    gain.gain.exponentialRampToValueAtTime(0.001, releaseEnd);
+  } else {
+    gain.gain.setValueAtTime(0.001, releaseStart);
+  }
 
   try {
     source.start(actualStart, 0, buffer.duration);
   } catch (e) {
     return;
   }
-  const stopTime = actualStart + attack + decay + sustainTime + release;
+  const stopTime = releaseStart + (release > 0.001 ? release : 0) + 0.1; // Add small buffer
   source.stop(stopTime);
 
 
