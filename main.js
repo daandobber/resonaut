@@ -3906,7 +3906,10 @@ function updateMixerGUI() {
         delaySlider.min = 0;
         delaySlider.max = 1;
         delaySlider.step = 0.01;
-        delaySlider.value = groupObj.delaySendGainNode ? groupObj.delaySendGainNode.gain.value : 0;
+        // Prefer stored logical value to avoid race with setTargetAtTime smoothing
+        delaySlider.value = (groupObj.delaySendLevel !== undefined)
+            ? groupObj.delaySendLevel
+            : (groupObj.delaySendGainNode ? groupObj.delaySendGainNode.gain.value : 0);
         delaySlider.id = `mixerGroupDelaySlider_${id}`;
         const delayVal = document.createElement('span');
         delayVal.className = 'value-display';
@@ -3918,7 +3921,9 @@ function updateMixerGUI() {
         reverbSlider.min = 0;
         reverbSlider.max = 1;
         reverbSlider.step = 0.01;
-        reverbSlider.value = groupObj.reverbSendGainNode ? groupObj.reverbSendGainNode.gain.value : 0;
+        reverbSlider.value = (groupObj.reverbSendLevel !== undefined)
+            ? groupObj.reverbSendLevel
+            : (groupObj.reverbSendGainNode ? groupObj.reverbSendGainNode.gain.value : 0);
         reverbSlider.id = `mixerGroupReverbSlider_${id}`;
         const reverbVal = document.createElement('span');
         reverbVal.className = 'value-display';
@@ -3974,7 +3979,9 @@ function updateMixerGUI() {
         panSlider.min = -1;
         panSlider.max = 1;
         panSlider.step = 0.01;
-        panSlider.value = pannerNode ? pannerNode.pan.value : 0;
+        panSlider.value = (groupObj && groupObj.pan !== undefined)
+            ? groupObj.pan
+            : (pannerNode ? pannerNode.pan.value : 0);
         panSlider.id = `mixerGroupPanSlider_${id}`;
         const panVal = document.createElement('span');
         panVal.className = 'value-display';
@@ -13032,7 +13039,8 @@ function drawNode(node) {
     node.isStartNode &&
     isSelectedAndOutlineNeeded &&
     node.nextSyncTriggerTime > 0 &&
-    node.type !== "pulsar_random_particles"
+    node.type !== "pulsar_random_particles" &&
+    node.type !== "pulsar_manual"
   ) {
     const timeToNext =
       node.nextSyncTriggerTime - (audioContext?.currentTime ?? 0);
@@ -13553,24 +13561,7 @@ function drawNode(node) {
     ctx.fill();
     ctx.stroke();
 
-    // Spiral arms
-    const arms = 4;
-    const turns = 1.5; // windings
-    const segIdx = Number.isFinite(node.segmentIndex) ? node.segmentIndex : 0;
-    for (let a = 0; a < arms; a++) {
-      const baseAngle = (a * Math.PI * 2) / arms;
-      ctx.beginPath();
-      for (let t = 0; t <= 1; t += 0.02) {
-        const ang = baseAngle + turns * Math.PI * 2 * t + segIdx * 0.02;
-        const r = (radius * (t * 0.9 + 0.1));
-        const x = cx + Math.cos(ang) * r;
-        const y = cy + Math.sin(ang) * r;
-        if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = colorWithAlpha(accent, 0.35);
-      ctx.lineWidth = Math.max(1 / viewScale, 1.5 / viewScale);
-      ctx.stroke();
-    }
+    // Spiral arms removed for cleaner look (non-functional decoration)
 
     // Spiral dots: orbiting points whose angles depend on node._galPhase
     try {
@@ -13624,12 +13615,6 @@ function drawNode(node) {
         const bucket = Math.floor(((ang) % (Math.PI*2) + (Math.PI*2)) % (Math.PI*2) / ((Math.PI*2)/segs));
         const isActive = (bucket % segs) === activeSeg;
         pts.push({ x, y, ang, isActive });
-        // radial connector to center
-        ctx.strokeStyle = colorWithAlpha(accent, 0.18);
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(x, y);
-        ctx.stroke();
       }
 
       // Connect dots to each other in angular order to form a rotating web
@@ -14149,7 +14134,7 @@ function drawNode(node) {
   if (
     (node.animationState > 0 ||
       preTriggerFlash > 0 ||
-      isSelectedAndOutlineNeeded ||
+      (isSelectedAndOutlineNeeded && node.type !== "pulsar_manual") ||
       node.isInResizeMode ||
       node.type === "nebula" ||
       node.type === PORTAL_NEBULA_TYPE ||
@@ -14170,7 +14155,7 @@ function drawNode(node) {
         ? 5
         : 0) +
       (node.animationState + preTriggerFlash) * 15 +
-      (isSelectedAndOutlineNeeded || node.isInResizeMode ? 5 : 0);
+      (((isSelectedAndOutlineNeeded && node.type !== "pulsar_manual") || node.isInResizeMode) ? 5 : 0);
     if (
       node.type === "gate" ||
       node.type === "probabilityGate" ||
@@ -15746,6 +15731,47 @@ function drawNode(node) {
         ctx.lineWidth = Math.max(0.5 / viewScale, 2 / viewScale);
         ctx.stroke();
       }
+    } else if (node.type === "pulsar_manual") {
+      // Render Manual Pulsar as a pressable button
+      const outerRadius = outerR;
+      const innerRadius = outerR * 0.72;
+      ctx.save();
+      ctx.translate(node.x, node.y);
+
+      // Base button shape
+      ctx.beginPath();
+      ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+      ctx.fillStyle = fillColor;
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = Math.max(0.5 / viewScale, baseLineWidth / viewScale);
+      ctx.fill();
+      ctx.stroke();
+
+      // Inner bevel to suggest pressable surface
+      const grd = ctx.createRadialGradient(0, 0, innerRadius * 0.3, 0, 0, innerRadius);
+      grd.addColorStop(0, 'rgba(255,255,255,0.20)');
+      grd.addColorStop(1, 'rgba(0,0,0,0.12)');
+      ctx.beginPath();
+      ctx.arc(0, 0, innerRadius, 0, Math.PI * 2);
+      ctx.fillStyle = grd;
+      ctx.fill();
+
+      // Small highlight at top for sheen
+      ctx.beginPath();
+      ctx.ellipse(0, -innerRadius * 0.45, innerRadius * 0.55, innerRadius * 0.22, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fill();
+
+      // Pressed state subtle inset when animating (only during actual pulse)
+      if (node.animationState > 0.01) {
+        ctx.beginPath();
+        ctx.arc(0, 0, innerRadius * 0.9, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = Math.max(0.5 / viewScale, (baseLineWidth * 1.2) / viewScale);
+        ctx.stroke();
+      }
+
+      ctx.restore();
     } else {
       drawStarShape(ctx, node.x, node.y, points, outerR, innerR);
       ctx.fill();
@@ -15939,9 +15965,9 @@ function drawNode(node) {
       );
       ctx.fill();
       if (
-        isSelectedAndOutlineNeeded ||
-        node.isInResizeMode ||
-        node.animationState > 0.05
+        ((isSelectedAndOutlineNeeded && node.type !== "pulsar_manual") ||
+          node.isInResizeMode ||
+          node.animationState > 0.05)
       ) {
         ctx.shadowColor = orbitStroke;
         ctx.shadowBlur = (3 + node.animationState * 5) / viewScale;
@@ -18341,6 +18367,18 @@ function handleMouseDown(event) {
         nodeClickedAtMouseDown = null;
         connectionClickedAtMouseDown = null;
         elementClickedAtMouseDown = null;
+      } else if (
+          // Global ctrl-click manual pulsar: fire immediately regardless of tool
+          ctrlLike &&
+          event.button === 0 &&
+          nodeUnderCursorOnUp &&
+          nodeUnderCursorOnUp.type === "pulsar_manual"
+      ) {
+          actionHandledInMainBlock = true;
+          try { if (event && typeof event.preventDefault === 'function') event.preventDefault(); } catch(_) {}
+          try { if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); } catch(_) {}
+          triggerManualPulsar(nodeUnderCursorOnUp);
+          stateWasChanged = true;
       } else if (currentTool === "edit") {
         let selectionChanged = false;
         if (!isElementSelected(element.type, element.id)) {
@@ -19551,6 +19589,13 @@ function handleMouseUp(event) {
                           handlePitchCycleDown(targetElement);
                           stateWasChanged = true;
                       }
+                  } else if (ctrlLike && node && node.type === "pulsar_manual") {
+                      // Ctrl-click manual pulsar to fire immediately, before any menu logic
+                      try { if (event && typeof event.preventDefault === 'function') event.preventDefault(); } catch(_) {}
+                      try { if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); } catch(_) {}
+                      triggerManualPulsar(node);
+                      actionHandledInMainBlock = true;
+                      stateWasChanged = true;
                   } else if (!(event.shiftKey || ctrlLike)) {
                       if (wasSelectedAtStart) {
                           if (node) {
@@ -23787,6 +23832,25 @@ function populateEditPanel() {
                             },
                         );
                         currentSection.appendChild(intensitySliderContainer);
+
+                        // Add one-shot Pulse button for manual pulsars
+                        if (node.type === "pulsar_manual") {
+                            const pulseBtn = document.createElement("button");
+                            pulseBtn.id = `manual-pulse-btn-${node.id}`;
+                            pulseBtn.textContent = "Pulse";
+                            pulseBtn.style.marginTop = "6px";
+                            pulseBtn.addEventListener("click", () => {
+                                // Trigger a single pulse for all selected manual pulsars (or just this one)
+                                const idsToTrigger = selectedArray.length > 0 ? selectedArray.map(s => s.id) : [node.id];
+                                idsToTrigger.forEach(id => {
+                                    const n = findNodeById(id);
+                                    if (n && n.type === "pulsar_manual") {
+                                        triggerManualPulsar(n);
+                                    }
+                                });
+                            });
+                            currentSection.appendChild(pulseBtn);
+                        }
                     } else {
                         const intensityInfo = document.createElement("small");
                         intensityInfo.textContent = `Intensity: Random (${MIN_PULSE_INTENSITY.toFixed(1)} - ${MAX_PULSE_INTENSITY.toFixed(1)})`;
@@ -26602,7 +26666,22 @@ function changeScale(scaleKey, skipNodeUpdate = false) {
   if (!scales[scaleKey]) return;
   currentScaleKey = scaleKey;
   currentScale = scales[scaleKey];
-  document.body.className = currentScale.theme;
+  // Apply theme class without wiping unrelated body classes
+  try {
+    const bodyEl = document.body;
+    if (bodyEl && bodyEl.classList) {
+      // Remove any existing theme-* classes
+      const toRemove = [];
+      bodyEl.classList.forEach((cls) => {
+        if (typeof cls === 'string' && cls.indexOf('theme-') === 0) toRemove.push(cls);
+      });
+      toRemove.forEach((cls) => bodyEl.classList.remove(cls));
+      const themeClass = currentScale && currentScale.theme ? currentScale.theme : '';
+      if (themeClass) bodyEl.classList.add(themeClass);
+    }
+  } catch (_) {
+    // no-op if classList isn't available
+  }
   const rootStyle = document.documentElement?.style;
   const base = currentScale.baseHSL || { h: 200, s: 70, l: 65 };
   const startColor = hslToRgba(base.h, base.s, base.l, 0.9);
