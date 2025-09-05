@@ -23689,6 +23689,7 @@ function populateEditPanel() {
                   createAudioNodesForNode,
                   updateNodeAudioParams,
                   saveState,
+                  draw,
                   populateEditPanel,
                   // Provide synth UI openers so the Parameters button works
                   showAnalogOrbMenu,

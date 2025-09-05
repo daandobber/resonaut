@@ -4,6 +4,7 @@ import { showTonePanel } from './analog-orb-ui.js';
 import { showAlienPanel } from './alien-orb.js';
 import { pluckSynthPresets } from './pluck-synth-orb.js';
 import { showTonePluckSynthMenu } from './tone-pluck-synth-ui.js';
+import { showEtherAuraMenu } from './ether-aura-ui.js';
 
 export const CIRCLE_FIFTHS_TYPE = 'circle_fifths';
 
@@ -336,6 +337,7 @@ export function buildCenterInstrumentPanel(node, deps) {
     { v: 'analog', t: 'Analog' },
     { v: 'pluck', t: 'Pluck Synth' },
     { v: 'pulse', t: 'Pulse Synth' },
+    { v: 'etheraura', t: 'EtherAura' },
     { v: 'alien_orb', t: 'Alien Orb' },
     { v: 'midi_orb', t: 'MIDI Orb' },
     { v: 'resonauter', t: 'Resonauter' },
@@ -370,6 +372,8 @@ export function buildCenterInstrumentPanel(node, deps) {
       list = (pluckSynthPresets || []).map((p) => p.type);
     } else if (engine === 'pulse') {
       list = ['pulse'];
+    } else if (engine === 'etheraura') {
+      list = ['etheraura'];
     } else if (engine === 'alien_orb') {
       list = ['alien_orb'];
     } else if (engine === 'midi_orb') {
@@ -382,6 +386,7 @@ export function buildCenterInstrumentPanel(node, deps) {
             engine === 'analog' ? ['sine'] : 
             engine === 'pluck' ? ['pluck_guitar'] :
             engine === 'pulse' ? ['pulse'] :
+            engine === 'etheraura' ? ['etheraura'] :
             engine === 'alien_orb' ? ['alien_orb'] :
             engine === 'midi_orb' ? ['midi_orb'] :
             engine === 'resonauter' ? ['resonauter'] :
@@ -413,6 +418,9 @@ export function buildCenterInstrumentPanel(node, deps) {
       } else if (t.type === 'sound' && t.audioParams && (t.audioParams.engine === 'pulse' || t.audioParams.waveform === 'pulse')) {
         engine = 'pulse';
         preset = 'pulse';
+      } else if (t.type === 'sound' && t.audioParams && t.audioParams.engine === 'etheraura') {
+        engine = 'etheraura';
+        preset = 'etheraura';
       } else if (t.type === 'sound' && t.audioParams && t.audioParams.engine === 'tonepluck') {
         engine = 'pluck';
         preset = t.audioParams.waveform || 'pluck_guitar';
@@ -472,6 +480,12 @@ export function buildCenterInstrumentPanel(node, deps) {
       t.audioParams = t.audioParams || {};
       t.audioParams.engine = 'pulse';
       t.audioParams.waveform = 'pulse';
+    } else if (wf === 'etheraura') {
+      // EtherAura is a sound node with specific engine settings
+      t.type = 'sound';
+      t.audioParams = t.audioParams || {};
+      t.audioParams.engine = 'etheraura';
+      t.audioParams.waveform = 'etheraura';
     } else if ((pluckSynthPresets || []).some(p => p.type === wf)) {
       // Pluck synth
       t.type = 'sound';
@@ -590,6 +604,9 @@ export function buildCenterInstrumentPanel(node, deps) {
       } else if (t.audioParams.engine === 'pulse') {
         // Pulse synth
         if (showPulseSynthMenu) showPulseSynthMenu(t);
+      } else if (t.audioParams.engine === 'etheraura') {
+        // EtherAura synth
+        if (showEtherAuraMenu) showEtherAuraMenu(t);
       }
     } else if (t.type === 'alien_orb') {
       if (showAlienOrbMenu) showAlienOrbMenu(t);
