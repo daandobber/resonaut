@@ -2,6 +2,7 @@ import { sideToolbarContent, sideToolbarTitle, sideToolbar, hamburgerMenuPanel, 
 import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { fmSynthPresets } from './orbs/fm-synth-orb.js';
 import { SAMPLER_DEFINITIONS } from './samplers.js';
+import { pluckSynthPresets } from './orbs/pluck-synth-orb.js';
 
 export function populateSideToolbar(contentType, title) {
   if (!sideToolbarContent || !sideToolbarTitle || !sideToolbar) return;
@@ -42,6 +43,17 @@ export function populateSideToolbar(contentType, title) {
         !fmSynthPresets.some((w) => w.type === window.waveformToAdd)
       ) {
         window.waveformToAdd = fmSynthPresets.length > 0 ? fmSynthPresets[0].type : null;
+        currentSelectionKey = window.waveformToAdd;
+      }
+      break;
+    case "pluckSynths":
+      targetPresetArray = pluckSynthPresets;
+      showNoteSelector = false;
+      if (
+        window.nodeTypeToAdd !== "sound" ||
+        !pluckSynthPresets.some((w) => w.type === window.waveformToAdd)
+      ) {
+        window.waveformToAdd = pluckSynthPresets.length > 0 ? pluckSynthPresets[0].type : null;
         currentSelectionKey = window.waveformToAdd;
       }
       break;

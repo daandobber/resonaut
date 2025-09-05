@@ -1,0 +1,251 @@
+import * as Tone from 'tone';
+
+export const DEFAULT_TONE_PLUCK_SYNTH_PARAMS = {
+  attackNoise: 0.5,
+  dampening: 4000,
+  resonance: 0.7,
+  reverbSend: 0.12,
+  delaySend: 0.08,
+  volume: 1.0,
+  // Guitar-like effects
+  distortionAmount: 0.2,
+  distortionWet: 0.0,
+  distortionOversample: '2x', // 'none' | '2x' | '4x'
+  distortionDrive: 1.0,
+  distortionLevel: 1.0,
+  wahEnabled: false,
+  wahBaseFreq: 200,
+  wahOctaves: 2,
+  wahQ: 2,
+  wahSensitivity: -20,
+  wahWet: 0.0,
+  // Tremolo
+  tremoloEnabled: true,
+  tremoloRate: 5.0,
+  tremoloDepth: 0.6,
+  tremoloWet: 0.8,
+  // Chorus
+  chorusEnabled: false,
+  chorusRate: 1.8,
+  chorusDepth: 0.4,
+  chorusDelayTime: 3.5,
+  chorusSpread: 120,
+  chorusWet: 0.4,
+  visualStyle: 'pluck_guitar',
+  ignoreGlobalSync: false,
+};
+
+export function createTonePluckSynthOrb(node) {
+  const p = node.audioParams || {};
+
+  // Core synth
+  const synth = new Tone.PluckSynth({
+    attackNoise: p.attackNoise ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.attackNoise,
+    dampening: p.dampening ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.dampening,
+    resonance: p.resonance ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.resonance,
+  });
+
+  // Effects
+  const distortion = new Tone.Distortion({
+    distortion: p.distortionAmount ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.distortionAmount,
+    oversample: p.distortionOversample ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.distortionOversample,
+  });
+  const distortionWet = new Tone.Gain(p.distortionWet ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.distortionWet);
+  const distortionDry = new Tone.Gain(1 - (p.distortionWet ?? 0));
+
+  const autoWah = new Tone.AutoWah({
+    baseFrequency: p.wahBaseFreq ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.wahBaseFreq,
+    octaves: p.wahOctaves ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.wahOctaves,
+    Q: p.wahQ ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.wahQ,
+    sensitivity: p.wahSensitivity ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.wahSensitivity,
+  });
+  const wahWet = new Tone.Gain(p.wahWet ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.wahWet);
+  const wahDry = new Tone.Gain(1 - (p.wahWet ?? 0));
+
+  // Output and sends
+  const gainNode = new Tone.Gain(p.volume ?? 1.0);
+  // Reverb/Delay sends are mixer-controlled; no per-engine sends here
+
+  // Always create patch sends
+  const mistSendGain = new Tone.Gain(0);
+  const crushSendGain = new Tone.Gain(0);
+
+  // Routing:
+  // synth -> split (dry/wets)
+  //  - Distortion: parallel mix
+  //  - AutoWah: parallel mix (enabled via wahEnabled + wet)
+  // Mixed -> gainNode -> sends/master
+  const preFxMix = new Tone.Gain(1);
+  synth.connect(preFxMix);
+
+  // Distortion parallel with drive + level
+  const distortionPreGain = new Tone.Gain(p.distortionDrive ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.distortionDrive);
+  const distortionLevelGain = new Tone.Gain(p.distortionLevel ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.distortionLevel);
+  preFxMix.connect(distortionPreGain);
+  distortionPreGain.connect(distortion);
+  distortion.connect(distortionLevelGain);
+  distortionLevelGain.connect(distortionWet);
+  preFxMix.connect(distortionDry);
+
+  const postDistMix = new Tone.Gain(1);
+  distortionWet.connect(postDistMix);
+  distortionDry.connect(postDistMix);
+
+  // AutoWah parallel (can be disabled)
+  postDistMix.connect(autoWah);
+  autoWah.connect(wahWet);
+  postDistMix.connect(wahDry);
+
+  const postWahMix = new Tone.Gain(1);
+  wahWet.connect(postWahMix);
+  wahDry.connect(postWahMix);
+
+  // Mod effects: custom Tremolo (LFO + Gain) -> Chorus
+  const tremRate = p.tremoloRate ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.tremoloRate;
+  const tremDepth = Math.max(0, Math.min(1, p.tremoloDepth ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.tremoloDepth));
+  const tremLfo = new Tone.LFO({
+    frequency: tremRate,
+    min: 1 - tremDepth,
+    max: 1,
+    phase: 0,
+  }).start();
+  const tremGain = new Tone.Gain(1);
+  tremLfo.connect(tremGain.gain);
+  const tremWetGain = new Tone.Gain(p.tremoloWet ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.tremoloWet);
+  const tremDryGain = new Tone.Gain(1 - (p.tremoloWet ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.tremoloWet));
+
+  const chorus = new Tone.Chorus(
+    p.chorusRate ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.chorusRate,
+    p.chorusDelayTime ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.chorusDelayTime,
+    p.chorusDepth ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.chorusDepth,
+  );
+  try { chorus.wet.value = (p.chorusWet ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.chorusWet); } catch {}
+  try { chorus.spread = p.chorusSpread ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.chorusSpread; } catch {}
+  chorus.start();
+
+  // Tremolo split/mix
+  postWahMix.connect(tremGain);
+  postWahMix.connect(tremDryGain);
+  tremGain.connect(tremWetGain);
+  const postTremMix = new Tone.Gain(1);
+  tremWetGain.connect(postTremMix);
+  tremDryGain.connect(postTremMix);
+
+  // Chorus then out
+  postTremMix.connect(chorus);
+  chorus.connect(gainNode);
+
+  // Global sends handled by mixer; nothing to connect here
+
+  // Patch effect sends
+  gainNode.connect(mistSendGain);
+  gainNode.connect(crushSendGain);
+  try { if (globalThis.mistEffectInput) mistSendGain.connect(globalThis.mistEffectInput); } catch {}
+  try { if (globalThis.crushEffectInput) crushSendGain.connect(globalThis.crushEffectInput); } catch {}
+
+  // Master
+  if (globalThis.masterGain) {
+    gainNode.connect(globalThis.masterGain);
+  } else {
+    gainNode.connect(Tone.getContext().destination);
+  }
+
+  let lastFrequency = 440;
+  const setCarrierFrequency = (freq) => {
+    lastFrequency = freq;
+  };
+
+  const triggerStart = (_time, velocity = 1.0) => {
+    try {
+      const t = (Tone.now && typeof Tone.now === 'function') ? Tone.now() : undefined;
+      const vel = Math.max(0.05, Math.min(1.0, velocity));
+      // Use Tone time or immediate if undefined
+      synth.triggerAttack(lastFrequency, t, vel);
+    } catch {}
+  };
+  const triggerStop = (_time) => {
+    // PluckSynth is percussive; no explicit release required
+  };
+
+  function createOrbitone(freq) {
+    const oSynth = new Tone.PluckSynth({
+      attackNoise: p.attackNoise ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.attackNoise,
+      dampening: p.dampening ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.dampening,
+      resonance: p.resonance ?? DEFAULT_TONE_PLUCK_SYNTH_PARAMS.resonance,
+    });
+    const oGain = new Tone.Gain(0);
+    // Minimal effects: follow same chain settings
+    const oPre = new Tone.Gain(1);
+    const oDist = new Tone.Distortion({
+      distortion: p.distortionAmount ?? 0.2,
+      oversample: p.distortionOversample ?? '2x',
+    });
+    const oDWet = new Tone.Gain(p.distortionWet ?? 0.0);
+    const oDDry = new Tone.Gain(1 - (p.distortionWet ?? 0));
+    const oWah = new Tone.AutoWah({
+      baseFrequency: p.wahBaseFreq ?? 200,
+      octaves: p.wahOctaves ?? 2,
+      Q: p.wahQ ?? 2,
+      sensitivity: p.wahSensitivity ?? 0.5,
+    });
+    const oWWet = new Tone.Gain(p.wahWet ?? 0.0);
+    const oWDry = new Tone.Gain(1 - (p.wahWet ?? 0));
+    const oPostDist = new Tone.Gain(1);
+    const oPostWah = new Tone.Gain(1);
+    oSynth.connect(oPre);
+    oPre.connect(oDist); oDist.connect(oDWet); oPre.connect(oDDry);
+    oDWet.connect(oPostDist); oDDry.connect(oPostDist);
+    oPostDist.connect(oWah); oWah.connect(oWWet); oPostDist.connect(oWDry);
+    oWWet.connect(oPostWah); oWDry.connect(oPostWah);
+    oPostWah.connect(oGain);
+
+    const oMist = new Tone.Gain(0);
+    const oCrush = new Tone.Gain(0);
+    oGain.connect(oMist); oGain.connect(oCrush);
+    try { if (globalThis.mistEffectInput) oMist.connect(globalThis.mistEffectInput); } catch {}
+    try { if (globalThis.crushEffectInput) oCrush.connect(globalThis.crushEffectInput); } catch {}
+
+    const oTrigStart = (_time, velocity = 1.0) => {
+      try {
+        const t = (Tone.now && typeof Tone.now === 'function') ? Tone.now() : undefined;
+        oSynth.triggerAttack(freq, t, Math.max(0.05, Math.min(1.0, velocity)));
+      } catch {}
+    };
+    const oTrigStop = (_time) => {};
+
+    return {
+      gainNode: oGain,
+      triggerStart: oTrigStart,
+      triggerStop: oTrigStop,
+      mistSendGain: oMist,
+      crushSendGain: oCrush,
+    };
+  }
+
+  return {
+    // Expose a few items for update integration
+    gainNode,
+    mistSendGain,
+    crushSendGain,
+    // Pluck-specific references
+    pluckSynth: synth,
+    distortion,
+    distortionPreGain,
+    distortionWet,
+    distortionLevelGain,
+    distortionDry,
+    autoWah,
+    wahWet,
+    wahDry,
+    tremLfo,
+    tremGain,
+    tremWetGain,
+    tremDryGain,
+    chorus,
+    setCarrierFrequency,
+    triggerStart,
+    triggerStop,
+    createOrbitone,
+    orbitoneSynths: [],
+  };
+}

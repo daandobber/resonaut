@@ -3,6 +3,8 @@
 
 import { showTonePanel } from './analog-orb-ui.js';
 import { showAlienPanel } from './alien-orb.js';
+import { pluckSynthPresets } from './pluck-synth-orb.js';
+import { showTonePluckSynthMenu } from './tone-pluck-synth-ui.js';
 
 export const TONNETZ_TYPE = 'tonnetz_sequencer';
 
@@ -174,6 +176,10 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
     triggerNodeEffect,
     MIN_SCALE_INDEX,
     MAX_SCALE_INDEX,
+    DELAY_FACTOR,
+    propagateTrigger,
+    createVisualPulse,
+    connections,
   } = deps;
 
   // Accept pulse input from any handle (more flexible)
@@ -310,6 +316,48 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
   } else {
     console.log('No embedded instrument found!');
   }
+
+  // Forward pulse to other connected nodes (pass-through)
+  try {
+    if (
+      typeof propagateTrigger === 'function' &&
+      typeof createVisualPulse === 'function' &&
+      Array.isArray(connections) &&
+      incomingConnection
+    ) {
+      const sourceNodeId =
+        incomingConnection.nodeAId === currentNode.id
+          ? incomingConnection.nodeBId
+          : incomingConnection.nodeAId;
+      const intensity = ap.pulseIntensity ?? 1.0;
+      (currentNode.connections || new Set()).forEach((neighborId) => {
+        if (neighborId === sourceNodeId) return;
+        const conn = connections.find(
+          (c) =>
+            (c.nodeAId === currentNode.id && c.nodeBId === neighborId) ||
+            (!c.directional && c.nodeAId === neighborId && c.nodeBId === currentNode.id),
+        );
+        if (!conn) return;
+        const neighbor = findNodeById(neighborId);
+        if (!neighbor) return;
+        const travelTime = conn.length * DELAY_FACTOR;
+        try {
+          createVisualPulse(conn.id, travelTime, currentNode.id, Infinity, 'trigger', null, intensity);
+        } catch {}
+        try {
+          propagateTrigger(
+            neighbor,
+            travelTime,
+            Date.now() + Math.random(),
+            currentNode.id,
+            Infinity,
+            { type: 'trigger', data: {} },
+            conn,
+          );
+        } catch {}
+      });
+    }
+  } catch {}
 
   // Update position based on sequence mode
   const oldPos = { ...currentNode.currentPos };
@@ -533,6 +581,7 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
     { v: 'sampler', t: 'Sampler' },
     { v: 'fm', t: 'FM Synth' },
     { v: 'analog', t: 'Analog' },
+    { v: 'pluck', t: 'Pluck Synth' },
     { v: 'pulse', t: 'Pulse Synth' },
     { v: 'alien_orb', t: 'Alien Orb' },
     { v: 'midi_orb', t: 'MIDI Orb' },
@@ -565,6 +614,8 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
       list = (fmSynthPresets || []).map((p) => p.type);
     } else if (engine === 'analog') {
       list = (analogWaveformPresets || []).map((p) => p.type);
+    } else if (engine === 'pluck') {
+      list = (pluckSynthPresets || []).map((p) => p.type);
     } else if (engine === 'pulse') {
       list = ['pulse'];
     } else if (engine === 'alien_orb') {
@@ -577,6 +628,7 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
     if (!list || list.length === 0) {
       list = engine === 'fm' ? ['fm_bell'] : 
             engine === 'analog' ? ['sine'] : 
+            engine === 'pluck' ? ['pluck_guitar'] :
             engine === 'pulse' ? ['pulse'] :
             engine === 'alien_orb' ? ['alien_orb'] :
             engine === 'midi_orb' ? ['midi_orb'] :
@@ -610,6 +662,9 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
       } else if (t.type === 'sound' && t.audioParams && (t.audioParams.engine === 'pulse' || t.audioParams.waveform === 'pulse')) {
         engine = 'pulse';
         preset = 'pulse';
+      } else if (t.type === 'sound' && t.audioParams && t.audioParams.engine === 'tonepluck') {
+        engine = 'pluck';
+        preset = t.audioParams.waveform || 'pluck_guitar';
       } else if (t.type === 'sound' && t.audioParams && t.audioParams.waveform) {
         const wf = String(t.audioParams.waveform);
         if (wf.startsWith('sampler_')) {
@@ -659,6 +714,14 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
       t.audioParams = t.audioParams || {};
       t.audioParams.engine = 'pulse';
       t.audioParams.waveform = 'pulse';
+    } else if ((pluckSynthPresets || []).some(p => p.type === wf)) {
+      // Pluck synth
+      t.type = 'sound';
+      t.audioParams = t.audioParams || {};
+      const pl = (pluckSynthPresets || []).find(p => p.type === wf);
+      if (pl && pl.details) Object.assign(t.audioParams, pl.details);
+      t.audioParams.engine = 'tonepluck';
+      t.audioParams.waveform = wf;
     } else {
       // Regular sound node with waveform
       t.type = 'sound';
@@ -758,6 +821,9 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
       } else if (t.audioParams.engine === 'tone') {
         // Analog synth
         if (showAnalogOrbMenu) showAnalogOrbMenu(t);
+      } else if (t.audioParams.engine === 'tonepluck') {
+        // Pluck synth
+        if (showTonePluckSynthMenu) showTonePluckSynthMenu(t);
       } else if (t.audioParams.engine === 'pulse') {
         // Pulse synth
         if (showPulseSynthMenu) showPulseSynthMenu(t);

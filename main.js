@@ -1,4 +1,6 @@
 import { fmSynthPresets, createToneFmSynthOrb, DEFAULT_TONE_FM_SYNTH_PARAMS } from './orbs/fm-synth-orb.js';
+import EtherAura from './orbs/ether-aura.js';
+import { pluckSynthPresets, createTonePluckSynthOrb, DEFAULT_TONE_PLUCK_SYNTH_PARAMS } from './orbs/pluck-synth-orb.js';
 import { createPulseSynthOrb, DEFAULT_PULSE_SYNTH_PARAMS } from './orbs/pulse-synth-orb.js';
 import { triggerPulseOrbitones } from './orbs/pulse-orbitone.js';
 import { dbgPulse, dbgOrbitone } from './utils/debug.js';
@@ -6,6 +8,7 @@ import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { createAnalogOrb, DEFAULT_ANALOG_ORB_PARAMS } from './orbs/analog-orb.js';
 import { showAnalogOrbMenu, hideAnalogOrbMenu, hideTonePanel } from './orbs/analog-orb-ui.js';
 import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
+import { showTonePluckSynthMenu } from './orbs/tone-pluck-synth-ui.js';
 import { showPulseSynthMenu } from './orbs/pulse-synth-ui.js';
 import * as Tone from 'tone';
 import { playWithToneSampler } from './samplerPlayer.js';
@@ -66,6 +69,7 @@ import * as el from './utils/domElements.js';
 import { ONE_WAY_TYPE, drawArrow, getArrowPosition } from './connectors.js';
 import { CIRCLE_FIFTHS_TYPE, applyZodiacPresetToCircle, initCircleNode as initCircleFifthsNode, handleCirclePulse as handleCircleFifthsPulse, buildCenterInstrumentPanel as buildCircleCenterPanel } from './orbs/circle-fifths.js';
 import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGalacticDots, updateGalacticBloom, MELODIC_PATTERNS } from './orbs/galactic-bloom.js';
+import { MOTHER_SHIPP_TYPE, initMotherShippNode, handleMotherShippPulse, updateMotherShipp } from './orbs/mother-shipp.js';
 import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS } from './orbs/tonnetz-sequencer.js';
 import { PULSE_BURST_TYPE, initPulseBurstNode, handlePulseBurstPulse, buildPulseBurstPanel } from './orbs/pulse-burst.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
@@ -596,6 +600,17 @@ if (toolbarPulsars && typeof document.createElement === 'function') {
   } catch { toolbarPulsars.appendChild(galBtn); }
 
 }
+  // Add Mother Shipp (8-gun Euclidean) button
+  const mothBtn = document.createElement('button');
+  mothBtn.id = 'addMotherShippBtn';
+  mothBtn.title = 'Add Mother Shipp (8-gun Euclidean Sequencer)';
+  mothBtn.textContent = '🛸';
+  mothBtn.addEventListener('click', (e) => {
+    setupAddTool(e.currentTarget, MOTHER_SHIPP_TYPE, false);
+  });
+  try {
+    toolbarPulsars.insertBefore(mothBtn, galBtn.nextSibling);
+  } catch { toolbarPulsars.appendChild(mothBtn); }
 const addTimelineGridBtn =
   typeof document !== 'undefined' && typeof document.getElementById === 'function'
     ? document.getElementById("addTimelineGridBtn")
@@ -1621,7 +1636,7 @@ function getCrankRadarHandleGripPos(n) {
 function getConnectionPoint(node, useHandle) {
   if (
     typeof useHandle === 'number' &&
-    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid' || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE || node.type === GALACTIC_BLOOM_TYPE)
+    (node.type === GRID_SEQUENCER_TYPE || node.type === 'pulsar_grid' || node.type === CIRCLE_FIFTHS_TYPE || node.type === TONNETZ_TYPE || node.type === GALACTIC_BLOOM_TYPE || node.type === MOTHER_SHIPP_TYPE)
   ) {
     if (node.type === CIRCLE_FIFTHS_TYPE || node.type === GALACTIC_BLOOM_TYPE) {
       const offset = 12;
@@ -1632,6 +1647,26 @@ function getConnectionPoint(node, useHandle) {
       const offset = 15;
       if (useHandle < 0) return { x: node.x - offset, y: node.y };
       return { x: node.x + offset, y: node.y };
+    }
+    if (node.type === MOTHER_SHIPP_TYPE) {
+      const offset = 12;
+      if (useHandle < 0) return { x: node.x - offset, y: node.y };
+      const w = node.width || 520;
+      const h = node.height || 340;
+      const a = Math.max(40, (w * 0.42));
+      const b = Math.max(30, (h * 0.36));
+      const gunIdx = Math.max(0, Math.min(7, Math.floor(useHandle)));
+      const gy = (idx) => node.y + (-1.5 + idx) * (b * 0.18);
+      if (gunIdx < 4) {
+        const gx = node.x - a * 0.85;
+        const tipX = gx + a * 0.55;
+        return { x: tipX, y: gy(gunIdx) };
+      } else {
+        const j = gunIdx - 4;
+        const gx = node.x + a * 0.30;
+        const tipX = gx + a * 0.55;
+        return { x: tipX, y: gy(j) };
+      }
     }
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;
@@ -1672,6 +1707,29 @@ function getConnectionPoint(node, useHandle) {
     };
   }
   return { x: node.x, y: node.y };
+}
+
+function getMotherShippHandleAtPoint(node, x, y) {
+  if (!node || node.type !== MOTHER_SHIPP_TYPE) return null;
+  const w = node.width || 520;
+  const h = node.height || 340;
+  const a = Math.max(40, (w * 0.42));
+  const b = Math.max(30, (h * 0.36));
+  const gy = (idx) => node.y + (-1.5 + idx) * (b * 0.18);
+  const positions = [];
+  for (let i=0;i<4;i++){
+    const gx = node.x - a*0.85; const tipX = gx + a*0.55; positions.push({x:tipX,y:gy(i)});
+  }
+  for (let i=0;i<4;i++){
+    const gx = node.x + a*0.30; const tipX = gx + a*0.55; positions.push({x:tipX,y:gy(i)});
+  }
+  let bestIdx = null; let bestD = Infinity;
+  for (let i=0;i<positions.length;i++){
+    const dx = x - positions[i].x; const dy = y - positions[i].y; const d = Math.hypot(dx,dy);
+    if (d < bestD) { bestD = d; bestIdx = i; }
+  }
+  const threshold = 12 / viewScale; // world units
+  return bestD <= threshold ? bestIdx : null;
 }
 
 function findNodeById(id) {
@@ -2688,7 +2746,7 @@ export function createAudioNodesForNode(node) {
     } else if (node.type === "sound") {
         if (node.audioParams?.waveform && node.audioParams.waveform.startsWith('sampler_')) {
             return createSamplerOrbAudioNodes(node);
-        } else if (node.audioParams && node.audioParams.engine === 'tonefm') {
+    } else if (node.audioParams && node.audioParams.engine === 'tonefm') {
             const audioNodes = createToneFmSynthOrb(node);
             
             audioNodes.orbitoneSynths = [];
@@ -2726,6 +2784,83 @@ export function createAudioNodesForNode(node) {
                 });
             }
             
+            return audioNodes;
+    } else if (node.audioParams && node.audioParams.engine === 'tonepluck') {
+            const audioNodes = createTonePluckSynthOrb(node);
+
+            audioNodes.orbitoneSynths = [];
+            if (
+                node.audioParams.orbitonesEnabled &&
+                node.audioParams.orbitoneCount > 0 &&
+                node.audioParams.orbitoneIntervals
+            ) {
+                const orbitFreqs = getOrbitoneFrequencies(
+                    node.audioParams.scaleIndex,
+                    node.audioParams.orbitoneCount,
+                    node.audioParams.orbitoneIntervals,
+                    0,
+                    currentScale,
+                    node.audioParams.pitch,
+                ).slice(1);
+
+                orbitFreqs.forEach((freq) => {
+                    const orbitone = audioNodes.createOrbitone(freq);
+                    orbitone.gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                    orbitone.gainNode.connect(audioNodes.gainNode);
+
+                    if (globalThis.mistEffectInput) {
+                        orbitone.mistSendGain = new Tone.Gain(0);
+                        orbitone.gainNode.connect(orbitone.mistSendGain);
+                        orbitone.mistSendGain.connect(globalThis.mistEffectInput);
+                    }
+                    if (globalThis.crushEffectInput) {
+                        orbitone.crushSendGain = new Tone.Gain(0);
+                        orbitone.gainNode.connect(orbitone.crushSendGain);
+                        orbitone.crushSendGain.connect(globalThis.crushEffectInput);
+                    }
+
+                    audioNodes.orbitoneSynths.push(orbitone);
+                });
+            }
+
+            return audioNodes;
+        } else if (node.audioParams && node.audioParams.engine === 'etheraura') {
+            const aura = new EtherAura({
+              folds: node.audioParams.folds ?? 3,
+              drive: node.audioParams.drive ?? 1.0,
+              symmetry: node.audioParams.symmetry ?? 0.0,
+              filterEnabled: node.audioParams.filterEnabled ?? false,
+              filterType: node.audioParams.filterType ?? 'lowpass',
+              filterFreq: node.audioParams.filterFreq ?? 12000,
+              filterQ: node.audioParams.filterQ ?? 0.7,
+              volume: node.audioParams.volume ?? 0.9,
+            });
+            if (globalThis.masterGain) {
+              try { aura.connect(globalThis.masterGain); } catch {}
+            } else {
+              try { aura.connect(Tone.getContext().destination); } catch {}
+            }
+            const mistSendGain = new Tone.Gain(0);
+            const crushSendGain = new Tone.Gain(0);
+            try { aura.out.connect(mistSendGain); aura.out.connect(crushSendGain); } catch {}
+            try { if (globalThis.mistEffectInput) mistSendGain.connect(globalThis.mistEffectInput); } catch {}
+            try { if (globalThis.crushEffectInput) crushSendGain.connect(globalThis.crushEffectInput); } catch {}
+
+            const audioNodes = {
+              gainNode: aura.out,
+              aura,
+              mistSendGain,
+              crushSendGain,
+              setCarrierFrequency: (freq) => { try { aura.osc.frequency.value = freq; } catch {} },
+              triggerStart: (_time, intensityOrFreq, maybeIntensity) => {
+                const isThree = typeof maybeIntensity === 'number';
+                const freq = isThree ? intensityOrFreq : (aura.osc.frequency?.value || 440);
+                const vel = isThree ? maybeIntensity : Math.max(0.05, Math.min(1.0, intensityOrFreq ?? 1.0));
+                try { aura.trigger(freq, '8n', vel); } catch {}
+              },
+              triggerStop: (t) => { try { aura.ampEnv.triggerRelease(t); } catch {} },
+              orbitoneSynths: [],
+            };
             return audioNodes;
         } else if (node.audioParams && (node.audioParams.engine === 'pulse' || node.audioParams.waveform === 'pulse')) {
             return createPulseSynthOrb(node);
@@ -4381,6 +4516,72 @@ export function updateNodeAudioParams(node) {
       }
     }
 
+    // Tone Pluck synth live params and effects
+    if (!isSampler && node.audioParams && node.audioParams.engine === 'tonepluck') {
+      const pluck = node.audioNodes && node.audioNodes.pluckSynth;
+      if (pluck) {
+        if (typeof params.attackNoise === 'number') pluck.attackNoise = params.attackNoise;
+        if (typeof params.dampening === 'number') pluck.dampening = params.dampening;
+        if (typeof params.resonance === 'number') pluck.resonance = params.resonance;
+      }
+      const dist = node.audioNodes && node.audioNodes.distortion;
+      if (dist) {
+        if (typeof params.distortionAmount === 'number') dist.distortion = params.distortionAmount;
+        if (typeof params.distortionOversample === 'string') dist.oversample = params.distortionOversample;
+      }
+      if (node.audioNodes && node.audioNodes.distortionPreGain && typeof params.distortionDrive === 'number') {
+        try { node.audioNodes.distortionPreGain.gain.setTargetAtTime(params.distortionDrive, now, generalUpdateTimeConstant); } catch {}
+      }
+      if (node.audioNodes && node.audioNodes.distortionLevelGain && typeof params.distortionLevel === 'number') {
+        try { node.audioNodes.distortionLevelGain.gain.setTargetAtTime(params.distortionLevel, now, generalUpdateTimeConstant); } catch {}
+      }
+      if (node.audioNodes && node.audioNodes.distortionWet && node.audioNodes.distortionDry) {
+        const wetAmt = Math.max(0, Math.min(1, params.distortionWet ?? 0));
+        node.audioNodes.distortionWet.gain.setTargetAtTime(wetAmt, now, generalUpdateTimeConstant);
+        node.audioNodes.distortionDry.gain.setTargetAtTime(1 - wetAmt, now, generalUpdateTimeConstant);
+      }
+      const wah = node.audioNodes && node.audioNodes.autoWah;
+      if (wah) {
+        if (typeof params.wahBaseFreq === 'number') wah.baseFrequency = params.wahBaseFreq;
+        if (typeof params.wahOctaves === 'number') wah.octaves = params.wahOctaves;
+        if (typeof params.wahQ === 'number') wah.Q = params.wahQ;
+        if (typeof params.wahSensitivity === 'number') wah.sensitivity = params.wahSensitivity;
+        // prevent DC blocking issues by ensuring AutoWah has audio but mute via wet/dry
+      }
+      if (node.audioNodes && node.audioNodes.wahWet && node.audioNodes.wahDry) {
+        const wWet = Math.max(0, Math.min(1, (params.wahWet ?? 0)));
+        node.audioNodes.wahWet.gain.setTargetAtTime(wWet, now, generalUpdateTimeConstant);
+        node.audioNodes.wahDry.gain.setTargetAtTime(1 - wWet, now, generalUpdateTimeConstant);
+      }
+
+      // Tremolo
+      // Custom tremolo controls (LFO + mix gains)
+      const tremLfo = node.audioNodes && node.audioNodes.tremLfo;
+      const tremWetGain = node.audioNodes && node.audioNodes.tremWetGain;
+      const tremDryGain = node.audioNodes && node.audioNodes.tremDryGain;
+      const tremGain = node.audioNodes && node.audioNodes.tremGain;
+      if (tremLfo && tremWetGain && tremDryGain && tremGain) {
+        const rate = Math.max(0.1, params.tremoloRate ?? 5);
+        const depth = Math.max(0, Math.min(1, params.tremoloDepth ?? 0.5));
+        try { tremLfo.frequency.setTargetAtTime(rate, now, generalUpdateTimeConstant); } catch {}
+        // Update min/max for depth
+        try { tremLfo.min = 1 - depth; tremLfo.max = 1; } catch {}
+        const wet = (params.tremoloWet ?? 0.8);
+        try { tremWetGain.gain.setTargetAtTime(wet, now, generalUpdateTimeConstant); } catch {}
+        try { tremDryGain.gain.setTargetAtTime(1 - wet, now, generalUpdateTimeConstant); } catch {}
+      }
+
+      // Chorus
+      const chor = node.audioNodes && node.audioNodes.chorus;
+      if (chor) {
+        try { chor.wet.setTargetAtTime((params.chorusWet ?? 0), now, generalUpdateTimeConstant); } catch { try { chor.wet.value = (params.chorusWet ?? 0); } catch {} }
+        try { chor.frequency.setTargetAtTime(Math.max(0.1, params.chorusRate ?? 1.8), now, generalUpdateTimeConstant); } catch {}
+        try { chor.depth = Math.max(0, Math.min(1, params.chorusDepth ?? 0.4)); } catch {}
+        try { chor.delayTime = Math.max(1, params.chorusDelayTime ?? 3.5); } catch {}
+        try { chor.spread = Math.max(0, params.chorusSpread ?? 120); } catch {}
+      }
+    }
+
     if (node.audioNodes.noiseGain) {
       node.audioNodes.noiseGain.gain.setTargetAtTime(
         params.noiseLevel ?? 0,
@@ -4434,6 +4635,9 @@ export function updateNodeAudioParams(node) {
           now,
           generalUpdateTimeConstant,
         );
+      }
+      if (node.audioNodes && node.audioNodes.gainNode && params.volume !== undefined) {
+        try { node.audioNodes.gainNode.gain.setTargetAtTime(params.volume, now, generalUpdateTimeConstant); } catch {}
       }
       if (volLfoGain) {
         const shouldFluctuate = fluctuatingGroupNodeIDs.has(node.id);
@@ -5115,6 +5319,7 @@ export function triggerNodeEffect(
     // Common references used by multiple engines below
     const audioNodes = node.audioNodes;
     const oscillator1 = audioNodes.oscillator1;
+    const gainNode = audioNodes.gainNode;
 
     if (!isSampler && node.audioParams && node.audioParams.engine === 'pulse') {
       node.isTriggered = true;
@@ -5212,7 +5417,109 @@ export function triggerNodeEffect(
       }, (noteOffTime - now + rel) * 1000 + 100);
       return;
     }
-    const gainNode = audioNodes.gainNode;
+
+    // Pluck synth engine (Tone.PluckSynth)
+    if (!isSampler && node.audioParams && node.audioParams.engine === 'tonepluck') {
+      node.isTriggered = true;
+      node.animationState = 1;
+
+      const atk = 0.005;
+      const dec = 0.2;
+      const sus = 0.0;
+      const rel = 0.2;
+
+      // Set target frequency for trigger
+      if (audioNodes.setCarrierFrequency) {
+        try { audioNodes.setCarrierFrequency(effectivePitch); } catch {}
+      }
+
+      // Trigger main pluck
+      if (audioNodes.triggerStart) {
+        try { audioNodes.triggerStart(now, intensity); } catch {}
+      }
+
+      // Orbitones
+      if (audioNodes.orbitoneSynths && audioNodes.orbitoneSynths.length > 0 && params.orbitonesEnabled) {
+        const allFreqs = getOrbitoneFrequencies(
+          effectiveScaleIndex,
+          params.orbitoneCount,
+          params.orbitoneIntervals,
+          0,
+          currentScale,
+          effectivePitch,
+        ).slice(1);
+
+        const orbitoneMix = params.orbitoneMix ?? 0.5;
+        const mainVolume = intensity * (1.0 - orbitoneMix);
+        const orbitoneVolume = (intensity * orbitoneMix) / audioNodes.orbitoneSynths.length;
+
+        // Set main synth volume
+        if (gainNode && gainNode.gain) {
+          try { gainNode.gain.setValueAtTime(mainVolume, now); } catch {}
+        }
+
+        audioNodes.orbitoneSynths.forEach((orbitone, idx) => {
+          if (idx < allFreqs.length) {
+            const offMs = params.orbitoneTimingOffsets && 
+                         params.orbitoneTimingOffsets[idx] !== undefined
+                         ? params.orbitoneTimingOffsets[idx]
+                         : 0;
+            const startT = now + offMs / 1000.0;
+
+            // Volume per orbitone
+            if (orbitone.gainNode && orbitone.gainNode.gain) {
+              try { orbitone.gainNode.gain.setValueAtTime(orbitoneVolume, startT); } catch {}
+            }
+            if (orbitone.triggerStart) {
+              try { orbitone.triggerStart(startT, intensity); } catch {}
+            }
+          }
+        });
+      } else {
+        // No orbitones, use full volume for main synth
+        if (gainNode && gainNode.gain) {
+          try { gainNode.gain.setValueAtTime(intensity, now); } catch {}
+        }
+      }
+
+      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      if (audioNodes.triggerStop) {
+        try { audioNodes.triggerStop(noteOffTime); } catch {}
+      }
+      setTimeout(() => {
+        const stillNode = findNodeById(node.id);
+        if (stillNode) stillNode.isTriggered = false;
+      }, (noteOffTime - now + rel) * 1000 + 100);
+      return;
+    }
+    // EtherAura engine (Tone-based wavefolder)
+    if (!isSampler && node.audioParams && node.audioParams.engine === 'etheraura') {
+      node.isTriggered = true;
+      node.animationState = 1;
+
+      const atk = 0.005;
+      const dec = 0.25;
+      const sus = 0.0;
+      const rel = 0.25;
+
+      if (audioNodes.setCarrierFrequency) {
+        try { audioNodes.setCarrierFrequency(effectivePitch); } catch {}
+      }
+      if (audioNodes.triggerStart) {
+        try { audioNodes.triggerStart(now, intensity); } catch {}
+      }
+      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      if (audioNodes.triggerStop) {
+        try { audioNodes.triggerStop(noteOffTime); } catch {}
+      }
+      setTimeout(() => {
+        const stillNode = findNodeById(node.id);
+        if (stillNode) stillNode.isTriggered = false;
+      }, (noteOffTime - now + rel) * 1000 + 100);
+      return;
+    }
+
+    // gainNode already defined above for all branches
     const lowPassFilter = audioNodes.lowPassFilter;
     const modulatorOsc1 = audioNodes.modulatorOsc1;
     const modulatorGain1 = audioNodes.modulatorGain1;
@@ -7001,7 +7308,7 @@ function propagateTrigger(
     } else if (
       currentNode.type === CIRCLE_FIFTHS_TYPE
     ) {
-      // Delegate pulse handling to module
+      // Delegate pulse handling to module; module will forward pulses
       playPrimaryAudioEffect = false;
       canPropagateOriginalPulseFurther = false;
       handleCircleFifthsPulse(currentNode, incomingConnection, {
@@ -7010,6 +7317,9 @@ function propagateTrigger(
         MIN_SCALE_INDEX,
         MAX_SCALE_INDEX,
         DELAY_FACTOR,
+        propagateTrigger,
+        createVisualPulse,
+        connections,
         highlightCircleDegreeBars,
       });
     } else if (
@@ -7029,7 +7339,7 @@ function propagateTrigger(
     } else if (
       currentNode.type === TONNETZ_TYPE
     ) {
-      // Delegate pulse handling to Tonnetz module
+      // Delegate pulse handling to Tonnetz module; module will forward pulses
       playPrimaryAudioEffect = false;
       canPropagateOriginalPulseFurther = false;
       handleTonnetzPulse(currentNode, incomingConnection, {
@@ -7037,6 +7347,10 @@ function propagateTrigger(
         triggerNodeEffect,
         MIN_SCALE_INDEX,
         MAX_SCALE_INDEX,
+        DELAY_FACTOR,
+        propagateTrigger,
+        createVisualPulse,
+        connections,
         highlightTonnetzPosition,
       });
     } else if (
@@ -7051,6 +7365,17 @@ function propagateTrigger(
         propagateTrigger,
         createVisualPulse,
         connections,
+      });
+    } else if (currentNode.type === MOTHER_SHIPP_TYPE) {
+      playPrimaryAudioEffect = false;
+      canPropagateOriginalPulseFurther = false;
+      handleMotherShippPulse(currentNode, incomingConnection, {
+        findNodeById,
+        DELAY_FACTOR,
+        createVisualPulse,
+        propagateTrigger,
+        connections,
+        DEFAULT_PULSE_INTENSITY,
       });
       } else if (currentNode.type === "pitchShift") {
       currentNode.animationState = 1;
@@ -11832,6 +12157,9 @@ function animationLoop() {
       if (n.type === GALACTIC_BLOOM_TYPE) {
         try { updateGalacticBloom(n, deltaTime, { findNodeById, triggerNodeEffect, MIN_SCALE_INDEX, MAX_SCALE_INDEX, DELAY_FACTOR, highlightCircleDegreeBars }, { audioActive: false, secondsPerBeat, isGlobalSyncEnabled, subdivisionOptions }); } catch {}
       }
+      if (n.type === MOTHER_SHIPP_TYPE) {
+        try { updateMotherShipp(n, deltaTime); } catch {}
+      }
     });
     draw();
     previousFrameTime = now;
@@ -11913,6 +12241,10 @@ function animationLoop() {
       if (node.type === GALACTIC_BLOOM_TYPE) {
         // Always update rotation every frame for smooth motion
         updateGalacticBloom(node, deltaTime, { findNodeById, triggerNodeEffect, MIN_SCALE_INDEX, MAX_SCALE_INDEX, DELAY_FACTOR, highlightCircleDegreeBars }, { audioActive: true, secondsPerBeat, isGlobalSyncEnabled, subdivisionOptions });
+        return;
+      }
+      if (node.type === MOTHER_SHIPP_TYPE) {
+        updateMotherShipp(node, deltaTime);
         return;
       }
       if (node.type === CLOCKWORK_ORB_TYPE) {
@@ -14041,6 +14373,139 @@ function drawNode(node) {
     ctx.fill();
     
     return;
+  } else if (node.type === MOTHER_SHIPP_TYPE) {
+    // Stylized front-view mothership with side gun banks and spires
+    const styles = getComputedStyle(document.body || document.documentElement);
+    const border = (styles.getPropertyValue("--timeline-grid-default-border-color").trim() || "rgba(140,210,230,0.95)");
+    const accent = (styles.getPropertyValue("--start-node-color").trim() || "rgba(120,240,220,0.95)");
+    const softFill = border.replace(/[\d\.]+\)$/g, "0.08)");
+    const cx = node.x;
+    const cy = node.y;
+    const w = (node.width || 520);
+    const h = (node.height || 340);
+    const a = w * 0.42;
+    const b = h * 0.36;
+
+    ctx.save();
+
+    // Backdrop glowing oval
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w*0.48, h*0.44, 0, 0, Math.PI*2);
+    ctx.fillStyle = accent.replace(/[\d\.]+\)$/g, "0.18)");
+    ctx.fill();
+    ctx.strokeStyle = accent.replace(/[\d\.]+\)$/g, "0.6)");
+    ctx.lineWidth = Math.max(1.5 / viewScale, 1);
+    ctx.stroke();
+
+    // Saucer rim (three layered outlines)
+    const drawRim = (ry, rxScale=1) => {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + ry, a*rxScale, b*0.32, 0, 0, Math.PI*2);
+      ctx.strokeStyle = border;
+      ctx.lineWidth = Math.max(2 / viewScale, 1);
+      ctx.stroke();
+    };
+    drawRim(-b*0.06, 1.08);
+    drawRim(0, 1.0);
+    drawRim(b*0.10, 0.88);
+
+    // Belly panels
+    ctx.strokeStyle = border.replace(/[\d\.]+\)$/g, "0.7)");
+    ctx.lineWidth = Math.max(1 / viewScale, 0.8);
+    for (let i=-2;i<=2;i++){
+      ctx.beginPath();
+      ctx.moveTo(cx + i*a*0.25, cy + b*0.05);
+      ctx.lineTo(cx + i*a*0.18, cy + b*0.23);
+      ctx.stroke();
+    }
+
+    // Dome and spires
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - b*0.36, a*0.34, b*0.22, 0, 0, Math.PI*2);
+    ctx.fillStyle = softFill;
+    ctx.fill();
+    ctx.strokeStyle = border;
+    ctx.lineWidth = Math.max(1.5/viewScale,1);
+    ctx.stroke();
+    const spikes = 5;
+    for (let i=0;i<spikes;i++){
+      const t = (i/(spikes-1) - 0.5) * a*0.8;
+      const baseY = cy - b*0.42;
+      const height = b*(i%2===0?0.35:0.28);
+      ctx.beginPath();
+      ctx.moveTo(cx + t - 6/viewScale, baseY);
+      ctx.lineTo(cx + t, baseY - height);
+      ctx.lineTo(cx + t + 6/viewScale, baseY);
+      ctx.closePath();
+      ctx.fillStyle = softFill;
+      ctx.fill();
+      ctx.strokeStyle = border;
+      ctx.stroke();
+    }
+
+    // Gun banks (left guns 0..3, right guns 4..7)
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const glowAmt = (idx) => {
+      const t = (node._ms_gunGlow?.[idx]||0) - now;
+      const hold = Math.max(50, Math.min(2000, (node.audioParams?.glowHoldMs || 180)));
+      return Math.max(0, Math.min(1, t/hold));
+    };
+    const drawBarrel = (x,y,len,thk,g) => {
+      // tube
+      ctx.strokeStyle = border;
+      ctx.lineWidth = Math.max(thk / viewScale, 1);
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+len, y); ctx.stroke();
+      // rim
+      ctx.beginPath();
+      ctx.arc(x+len, y, Math.max((thk*1.2)/viewScale, 1.5/viewScale), 0, Math.PI*2);
+      ctx.strokeStyle = g>0? accent.replace(/[\d\.]+\)$/g, `${0.6+0.4*g})`) : border;
+      ctx.stroke();
+      if (g>0.01){
+        ctx.beginPath();
+        ctx.arc(x+len, y, Math.max((thk*2.2)/viewScale, 2.5/viewScale)*(1+0.6*g), 0, Math.PI*2);
+        ctx.strokeStyle = accent.replace(/[\d\.]+\)$/g, `${0.55*g})`);
+        ctx.lineWidth = Math.max(2.0*g / viewScale, 1 / viewScale);
+        ctx.stroke();
+      }
+    };
+    // Left bank
+    for (let i=0;i<4;i++){
+      const gy = cy + (-1.5 + i) * (b*0.18);
+      const gx = cx - a*0.85;
+      drawBarrel(gx, gy, a*0.55, 6, glowAmt(i));
+    }
+    // Right bank
+    for (let i=0;i<4;i++){
+      const gy = cy + (-1.5 + i) * (b*0.18);
+      const gx = cx + a*0.30;
+      drawBarrel(gx, gy, a*0.55, 6, glowAmt(4+i));
+    }
+
+    // Output connector dots positioned at barrel tips
+    const cr = 4 / viewScale;
+    for (let i=0;i<4;i++){
+      const gy = cy + (-1.5 + i) * (b*0.18);
+      const gx = cx - a*0.85;
+      const tipX = gx + a*0.55;
+      ctx.fillStyle = border;
+      ctx.beginPath(); ctx.arc(tipX, gy, cr, 0, Math.PI*2); ctx.fill();
+    }
+    for (let i=0;i<4;i++){
+      const gy = cy + (-1.5 + i) * (b*0.18);
+      const gx = cx + a*0.30;
+      const tipX = gx + a*0.55;
+      ctx.fillStyle = border;
+      ctx.beginPath(); ctx.arc(tipX, gy, cr, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Left input connector
+    ctx.fillStyle = border;
+    ctx.beginPath();
+    ctx.arc(cx - 12, cy, cr, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+    return;
   } else if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
     const currentStylesRadar = getComputedStyle(document.body || document.documentElement);
     const radarStroke =
@@ -14068,7 +14533,7 @@ function drawNode(node) {
         node.type === "reflector" ||
         node.type === "switch"
       ? 1.0
-      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === GALACTIC_BLOOM_TYPE || node.type === TONNETZ_TYPE || node.type === PULSE_BURST_TYPE || node.type === PRORB_TYPE
+      : node.type === TIMELINE_GRID_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === CIRCLE_FIFTHS_TYPE || node.type === GALACTIC_BLOOM_TYPE || node.type === TONNETZ_TYPE || node.type === PULSE_BURST_TYPE || node.type === MOTHER_SHIPP_TYPE || node.type === PRORB_TYPE
         ? 2.0
         : 1.5;
   ctx.lineWidth = Math.max(
@@ -14607,6 +15072,27 @@ function drawNode(node) {
         ringOuter: hslToRgba(50, 35, 65, baseAlpha * 0.7),
         ringInner: hslToRgba(50, 30, 60, baseAlpha * 0.5),
       },
+      pluck_guitar: {
+        fill: hslToRgba(35, 55, 65, baseAlpha),
+        border: hslToRgba(35, 55, 45, 0.9),
+        ringOuter: hslToRgba(30, 40, 60, baseAlpha * 0.7),
+        ringInner: hslToRgba(30, 35, 55, baseAlpha * 0.5),
+        string: hslToRgba(35, 30, 85, 0.8),
+      },
+      pluck_harp: {
+        fill: hslToRgba(200, 40, 70, baseAlpha),
+        border: hslToRgba(200, 40, 50, 0.9),
+        ringOuter: hslToRgba(200, 35, 65, baseAlpha * 0.7),
+        ringInner: hslToRgba(200, 30, 60, baseAlpha * 0.5),
+        string: hslToRgba(200, 20, 90, 0.85),
+      },
+      pluck_bass: {
+        fill: hslToRgba(15, 50, 55, baseAlpha),
+        border: hslToRgba(15, 50, 40, 0.9),
+        ringOuter: hslToRgba(15, 35, 50, baseAlpha * 0.7),
+        ringInner: hslToRgba(15, 30, 45, baseAlpha * 0.5),
+        string: hslToRgba(15, 20, 85, 0.85),
+      },
       planet_uranus: {
         fill: hslToRgba(180, 50, 65, baseAlpha),
         border: hslToRgba(180, 50, 50, 0.9),
@@ -14816,6 +15302,47 @@ function drawNode(node) {
           ctx.ellipse(node.x, node.y, r * 1.25, r * 0.4, 0, 0, Math.PI * 2);
           ctx.stroke();
           break;
+        case "pluck_guitar":
+        case "pluck_harp":
+        case "pluck_bass": {
+          // Saturn-like rings
+          const wobble = Math.max(0, node.animationState || 0) * 0.1;
+          ctx.save();
+          ctx.strokeStyle = currentPlanetColors.ringOuter;
+          ctx.lineWidth = (r * (0.2 + wobble)) / viewScale;
+          ctx.beginPath();
+          ctx.ellipse(node.x, node.y, r * 1.6, r * (0.45 + wobble * 0.3), 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = currentPlanetColors.ringInner;
+          ctx.lineWidth = (r * (0.12 + wobble * 0.5)) / viewScale;
+          ctx.beginPath();
+          ctx.ellipse(node.x, node.y, r * 1.25, r * (0.35 + wobble * 0.25), 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+
+          // Vibrating strings across the orb
+          ctx.save();
+          ctx.strokeStyle = (currentPlanetColors.string || borderColor);
+          ctx.lineWidth = Math.max(0.8 / viewScale, 1 / viewScale);
+          const strings = 6;
+          for (let i = 0; i < strings; i++) {
+            const t = (i - (strings - 1) / 2) / ((strings - 1) / 2);
+            const yBase = node.y + t * r * 0.8;
+            const amp = r * 0.08 * (1 - Math.abs(t)) * (node.animationState || 0);
+            const phase = i * 0.8;
+            const segments = 16;
+            ctx.beginPath();
+            for (let s = 0; s <= segments; s++) {
+              const u = s / segments;
+              const x = node.x - r * 1.0 + u * r * 2.0;
+              const y = yBase + Math.sin(now * 12 + u * Math.PI * 2 + phase) * amp;
+              if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+          }
+          ctx.restore();
+          break;
+        }
         case "planet_neptune":
           ctx.fillStyle = currentPlanetColors.darkSpot;
           ctx.beginPath();
@@ -16348,6 +16875,17 @@ function drawAddPreview() {
           syncSubdivisionIndex: DEFAULT_SUBDIVISION_INDEX,
           triggerInterval: DEFAULT_TRIGGER_INTERVAL,
         },
+      };
+      drawNode(previewNode);
+    } else if (nodeTypeToAdd === MOTHER_SHIPP_TYPE) {
+      const previewNode = {
+        id: -1,
+        x: mousePos.x,
+        y: mousePos.y,
+        width: 520,
+        height: 340,
+        type: MOTHER_SHIPP_TYPE,
+        audioParams: {},
       };
       drawNode(previewNode);
     } else {
@@ -18344,6 +18882,10 @@ function handleMouseDown(event) {
                 ),
               );
             }
+          } else if (node.type === MOTHER_SHIPP_TYPE) {
+            // Pick nearest gun handle at mouseDown
+            const hIdx = getMotherShippHandleAtPoint(node, mousePos.x, mousePos.y);
+            connectFromGridHandle = (hIdx !== null && hIdx !== undefined) ? hIdx : null;
           } else {
             connectFromGridHandle = null;
           }
@@ -19402,11 +19944,21 @@ function handleMouseUp(event) {
               );
             }
           }
+          // If target is Mother Shipp, choose target gun handle at mouseUp
+          let connectToMotherHandle = null;
+          if (nodeUnderCursorOnUp && nodeUnderCursorOnUp.type === MOTHER_SHIPP_TYPE) {
+            connectToMotherHandle = getMotherShippHandleAtPoint(nodeUnderCursorOnUp, mousePos.x, mousePos.y);
+          }
           const options = {};
           if (connectFromGridHandle !== null)
             options.nodeAHandle = connectFromGridHandle;
-          if (connectToCrankHandle || connectToGridHandle !== null)
-            options.nodeBHandle = connectToCrankHandle || connectToGridHandle;
+          if (connectToCrankHandle || connectToGridHandle !== null || connectToMotherHandle !== null) {
+            let nb = null;
+            if (connectToCrankHandle) nb = connectToCrankHandle;
+            else if (connectToGridHandle !== null) nb = connectToGridHandle;
+            else if (connectToMotherHandle !== null) nb = connectToMotherHandle;
+            if (nb !== null) options.nodeBHandle = nb;
+          }
           connectNodes(connectingNode, nodeUnderCursorOnUp, connectionTypeToAdd, options);
           stateWasChanged = true;
       }
@@ -19718,7 +20270,7 @@ function handleMouseUp(event) {
           if (canPlaceNodeHereOriginal) {
               const canActuallyAddThisNode =
                   (nodeTypeToAdd !== "sound" && nodeTypeToAdd !== "nebula") ||
-                  (nodeTypeToAdd === "sound" && (waveformToAdd || soundEngineToAdd === 'pulse')) ||
+                  (nodeTypeToAdd === "sound" && (waveformToAdd || soundEngineToAdd === 'pulse' || soundEngineToAdd === 'etheraura')) ||
                   (nodeTypeToAdd === "nebula" && waveformToAdd) ||
                   isPulsarType(nodeTypeToAdd) ||
                   isDrumType(nodeTypeToAdd) ||
@@ -20005,6 +20557,13 @@ function handleMouseUp(event) {
         hideSamplerOrbMenu();
       } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tonefm') {
         showToneFmSynthMenu(selectedNode);
+        hideAlienOrbMenu();
+        hideResonauterOrbMenu();
+        hideRadioOrbMenu();
+        hideArvoDroneOrbMenu();
+        hideSamplerOrbMenu();
+      } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tonepluck') {
+        showTonePluckSynthMenu(selectedNode);
         hideAlienOrbMenu();
         hideResonauterOrbMenu();
         hideRadioOrbMenu();
@@ -22702,6 +23261,109 @@ function populateEditPanel() {
 
                 fragment.appendChild(section);
 
+            } else if (node && node.type === MOTHER_SHIPP_TYPE) {
+                const section = document.createElement('div');
+                section.classList.add('panel-section');
+
+                const titleRow = document.createElement('div');
+                titleRow.style.display = 'flex';
+                titleRow.style.alignItems = 'center';
+                titleRow.style.justifyContent = 'space-between';
+                const h = document.createElement('h4');
+                h.textContent = 'Mother Shipp Parameters';
+                h.style.margin = '0 0 6px 0';
+                titleRow.appendChild(h);
+                section.appendChild(titleRow);
+
+                const makeSlider = (id, label, min, max, step, value, onChange) => {
+                  const wrap = document.createElement('div');
+                  wrap.style.margin = '6px 0';
+                  const lab = document.createElement('label');
+                  lab.textContent = `${label} (${value}):`;
+                  lab.style.marginRight = '6px';
+                  const input = document.createElement('input');
+                  input.type = 'range';
+                  input.min = String(min);
+                  input.max = String(max);
+                  input.step = String(step);
+                  input.value = String(value);
+                  input.id = id;
+                  input.addEventListener('input', (e) => {
+                    const v = Math.max(min, Math.min(max, parseInt(e.target.value, 10) || min));
+                    lab.textContent = `${label} (${v}):`;
+                    onChange(v);
+                    draw();
+                  });
+                  input.addEventListener('change', () => { saveState(); });
+                  wrap.appendChild(lab);
+                  wrap.appendChild(input);
+                  return wrap;
+                };
+
+                const trackLen = Math.max(1, node.audioParams?.trackLength ?? 16);
+                section.appendChild(makeSlider(`ms-tracklen-${node.id}`, 'Track Length', 1, 64, 1, trackLen, (v)=>{
+                  selectedArray.forEach((el)=>{ const n=findNodeById(el.id); if(n && n.type===MOTHER_SHIPP_TYPE){ n.audioParams = n.audioParams||{}; n.audioParams.trackLength = v; if(n._ms_tracks) delete n._ms_tracks; }});
+                }));
+
+                const glowHold = Math.max(50, node.audioParams?.glowHoldMs ?? 180);
+                section.appendChild(makeSlider(`ms-glow-${node.id}`, 'Muzzle Glow (ms)', 50, 1500, 10, glowHold, (v)=>{
+                  selectedArray.forEach((el)=>{ const n=findNodeById(el.id); if(n && n.type===MOTHER_SHIPP_TYPE){ n.audioParams = n.audioParams||{}; n.audioParams.glowHoldMs = v; }});
+                }));
+
+                const guns = (node.audioParams?.guns && node.audioParams.guns.length===8) ? node.audioParams.guns : Array.from({length:8}, ()=>({loopLength:16,pulses:4,offset:0}));
+                const gunsWrap = document.createElement('div');
+                gunsWrap.style.marginTop = '8px';
+                gunsWrap.style.borderTop = '1px solid var(--button-hover)';
+                gunsWrap.style.paddingTop = '8px';
+                const table = document.createElement('div');
+                table.style.display = 'grid';
+                table.style.gridTemplateColumns = 'auto 1fr 1fr 1fr';
+                table.style.gap = '6px 8px';
+                const header = ['Gun','Loop','Pulses','Offset'];
+                header.forEach(t=>{ const s=document.createElement('div'); s.style.opacity='0.8'; s.textContent=t; table.appendChild(s); });
+                const clampNum = (v,min,max)=> Math.max(min, Math.min(max, v));
+                for (let i=0;i<8;i++){
+                  const g = guns[i] || {loopLength:16,pulses:4,offset:0};
+                  const label = document.createElement('div'); label.textContent = String(i); label.style.textAlign='center'; label.style.opacity='0.8'; table.appendChild(label);
+                  const loopInput = document.createElement('input'); loopInput.type='number'; loopInput.min='1'; loopInput.max='64'; loopInput.step='1'; loopInput.value=String(g.loopLength||16); loopInput.style.width='100%';
+                  const pulseInput = document.createElement('input'); pulseInput.type='number'; pulseInput.min='0'; pulseInput.max='64'; pulseInput.step='1'; pulseInput.value=String(g.pulses||0); pulseInput.style.width='100%';
+                  const offInput = document.createElement('input'); offInput.type='number'; offInput.min='0'; offInput.max=String((g.loopLength||16)-1); offInput.step='1'; offInput.value=String(g.offset||0); offInput.style.width='100%';
+                  const apply = () => {
+                    const L = clampNum(parseInt(loopInput.value,10)||16,1,64);
+                    const P = clampNum(parseInt(pulseInput.value,10)||0,0,L);
+                    const O = clampNum(parseInt(offInput.value,10)||0,0,Math.max(0,L-1));
+                    offInput.max = String(Math.max(0,L-1));
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===MOTHER_SHIPP_TYPE){ n.audioParams=n.audioParams||{}; if(!Array.isArray(n.audioParams.guns)||n.audioParams.guns.length!==8) n.audioParams.guns = Array.from({length:8}, ()=>({loopLength:16,pulses:4,offset:0})); n.audioParams.guns[i] = { loopLength:L, pulses:P, offset:O }; if(n._ms_tracks) delete n._ms_tracks; }});
+                    draw(); saveState();
+                  };
+                  loopInput.addEventListener('change', apply);
+                  pulseInput.addEventListener('change', apply);
+                  offInput.addEventListener('change', apply);
+                  table.appendChild(loopInput);
+                  table.appendChild(pulseInput);
+                  table.appendChild(offInput);
+                }
+                gunsWrap.appendChild(table);
+
+                const btnRow = document.createElement('div');
+                btnRow.style.display='flex'; btnRow.style.gap='8px'; btnRow.style.marginTop='8px';
+                const randBtn = document.createElement('button'); randBtn.textContent='Randomize Armory'; randBtn.classList.add('panel-button-like');
+                randBtn.addEventListener('click', ()=>{
+                  selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===MOTHER_SHIPP_TYPE){ n.audioParams=n.audioParams||{}; n.audioParams.guns = Array.from({length:8}, (_,i)=>({ loopLength: 8 + Math.floor(Math.random()*17), pulses: 1 + Math.floor(Math.random()*5), offset: Math.floor(Math.random()*8) })); if(n._ms_tracks) delete n._ms_tracks; }});
+                  saveState(); populateEditPanel(); draw();
+                });
+                const copyBtn = document.createElement('button'); copyBtn.textContent='Copy Gun 0 → All'; copyBtn.classList.add('panel-button-like');
+                copyBtn.addEventListener('click', ()=>{
+                  selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===MOTHER_SHIPP_TYPE){ const g0=(n.audioParams?.guns?.[0])||{loopLength:16,pulses:4,offset:0}; n.audioParams.guns = Array.from({length:8}, ()=>({...g0})); if(n._ms_tracks) delete n._ms_tracks; }});
+                  saveState(); populateEditPanel(); draw();
+                });
+                btnRow.appendChild(randBtn);
+                btnRow.appendChild(copyBtn);
+                gunsWrap.appendChild(btnRow);
+                section.appendChild(gunsWrap);
+
+                fragment.appendChild(section);
+
             } else if (node && node.type === TONNETZ_TYPE) {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
@@ -24893,6 +25555,7 @@ function openReplaceInstrumentMenu() {
 
   const instruments = [
     { icon: "🔔", label: "FM Synth", handler: () => populateReplacePresetMenu('fmSynths', 'FM Synths') },
+    { icon: "🎸", label: "Pluck Synth", handler: () => populateReplacePresetMenu('pluckSynths', 'Pluck Synths') },
     { icon: "🛰️", label: "Sampler", handler: () => populateReplacePresetMenu('samplers', 'Samplers') },
     { icon: "🥁", label: "Drum", handler: () => populateReplacePresetMenu('drumElements', 'Drum Elements') },
   ];
@@ -24922,6 +25585,7 @@ function populateReplacePresetMenu(contentType, title) {
   let presets = [];
   if (contentType === 'analogWaveforms') presets = analogWaveformPresets;
   else if (contentType === 'fmSynths') presets = fmSynthPresets;
+  else if (contentType === 'pluckSynths') presets = (typeof pluckSynthPresets !== 'undefined' ? pluckSynthPresets : []);
   else if (contentType === 'samplers') presets = samplerWaveformTypes;
   else if (contentType === 'drumElements') presets = drumElementTypes;
 
@@ -25028,6 +25692,24 @@ function populateInstrumentMenu() {
       handler: () => {
         soundEngineToAdd = "tonefm";
         setupAddTool(null, "sound", true, "fmSynths", "FM Synths");
+      },
+    },
+    {
+      icon: "��",
+      label: "EtherAura",
+      nodeType: "sound",
+      handler: () => {
+        soundEngineToAdd = "etheraura";
+        setupAddTool(null, "sound", false);
+      },
+    },
+    {
+      icon: "🎸",
+      label: "Pluck Synth",
+      nodeType: "sound",
+      handler: () => {
+        soundEngineToAdd = "tonepluck";
+        setupAddTool(null, "sound", true, "pluckSynths", "Pluck Synths");
       },
     },
     {
@@ -27127,7 +27809,8 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   if (type === "sound" && type !== PRORB_TYPE) {
     selectedPreset =
       analogWaveformPresets.find((p) => p.type === subtype) ||
-      fmSynthPresets.find((p) => p.type === subtype);
+      fmSynthPresets.find((p) => p.type === subtype) ||
+      (typeof pluckSynthPresets !== 'undefined' ? pluckSynthPresets.find((p) => p.type === subtype) : null);
   } else if (isPulsarType(type)) {
     nodeSubtypeForAudioParams = type;
     selectedPreset = pulsarTypes.find((p) => p.type === type);
@@ -27191,6 +27874,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
           (p) => p.type === nodeSubtypeForAudioParams,
         ) ||
         fmSynthPresets.some((p) => p.type === nodeSubtypeForAudioParams) ||
+        (typeof pluckSynthPresets !== 'undefined' && pluckSynthPresets.some((p) => p.type === nodeSubtypeForAudioParams)) ||
         samplerWaveformTypes.some((s) => s.type === nodeSubtypeForAudioParams)
       )
     ) {
@@ -27790,6 +28474,10 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         if (nodeSubtypeForAudioParams && !existing.carrierWaveform) {
           newNode.audioParams.carrierWaveform = nodeSubtypeForAudioParams;
         }
+      } else if (soundEngineToAdd === 'tonepluck') {
+        const existing = { ...newNode.audioParams };
+        Object.assign(newNode.audioParams, DEFAULT_TONE_PLUCK_SYNTH_PARAMS);
+        Object.assign(newNode.audioParams, existing);
       } else if (soundEngineToAdd === 'pulse') {
         const existing = { ...newNode.audioParams };
         Object.assign(newNode.audioParams, DEFAULT_PULSE_SYNTH_PARAMS);
@@ -27910,6 +28598,18 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
       addNode,
     });
     newNode.isStartNode = true;
+    delete newNode.starPoints;
+    delete newNode.baseHue;
+    delete newNode.color;
+  }
+
+  if (type === MOTHER_SHIPP_TYPE) {
+    const sizeW = optionalDimensions ? optionalDimensions.width : 520;
+    const sizeH = optionalDimensions ? optionalDimensions.height : 340;
+    newNode.width = sizeW;
+    newNode.height = sizeH;
+    initMotherShippNode(newNode);
+    newNode.isStartNode = false;
     delete newNode.starPoints;
     delete newNode.baseHue;
     delete newNode.color;
@@ -28083,12 +28783,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
   }
 
-  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== GALACTIC_BLOOM_TYPE && newNode.type !== TONNETZ_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
+  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== GALACTIC_BLOOM_TYPE && newNode.type !== TONNETZ_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== MOTHER_SHIPP_TYPE && newNode.type !== "global_key_setter") {
     newNode.audioNodes = createAudioNodesForNode(newNode);
     if (newNode.audioNodes) {
       updateNodeAudioParams(newNode);
     }
-  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === GALACTIC_BLOOM_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
+  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === GALACTIC_BLOOM_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === MOTHER_SHIPP_TYPE || newNode.type === "global_key_setter") {
     newNode.audioNodes = null;
   }
 

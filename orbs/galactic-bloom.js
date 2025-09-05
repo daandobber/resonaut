@@ -24,7 +24,37 @@ export const MELODIC_PATTERNS = {
   }},
   thirds: { name: 'Circle of Thirds', getNote: (dotIndex, totalDots) => (dotIndex * 3) % 12 },
   fourths: { name: 'Circle of Fourths', getNote: (dotIndex, totalDots) => (dotIndex * 5) % 12 },
-  fifths: { name: 'Circle of Fifths', getNote: (dotIndex, totalDots) => (dotIndex * 7) % 12 }
+  fifths: { name: 'Circle of Fifths', getNote: (dotIndex, totalDots) => (dotIndex * 7) % 12 },
+  whole_tone: { name: 'Whole Tone', getNote: (dotIndex, totalDots) => (dotIndex * 2) % 12 },
+  major_triad: { name: 'Major Triad Arp', getNote: (dotIndex, totalDots) => [0, 4, 7][dotIndex % 3] },
+  minor_triad: { name: 'Minor Triad Arp', getNote: (dotIndex, totalDots) => [0, 3, 7][dotIndex % 3] },
+  dom7_arp: { name: 'Dominant 7th Arp', getNote: (dotIndex, totalDots) => [0, 4, 7, 10][dotIndex % 4] },
+  maj7_arp: { name: 'Major 7th Arp', getNote: (dotIndex, totalDots) => [0, 4, 7, 11][dotIndex % 4] },
+  min7_arp: { name: 'Minor 7th Arp', getNote: (dotIndex, totalDots) => [0, 3, 7, 10][dotIndex % 4] },
+  pentatonic: { name: 'Pentatonic Walk', getNote: (dotIndex, totalDots) => [0, 2, 4, 7, 9][dotIndex % 5] },
+  blues: { name: 'Blues Walk', getNote: (dotIndex, totalDots) => [0, 3, 5, 6, 7, 10][dotIndex % 6] },
+  lydian: { name: 'Lydian Mode', getNote: (dotIndex, totalDots) => [0, 2, 4, 6, 7, 9, 11][dotIndex % 7] },
+  dorian: { name: 'Dorian Mode', getNote: (dotIndex, totalDots) => [0, 2, 3, 5, 7, 9, 10][dotIndex % 7] },
+  zigzag: { name: 'Zigzag (±2/±1)', getNote: (dotIndex, totalDots) => {
+    // Alternates +2, -1 steps cumulatively
+    const pos = Math.floor((dotIndex + 1) / 2);
+    const neg = Math.floor(dotIndex / 2);
+    const sum = (pos * 2) + (neg * -1);
+    return ((sum % 12) + 12) % 12;
+  }},
+  golden: { name: 'Golden Steps', getNote: (dotIndex, totalDots) => {
+    // Cumulative Fibonacci increments modulo 12
+    let a = 1, b = 1, acc = 0;
+    for (let i = 0; i < dotIndex; i++) {
+      acc += a;
+      const next = a + b;
+      a = b;
+      b = next;
+    }
+    return ((acc % 12) + 12) % 12;
+  }},
+  tritone_bounce: { name: 'Tritone Bounce', getNote: (dotIndex, totalDots) => (dotIndex % 2 === 0 ? 0 : 6) },
+  saw_repeat: { name: 'Saw x2 Repeat', getNote: (dotIndex, totalDots) => Math.floor(dotIndex / 2) % 12 },
 };
 
 // Simple Bjorklund Euclidean pattern generator.

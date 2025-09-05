@@ -1,0 +1,12 @@
+        handleCircleFifthsPulse(
+          node,
+          { nodeAId: node.id, nodeAHandle: -1, nodeBId: node.id, nodeBHandle: 0, length: 0, id: -1, directional: true },
+          deps,
+        );
+      } catch {}
+      ap.pulseIntensity = prevIntensity;
+      count++;
+    }
+  }
+  ap.randomChordProbability = prevProb;
+}

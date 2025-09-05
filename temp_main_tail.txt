@@ -1,0 +1,200 @@
+                barsLabel.textContent = 'Trigger Lines:';
+                barsWrap.appendChild(barsLabel);
+                const barCircle = document.createElement('div');
+                barCircle.style.position = 'relative';
+                barCircle.style.width = '160px';
+                barCircle.style.height = '160px';
+                barCircle.style.margin = '8px auto';
+                const accent = getComputedStyle(document.body||document.documentElement).getPropertyValue("--start-node-color").trim() || '#88e';
+                const rebuild = () => {
+                  barCircle.innerHTML = '';
+                  const spokes = node.audioParams?.numSpokes ?? 3;
+                  if (!Array.isArray(node.audioParams.spokeEnabled) || node.audioParams.spokeEnabled.length !== spokes) {
+                    const arr = Array(spokes).fill(true);
+                    node.audioParams.spokeEnabled = arr;
+                  }
+                  const bars = node.audioParams.spokeEnabled;
+                  const cx = 80, cy = 80, r = 62;
+                  for (let i=0;i<spokes;i++){
+                    const a = (node.audioParams?.spokeRotate || 0) + (-Math.PI/2 + i * (Math.PI*2/spokes));
+                    const x = cx + Math.cos(a) * r;
+                    const y = cy + Math.sin(a) * r;
+                    const btn = document.createElement('button');
+                    btn.textContent = `${(i+1)}`;
+                    btn.style.position = 'absolute';
+                    btn.style.left = `${x-12}px`;
+                    btn.style.top = `${y-12}px`;
+                    btn.style.width = '24px';
+                    btn.style.height = '24px';
+                    btn.style.padding = '0';
+                    btn.style.fontSize = '10px';
+                    btn.style.borderRadius = '50%';
+                    btn.setAttribute('aria-pressed', bars[i] !== false ? 'true' : 'false');
+                    if (bars[i] !== false) {
+                      btn.className = 'themed-button';
+                      btn.style.opacity = '1';
+                      btn.style.background = accent;
+                      btn.style.color = '#122';
+                    } else {
+                      btn.className = '';
+                      btn.style.opacity = '0.6';
+                      btn.style.background = '#233a66';
+                      btn.style.color = '#9ab';
+                    }
+                    ((idx)=>{
+                      let dragging = false;
+                      const onPointerMove = (ev) => {
+                        if (!dragging) return;
+                        const rect = barCircle.getBoundingClientRect();
+                        const cxp = rect.left + rect.width/2;
+                        const cyp = rect.top + rect.height/2;
+                        const ang = Math.atan2(ev.clientY - cyp, ev.clientX - cxp);
+                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 3; if (!Array.isArray(n.audioParams.spokeAngles) || n.audioParams.spokeAngles.length !== spokes) { n.audioParams.spokeAngles = Array.from({length: spokes}, (_,i)=>(-Math.PI/2 + i*(Math.PI*2/spokes))); } n.audioParams.spokeAngles[idx] = ((ang % (Math.PI*2)) + Math.PI*2) % (Math.PI*2); }});
+                        saveState();
+                        rebuild();
+                        draw();
+                      };
+                      const onPointerUp = () => {
+                        dragging = false;
+                        document.removeEventListener('pointermove', onPointerMove);
+                        document.removeEventListener('pointerup', onPointerUp);
+                      };
+                      btn.addEventListener('pointerdown', (ev)=>{
+                        dragging = true;
+                        ev.preventDefault();
+                        document.addEventListener('pointermove', onPointerMove);
+                        document.addEventListener('pointerup', onPointerUp);
+                      });
+                      btn.addEventListener('click',()=>{
+                        selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; const spokes = n.audioParams.numSpokes || 3; if (!Array.isArray(n.audioParams.spokeEnabled) || n.audioParams.spokeEnabled.length !== spokes) { n.audioParams.spokeEnabled = Array(spokes).fill(true); } n.audioParams.spokeEnabled[idx] = !(n.audioParams.spokeEnabled[idx]===false); }});
+                        saveState();
+                        bars[idx] = !(bars[idx]===false);
+                        rebuild();
+                      });
+                    })(i);
+                    barCircle.appendChild(btn);
+                  }
+                };
+                rebuild();
+                barsWrap.appendChild(barCircle);
+                section.appendChild(barsWrap);
+
+                // Spokes, Dots, Offsets
+                const spokes = node.audioParams?.numSpokes ?? 3;
+                const spokesSlider = createSlider(
+                  `edit-gal-spokes-${node.id}`,
+                  `Number Lines (${spokes}):`,
+                  1, 16, 1,
+                  spokes,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(3, parseInt(e_input.target.value,10)||12);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.numSpokes = v; }});
+                    e_input.target.previousElementSibling.textContent = `Number Lines (${v}):`;
+                  }
+                );
+                section.appendChild(spokesSlider);
+
+                const dots = node.audioParams?.numDots ?? 6;
+                const dotsSlider = createSlider(
+                  `edit-gal-dots-${node.id}`,
+                  `Number Dots (${dots}):`,
+                  2, 100, 1,
+                  dots,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(2, parseInt(e_input.target.value,10)||24);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.numDots = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `Number Dots (${v}):`;
+                  }
+                );
+                section.appendChild(dotsSlider);
+
+                // Melodic Pattern Selection
+                const currentPattern = node.audioParams?.melodicPattern ?? 'ascending';
+                const patternDiv = document.createElement('div');
+                patternDiv.className = 'control-group';
+                const patternLabel = document.createElement('label');
+                patternLabel.textContent = 'Melodic Pattern:';
+                const patternSelect = document.createElement('select');
+                patternSelect.id = `edit-gal-melody-${node.id}`;
+                patternSelect.className = 'control-select';
+                
+                Object.keys(MELODIC_PATTERNS).forEach(patternKey => {
+                  const option = document.createElement('option');
+                  option.value = patternKey;
+                  option.textContent = MELODIC_PATTERNS[patternKey].name;
+                  option.selected = patternKey === currentPattern;
+                  patternSelect.appendChild(option);
+                });
+                
+                patternSelect.addEventListener('change', (e) => {
+                  selectedArray.forEach(el => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.melodicPattern = e.target.value;
+                    }
+                  });
+                  saveState();
+                });
+                
+                patternDiv.appendChild(patternLabel);
+                patternDiv.appendChild(patternSelect);
+                section.appendChild(patternDiv);
+
+                const qDen = node.audioParams?.quantizedOffsetDenom ?? 12;
+                const qSlider = createSlider(
+                  `edit-gal-qden-${node.id}`,
+                  `Q.Offset (1/${qDen}):`,
+                  1, 64, 1,
+                  qDen,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(1, parseInt(e_input.target.value,10)||12);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.quantizedOffsetDenom = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `Q.Offset (1/${v}):`;
+                  }
+                );
+                section.appendChild(qSlider);
+
+                const free = node.audioParams?.freeOffset ?? 3;
+                const freeSlider = createSlider(
+                  `edit-gal-free-${node.id}`,
+                  `F.Offset (${free}):`,
+                  0, 10, 1,
+                  free,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(0, Math.min(10, parseInt(e_input.target.value, 10) || 3));
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.freeOffset = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `F.Offset (${v}):`;
+                  }
+                );
+                section.appendChild(freeSlider);
+
+                const sOff = node.audioParams?.speedOffset ?? 0;
+                const sSlider = createSlider(
+                  `edit-gal-speedoff-${node.id}`,
+                  `Speed Offset (${sOff}):`,
+                  -10, 10, 1,
+                  sOff,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(-10, Math.min(10, parseInt(e_input.target.value, 10) || 0));
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.speedOffset = v; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `Speed Offset (${v}):`;
+                  }
+                );
+                section.appendChild(sSlider);
+
+                // Rotation speed (rotations per second) — hidden if syncing
+                const rps = node.audioParams?.spinRPS ?? 0.25;
+                const rpsSlider = createSlider(
+                  `edit-gal-rps-${node.id}`,
+                  `Rotation Speed (${rps.toFixed(2)} rps):`,
+                  0, 4, 0.01,
+                  rps,
+                  saveState,
+                  (e_input) => {
+                    const v = Math.max(0, Math.min(4, parseFloat(e_input.target.value)));

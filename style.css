@@ -398,7 +398,7 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 }
 .app-menu-content select { width: calc(100% - 20px); margin: 5px 10px; background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 6px; border-radius: 3px; }
 .app-menu-content label { padding: 5px 10px; display: block; font-size: 0.9em; }
-.app-menu-dropdown:hover .app-menu-content { display: block; }
+.app-menu-dropdown:hover .app-menu-content, .app-menu-dropdown:focus-within .app-menu-content { display: block; }
 .app-menu-separator { width: 1px; height: calc(var(--app-menu-bar-height) - 16px); background-color: rgba(255,255,255,0.2); margin: 0 8px; }
 .app-menu-bar-item { display: flex; align-items: center; padding: 0 5px; height: 100%; }
 .app-menu-bar-item.hidden { display: none !important; }
