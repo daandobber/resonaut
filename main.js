@@ -7,6 +7,7 @@ import { dbgPulse, dbgOrbitone } from './utils/debug.js';
 import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { createAnalogOrb, DEFAULT_ANALOG_ORB_PARAMS } from './orbs/analog-orb.js';
 import { showAnalogOrbMenu, hideAnalogOrbMenu, hideTonePanel } from './orbs/analog-orb-ui.js';
+import { showEtherAuraMenu } from './orbs/ether-aura-ui.js';
 import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
 import { showTonePluckSynthMenu } from './orbs/tone-pluck-synth-ui.js';
 import { showPulseSynthMenu } from './orbs/pulse-synth-ui.js';
@@ -2826,23 +2827,43 @@ export function createAudioNodesForNode(node) {
             return audioNodes;
         } else if (node.audioParams && node.audioParams.engine === 'etheraura') {
             const aura = new EtherAura({
-              folds: node.audioParams.folds ?? 3,
-              drive: node.audioParams.drive ?? 1.0,
-              symmetry: node.audioParams.symmetry ?? 0.0,
+              // Per-osc folders (fallback to legacy single set)
+              folds1: node.audioParams.folds1 ?? node.audioParams.folds ?? 3,
+              drive1: node.audioParams.drive1 ?? node.audioParams.drive ?? 1.0,
+              symmetry1: node.audioParams.symmetry1 ?? node.audioParams.symmetry ?? 0.0,
+              folds2: node.audioParams.folds2 ?? node.audioParams.folds ?? 3,
+              drive2: node.audioParams.drive2 ?? node.audioParams.drive ?? 1.0,
+              symmetry2: node.audioParams.symmetry2 ?? node.audioParams.symmetry ?? 0.0,
+              osc1Level: node.audioParams.osc1Level ?? 1.0,
+              osc2Level: node.audioParams.osc2Level ?? 0.8,
+              osc1Octave: node.audioParams.osc1Octave ?? 0,
+              osc2Octave: node.audioParams.osc2Octave ?? 0,
+              osc1Waveform: node.audioParams.osc1Waveform ?? 'sine',
+              osc2Waveform: node.audioParams.osc2Waveform ?? 'sine',
+              foldMod1Enabled: node.audioParams.foldMod1Enabled ?? false,
+              foldMod1Depth: node.audioParams.foldMod1Depth ?? 0.0,
+              foldMod1Rate: (()=>{ const bpm=(globalBPM||120); const bps=bpm/60; const map={'1/8':0.5,'1/4':1,'1/2':2,'1':4,'2':8,'4':16}; const sel=node.audioParams.foldMod1SyncSubdivision||'1/4'; return (node.audioParams.foldMod1SyncEnabled? (bps/(map[sel]||1)) : (node.audioParams.foldMod1Rate ?? 0.5)); })(),
+              foldMod2Enabled: node.audioParams.foldMod2Enabled ?? false,
+              foldMod2Depth: node.audioParams.foldMod2Depth ?? 0.0,
+              foldMod2Rate: (()=>{ const bpm=(globalBPM||120); const bps=bpm/60; const map={'1/8':0.5,'1/4':1,'1/2':2,'1':4,'2':8,'4':16}; const sel=node.audioParams.foldMod2SyncSubdivision||'1/4'; return (node.audioParams.foldMod2SyncEnabled? (bps/(map[sel]||1)) : (node.audioParams.foldMod2Rate ?? 0.5)); })(),
               filterEnabled: node.audioParams.filterEnabled ?? false,
               filterType: node.audioParams.filterType ?? 'lowpass',
-              filterFreq: node.audioParams.filterFreq ?? 12000,
-              filterQ: node.audioParams.filterQ ?? 0.7,
+              filterFreq: node.audioParams.filterFreq ?? 8000,
+              filterQ: node.audioParams.filterQ ?? 0.8,
+              lpgEnvAmount: node.audioParams.lpgEnvAmount ?? 4000,
+              gateAttack: node.audioParams.gateAttack ?? 0.005,
+              gateDecay: node.audioParams.gateDecay ?? 0.25,
+              gateSustain: node.audioParams.gateSustain ?? 0.0,
+              gateRelease: node.audioParams.gateRelease ?? 0.25,
               volume: node.audioParams.volume ?? 0.9,
             });
-            if (globalThis.masterGain) {
-              try { aura.connect(globalThis.masterGain); } catch {}
-            } else {
-              try { aura.connect(Tone.getContext().destination); } catch {}
-            }
-            const mistSendGain = new Tone.Gain(0);
-            const crushSendGain = new Tone.Gain(0);
-            try { aura.out.connect(mistSendGain); aura.out.connect(crushSendGain); } catch {}
+            // Route EtherAura into the app master (Tone shares AudioContext with native)
+            try { if (globalThis.masterGain) aura.connect(globalThis.masterGain); } catch {}
+            // Use native GainNodes for sends to fit the rest of the mixer plumbing
+            const mistSendGain = audioContext.createGain();
+            const crushSendGain = audioContext.createGain();
+            try { aura.out.connect(mistSendGain); } catch {}
+            try { aura.out.connect(crushSendGain); } catch {}
             try { if (globalThis.mistEffectInput) mistSendGain.connect(globalThis.mistEffectInput); } catch {}
             try { if (globalThis.crushEffectInput) crushSendGain.connect(globalThis.crushEffectInput); } catch {}
 
@@ -2851,10 +2872,12 @@ export function createAudioNodesForNode(node) {
               aura,
               mistSendGain,
               crushSendGain,
-              setCarrierFrequency: (freq) => { try { aura.osc.frequency.value = freq; } catch {} },
+              setCarrierFrequency: (freq) => {
+                try { if (aura.setBaseFrequency) aura.setBaseFrequency(freq); } catch {}
+              },
               triggerStart: (_time, intensityOrFreq, maybeIntensity) => {
                 const isThree = typeof maybeIntensity === 'number';
-                const freq = isThree ? intensityOrFreq : (aura.osc.frequency?.value || 440);
+                const freq = isThree ? intensityOrFreq : (node.audioParams.pitch || 440);
                 const vel = isThree ? maybeIntensity : Math.max(0.05, Math.min(1.0, intensityOrFreq ?? 1.0));
                 try { aura.trigger(freq, '8n', vel); } catch {}
               },
@@ -16574,6 +16597,12 @@ function drawNode(node) {
       if (presetDef && presetDef.label !== labelText) {
         secondLineText = presetDef.label;
       }
+      // EtherAura explicit label (dual folders)
+      if (node.type === "sound" && params.engine === 'etheraura') {
+        const f1 = Math.max(1, Math.round(params.folds1 ?? params.folds ?? 3));
+        const f2 = Math.max(1, Math.round(params.folds2 ?? params.folds ?? 3));
+        secondLineText = `Fold ${f1}|${f2}x`;
+      }
       if (
         node.type === "sound" &&
         params.orbitonesEnabled &&
@@ -20550,6 +20579,13 @@ function handleMouseUp(event) {
           hideArvoDroneOrbMenu();
       } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tone') {
         showAnalogOrbMenu(selectedNode);
+        hideAlienOrbMenu();
+        hideResonauterOrbMenu();
+        hideRadioOrbMenu();
+        hideArvoDroneOrbMenu();
+        hideSamplerOrbMenu();
+      } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'etheraura') {
+        showEtherAuraMenu(selectedNode);
         hideAlienOrbMenu();
         hideResonauterOrbMenu();
         hideRadioOrbMenu();
@@ -28484,6 +28520,46 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         Object.assign(newNode.audioParams, existing);
         newNode.audioParams.waveform = 'pulse';
         newNode.audioParams.engine = 'pulse';
+      } else if (soundEngineToAdd === 'etheraura') {
+        const existing = { ...newNode.audioParams };
+        const DEFAULT_ETHER_AURA_PARAMS = {
+          folds1: 3,
+          drive1: 1.0,
+          symmetry1: 0.0,
+          folds2: 3,
+          drive2: 1.0,
+          symmetry2: 0.0,
+          osc1Waveform: 'sine',
+          osc2Waveform: 'sine',
+          osc1Octave: 0,
+          osc2Octave: 0,
+          osc1Level: 1.0,
+          osc2Level: 0.8,
+          foldMod1Enabled: false,
+          foldMod1Depth: 0.0,
+          foldMod1Rate: 0.5,
+          foldMod1SyncEnabled: false,
+          foldMod1SyncSubdivision: '1/4',
+          foldMod2Enabled: false,
+          foldMod2Depth: 0.0,
+          foldMod2Rate: 0.5,
+          foldMod2SyncEnabled: false,
+          foldMod2SyncSubdivision: '1/4',
+          filterEnabled: false,
+          filterType: 'lowpass',
+          filterFreq: 8000,
+          filterQ: 0.8,
+          lpgEnvAmount: 4000,
+          gateAttack: 0.005,
+          gateDecay: 0.25,
+          gateSustain: 0.0,
+          gateRelease: 0.25,
+          volume: 0.9,
+          mistSend: 0,
+          crushSend: 0,
+        };
+        Object.assign(newNode.audioParams, DEFAULT_ETHER_AURA_PARAMS);
+        Object.assign(newNode.audioParams, existing);
       }
     }
     // Inject FM drum defaults for Tone FM variants
