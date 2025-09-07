@@ -73,6 +73,7 @@ import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGala
 import { MOTHER_SHIPP_TYPE, initMotherShippNode, handleMotherShippPulse, updateMotherShipp } from './orbs/mother-shipp.js';
 import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS } from './orbs/tonnetz-sequencer.js';
 import { PULSE_BURST_TYPE, initPulseBurstNode, handlePulseBurstPulse, buildPulseBurstPanel } from './orbs/pulse-burst.js';
+import { createMindOrb, DEFAULT_MIND_PARAMS } from './orbs/mind-orb.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
 import { generateWaveformPath } from "./utils/waveformUtils.js";
 import { SAMPLER_DEFINITIONS } from './samplers.js';
@@ -2627,7 +2628,7 @@ export function createAudioNodesForNode(node) {
         return null;
     }
     if (
-        ![PRORB_TYPE, "sound", "nebula", PORTAL_NEBULA_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE].includes(node.type) &&
+        ![PRORB_TYPE, "sound", "nebula", PORTAL_NEBULA_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE, "mind"].includes(node.type) &&
         !isDrumType(node.type)
     ) {
         return null;
@@ -3077,6 +3078,8 @@ export function createAudioNodesForNode(node) {
             audioNodes.gainNode.gain.value = 1.0;
             audioNodes.gainNode.connect(masterGain);
             return audioNodes;
+        } else if (node.type === "mind") {
+            return createMindOrb(node);
         } else if (node.type === "nebula") {
             const audioNodes = {};
             audioNodes.gainNode = audioContext.createGain();
@@ -12274,6 +12277,38 @@ function animationLoop() {
         updateClockworkOrb(node, deltaTime);
         return;
       }
+      
+      // Handle Mind Life generation (like other sequencer nodes)
+      if (node.type === "mind") {
+        // Mind should always be running when it has veins connected, regardless of sync mode
+        if (node.lifeSystem && node.lifeSystem.veins.length > 0) {
+          if (!node.lifeSystem.isGenerating) {
+            // Start the Mind sequencer with proper sync parameters
+            node.startLifeGeneration(isGlobalSyncEnabled, globalBPM, subdivisionOptions);
+          } else {
+            // If sync settings changed, restart with new timing
+            const shouldRestart = node.lifeSystem.lastSyncEnabled !== isGlobalSyncEnabled || 
+                                  node.lifeSystem.lastGlobalBPM !== globalBPM ||
+                                  node.lifeSystem.lastIgnoreSync !== node.audioParams.ignoreGlobalSync ||
+                                  node.lifeSystem.lastSyncSubdivision !== node.audioParams.syncSubdivisionIndex;
+            
+            if (shouldRestart) {
+              node.stopLifeGeneration();
+              node.startLifeGeneration(isGlobalSyncEnabled, globalBPM, subdivisionOptions);
+            }
+          }
+          
+          // Store current sync state for comparison next frame
+          node.lifeSystem.lastSyncEnabled = isGlobalSyncEnabled;
+          node.lifeSystem.lastGlobalBPM = globalBPM;
+          node.lifeSystem.lastIgnoreSync = node.audioParams.ignoreGlobalSync;
+          node.lifeSystem.lastSyncSubdivision = node.audioParams.syncSubdivisionIndex;
+        } else if (node.lifeSystem && node.lifeSystem.isGenerating) {
+          // Stop if no veins connected
+          node.stopLifeGeneration();
+        }
+        return;
+      }
       if (
         node.isStartNode &&
         node.isEnabled &&
@@ -13538,6 +13573,15 @@ function drawNode(node) {
     borderColor = hslToRgba(nodeBaseHue, saturation * 0.8, lightness * 0.6, 0.9);
     accentColor = hslToRgba(nodeBaseHue, saturation * 0.9, lightness * 0.3, Math.min(0.95, baseAlpha));
     glowColor = borderColor;
+  } else if (node.type === "mind") {
+    // Mind orbs have a distinctive purple/pink brain-like coloring
+    const mindHue = 280; // Purple-pink hue for brain/consciousness theme
+    const lightness = scaleBase.l * (0.7 + node.size * 0.3);
+    const saturation = 70;
+    fillColor = hslToRgba(mindHue, saturation, lightness, Math.min(0.9, baseAlpha));
+    borderColor = hslToRgba(mindHue, saturation * 0.9, lightness * 0.5, 0.95);
+    accentColor = hslToRgba(mindHue + 20, saturation * 0.8, lightness * 0.8, Math.min(0.8, baseAlpha));
+    glowColor = hslToRgba(mindHue, saturation * 1.2, lightness * 1.3, 0.8);
   } else if (
     node.type === "sound" ||
     node.type === ALIEN_ORB_TYPE ||
@@ -15846,6 +15890,51 @@ function drawNode(node) {
     ctx.arc(px, py, r * 0.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  } else if (node.type === "mind") {
+    // Draw Mind as a brain-like organic shape
+    ctx.lineWidth = Math.max(0.8 / viewScale, baseLineWidth / viewScale);
+    ctx.strokeStyle = borderColor;
+    ctx.fillStyle = fillColor;
+    
+    // Draw main brain shape
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Add brain hemisphere division
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = Math.max(0.4 / viewScale, baseLineWidth * 0.5 / viewScale);
+    ctx.beginPath();
+    ctx.moveTo(node.x, node.y - r);
+    ctx.lineTo(node.x, node.y + r);
+    ctx.stroke();
+    
+    // Add neural dendrite-like extensions (Life generation points)
+    const time = Date.now() * 0.003;
+    ctx.strokeStyle = glowColor;
+    ctx.lineWidth = Math.max(0.3 / viewScale, baseLineWidth * 0.3 / viewScale);
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI * 2 * i / 6) + Math.sin(time + i) * 0.2;
+      const startX = node.x + Math.cos(angle) * r * 0.7;
+      const startY = node.y + Math.sin(angle) * r * 0.7;
+      const endX = node.x + Math.cos(angle) * r * 1.3;
+      const endY = node.y + Math.sin(angle) * r * 1.3;
+      
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      
+      // Add small neural nodes at the tips
+      ctx.fillStyle = glowColor;
+      ctx.beginPath();
+      ctx.arc(endX, endY, r * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Reset fill style for next drawings
+    ctx.fillStyle = fillColor;
   } else if (node.type === MIDI_ORB_TYPE || node.type === ALIEN_ORB_TYPE) {
     ctx.lineWidth = Math.max(0.5 / viewScale, baseLineWidth / viewScale);
     ctx.strokeStyle = borderColor;
@@ -16565,6 +16654,17 @@ function drawNode(node) {
     secondLineText = "MIDI";
   } else if (node.type === RADIO_ORB_TYPE) {
     labelText = `Pad ${(params.sampleIndex ?? 0) + 1}`;
+  } else if (node.type === "mind") {
+    labelText = "Mind Sequencer";
+    const veinCount = node.lifeSystem ? node.lifeSystem.veins.length : 0;
+    const dreamDepth = params.dreamDepth || 4;
+    const consciousnessSpan = params.consciousnessSpan || 16;
+    
+    if (veinCount > 0) {
+      secondLineText = `${dreamDepth}/${consciousnessSpan} → ${veinCount} Vein${veinCount === 1 ? '' : 's'}`;
+    } else {
+      secondLineText = `${dreamDepth}/${consciousnessSpan} Pattern`;
+    }
   } else if (node.type === ALIEN_ORB_TYPE) {
     labelText = getNoteNameFromScaleIndex(
       currentScale,
@@ -16792,6 +16892,11 @@ function drawTemporaryConnection() {
       lineWidth = 3 / viewScale;
       lineDash = [];
       ctx.globalAlpha = 1.0;
+    } else if (connectionTypeToAdd === "vein") {
+      strokeStyle = "rgba(200, 100, 255, 0.8)"; // Purple/pink for neural veins
+      lineWidth = 2.5 / viewScale;
+      lineDash = [4 / viewScale, 2 / viewScale]; // Organic pulsing pattern
+      ctx.globalAlpha = 0.9;
     }
 
     ctx.strokeStyle = strokeStyle;
@@ -16799,10 +16904,73 @@ function drawTemporaryConnection() {
     ctx.setLineDash(lineDash);
 
     const startPos = getConnectionPoint(connectingNode, connectFromGridHandle);
+    let endX = mousePos.x;
+    let endY = mousePos.y;
+    let snapTarget = null;
+    
+    // Smart vein preview - show which orb will be connected
+    if (connectionTypeToAdd === "vein" && connectingNode.type === "mind") {
+      const VEIN_SNAP_DISTANCE = 120; // pixels
+      const compatibleTypes = ["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, 
+                               FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE];
+      
+      let closestOrb = null;
+      let closestDistance = VEIN_SNAP_DISTANCE;
+      
+      // Find the closest compatible orb within snap distance
+      nodes.forEach(node => {
+        if (node === connectingNode) return;
+        if (compatibleTypes.includes(node.type) || isDrumType(node.type)) {
+          const distance = Math.sqrt(
+            Math.pow(node.x - mousePos.x, 2) + 
+            Math.pow(node.y - mousePos.y, 2)
+          );
+          if (distance < closestDistance) {
+            closestOrb = node;
+            closestDistance = distance;
+          }
+        }
+      });
+      
+      if (closestOrb) {
+        snapTarget = closestOrb;
+        endX = closestOrb.x;
+        endY = closestOrb.y;
+        
+        // Enhanced vein style when snapping
+        strokeStyle = "rgba(255, 150, 255, 1.0)"; // Brighter when snapping
+        lineWidth = 3.5 / viewScale;
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = Math.max(0.7, lineWidth);
+      }
+    }
+    
     ctx.beginPath();
     ctx.moveTo(startPos.x, startPos.y);
-    ctx.lineTo(mousePos.x, mousePos.y);
+    ctx.lineTo(endX, endY);
     ctx.stroke();
+    
+    // Draw snap target indicator
+    if (snapTarget) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 200, 255, 0.8)";
+      ctx.lineWidth = Math.max(1, 2 / viewScale);
+      ctx.setLineDash([]);
+      
+      const radius = (NODE_RADIUS_BASE * snapTarget.size) + 8;
+      ctx.beginPath();
+      ctx.arc(snapTarget.x, snapTarget.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Pulsing effect
+      const pulseRadius = radius + Math.sin(Date.now() * 0.01) * 4;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.arc(snapTarget.x, snapTarget.y, pulseRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      ctx.restore();
+    }
 
     ctx.restore();
   }
@@ -17016,6 +17184,7 @@ function draw() {
     updateAllConnectionLengths();
     drawParamGroupLinks();
     connections.forEach(drawConnection);
+    drawVeins(); // Draw Symphiose Vein connections
     nodes.forEach((node) => drawNode(node));
 
     for (let i = 0; i < nebulas.length; i++) {
@@ -17045,7 +17214,8 @@ function draw() {
             currentTool === "connect_glide" ||
             currentTool === "connect_rope" ||
             currentTool === "connect_wavetrail" ||
-            currentTool === "connect_oneway")
+            currentTool === "connect_oneway" ||
+            currentTool === "vein")
     ) {
         drawTemporaryConnection();
     } else if (currentTool === "brush" && isBrushing && lastBrushNode) {
@@ -18854,7 +19024,8 @@ function handleMouseDown(event) {
         currentTool === "connect_glide" ||
         currentTool === "connect_rope" ||
         currentTool === "connect_wavetrail" ||
-        currentTool === "connect_oneway"
+        currentTool === "connect_oneway" ||
+        currentTool === "vein"
       ) {
         if (
           node &&
@@ -18928,6 +19099,8 @@ function handleMouseDown(event) {
             connectionTypeToAdd = "wavetrail";
           else if (currentTool === "connect_oneway")
             connectionTypeToAdd = ONE_WAY_TYPE;
+          else if (currentTool === "vein")
+            connectionTypeToAdd = "vein";
           else connectionTypeToAdd = "standard";
           canvas.style.cursor = "grabbing";
         }
@@ -19684,7 +19857,8 @@ function handleMouseMove(event) {
           currentTool === "connect_string" ||
           currentTool === "connect_glide" ||
           currentTool === "connect_wavetrail" ||
-          currentTool === "connect_oneway") &&
+          currentTool === "connect_oneway" ||
+          currentTool === "vein") &&
         hN &&
         !["nebula", PORTAL_NEBULA_TYPE, TIMELINE_GRID_TYPE, SPACERADAR_TYPE, CRANK_RADAR_TYPE].includes(hN.type)
       ) {
@@ -19908,7 +20082,69 @@ function handleMouseUp(event) {
       stateWasChanged = true;
   } else if (wasConnectingNodes) {
       actionHandledInMainBlock = true;
-      if (
+      
+      // Special handling for Vein connections (Smart vein system)
+      if (currentTool === "vein" && connectingNode) {
+        let targetNode = nodeUnderCursorOnUp;
+        
+        // Smart connection: if no direct node under cursor, find nearby compatible orb
+        if (!targetNode && connectingNode.type === "mind") {
+          const VEIN_SNAP_DISTANCE = 120; // pixels
+          const compatibleTypes = ["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, 
+                                   FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE];
+          
+          let closestOrb = null;
+          let closestDistance = VEIN_SNAP_DISTANCE;
+          
+          // Find the closest compatible orb within snap distance
+          nodes.forEach(node => {
+            if (node === connectingNode) return;
+            if (compatibleTypes.includes(node.type) || isDrumType(node.type)) {
+              const distance = Math.sqrt(
+                Math.pow(node.x - mousePos.x, 2) + 
+                Math.pow(node.y - mousePos.y, 2)
+              );
+              if (distance < closestDistance) {
+                closestOrb = node;
+                closestDistance = distance;
+              }
+            }
+          });
+          
+          if (closestOrb) {
+            targetNode = closestOrb;
+            // Visual feedback for snap connection
+            createParticles(targetNode.x, targetNode.y, 15);
+          }
+        }
+        
+        // Create the vein connection if we have a valid target
+        if (targetNode && targetNode !== connectingNode) {
+          if (connectingNode.type === "mind" && 
+              (["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, 
+               RESONAUTER_TYPE, RADIO_ORB_TYPE].includes(targetNode.type) ||
+               isDrumType(targetNode.type))) {
+            // Create a Vein connection from Mind to Orb
+            const vein = connectingNode.addVein(targetNode);
+            
+            // Enhanced visual feedback
+            createParticles(targetNode.x, targetNode.y, 25);
+            
+            stateWasChanged = true;
+          } else if (targetNode.type === "mind" && 
+                     (["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE,
+                      RESONAUTER_TYPE, RADIO_ORB_TYPE].includes(connectingNode.type) ||
+                      isDrumType(connectingNode.type))) {
+            // Reverse connection - connect from Orb's Mind to it
+            const vein = targetNode.addVein(connectingNode);
+            
+            // Enhanced visual feedback  
+            createParticles(connectingNode.x, connectingNode.y, 25);
+            
+            stateWasChanged = true;
+          }
+        }
+      } else if (
           connectingNode &&
           nodeUnderCursorOnUp &&
           nodeUnderCursorOnUp !== connectingNode &&
@@ -20577,6 +20813,11 @@ function handleMouseUp(event) {
           hideAlienOrbMenu();
           hideResonauterOrbMenu();
           hideArvoDroneOrbMenu();
+      } else if (selectedNode && selectedNode.type === "mind") {
+          hideAlienOrbMenu();
+          hideResonauterOrbMenu();
+          hideRadioOrbMenu();
+          hideArvoDroneOrbMenu();
       } else if (selectedNode && selectedNode.type === "sound" && selectedNode.audioParams.engine === 'tone') {
         showAnalogOrbMenu(selectedNode);
         hideAlienOrbMenu();
@@ -20628,6 +20869,8 @@ function handleMouseUp(event) {
         hideMotorOrbPanel();
         hideClockworkOrbMenu();
         hideClockworkOrbPanel();
+        hideMindOrbMenu();
+        hideMindOrbPanel();
         hideStringConnectionMenu();
         hideAlienPanel();
         hideResonauterPanel();
@@ -20650,6 +20893,8 @@ function handleMouseUp(event) {
           hideMotorOrbPanel();
           hideClockworkOrbMenu();
           hideClockworkOrbPanel();
+          hideMindOrbMenu();
+          hideMindOrbPanel();
           hideArvoDroneOrbMenu();
       } else {
           hideStringConnectionMenu();
@@ -20673,6 +20918,8 @@ function handleMouseUp(event) {
     hideMotorOrbPanel();
     hideClockworkOrbMenu();
     hideClockworkOrbPanel();
+    hideMindOrbMenu();
+    hideMindOrbPanel();
     hideArvoDroneOrbMenu();
     hideStringConnectionMenu();
     hideAlienPanel();
@@ -23400,6 +23647,9 @@ function populateEditPanel() {
 
                 fragment.appendChild(section);
 
+            } else if (node && node.type === 'mind') {
+                createMindOrbParametersForEditPanel(selectedArray, fragment);
+
             } else if (node && node.type === TONNETZ_TYPE) {
                 const section = document.createElement("div");
                 section.classList.add("panel-section");
@@ -25960,6 +26210,43 @@ function populateConnectionMenu() {
   if (hamburgerBtn) hamburgerBtn.classList.remove("active");
 }
 
+function populateSymphioseMenu() {
+  if (!sideToolbarContent || !sideToolbarTitle || !sideToolbar) return;
+  sideToolbarContent.innerHTML = "";
+  sideToolbarTitle.textContent = "Symphiose";
+  const groupDiv = document.createElement("div");
+  groupDiv.classList.add("type-group");
+  
+  const symphioseElements = [
+    {
+      icon: "🧠",
+      label: "Mind",
+      handler: () => setupAddTool(null, "mind", false),
+    },
+    {
+      icon: "🌿",
+      label: "Vein Tool",
+      handler: () => {
+        currentTool = "vein";
+        closeAllSidePanels();
+      },
+    },
+  ];
+  
+  symphioseElements.forEach((element) => {
+    const button = document.createElement("button");
+    button.classList.add("type-button");
+    button.innerHTML = `${element.icon} ${element.label}`;
+    button.addEventListener("click", element.handler);
+    groupDiv.appendChild(button);
+  });
+  
+  sideToolbarContent.appendChild(groupDiv);
+  sideToolbar.classList.remove("hidden");
+  if (hamburgerMenuPanel) hamburgerMenuPanel.classList.add("hidden");
+  if (hamburgerBtn) hamburgerBtn.classList.remove("active");
+}
+
 function populateDroneMenu() {
   if (!sideToolbarContent || !sideToolbarTitle || !sideToolbar) return;
   sideToolbarContent.innerHTML = "";
@@ -26443,6 +26730,374 @@ function hideRadioOrbMenu() {
     const existing = document.getElementById('radio-orb-container');
     if (existing) existing.remove();
     if (radioOrbPanelContent) radioOrbPanelContent.innerHTML = '';
+}
+
+function createMindOrbParametersForEditPanel(selectedArray, fragment) {
+    // Create Mind Orb parameters section for the hamburger menu
+    const mindSection = document.createElement('div');
+    mindSection.className = 'panel-section';
+    mindSection.style.marginBottom = '15px';
+    
+    const mindTitle = document.createElement('h3');
+    mindTitle.textContent = '🧠 Celestial Mind Sequencer';
+    mindTitle.style.color = '#8a2be2';
+    mindTitle.style.marginBottom = '10px';
+    mindSection.appendChild(mindTitle);
+    
+    const node = findNodeById(selectedArray[0].id);
+    if (!node || node.type !== 'mind') return;
+    
+    // Astral Patterns Section
+    const astralSection = document.createElement('div');
+    astralSection.innerHTML = '<h4 style="margin: 10px 0 5px 0; color: #ff4500;">🌟 Astral Patterns</h4>';
+    mindSection.appendChild(astralSection);
+    
+    // Stellar Pulses (euclidean steps)
+    const stellarLabel = document.createElement('label');
+    stellarLabel.textContent = `Stellar Pulses: ${node.audioParams.dreamDepth || 4}`;
+    stellarLabel.title = "How many star beats pulse in each cosmic cycle";
+    stellarLabel.style.display = 'block';
+    stellarLabel.style.marginBottom = '5px';
+    mindSection.appendChild(stellarLabel);
+    
+    const stellarSlider = document.createElement('input');
+    stellarSlider.type = 'range';
+    stellarSlider.min = '1';
+    stellarSlider.max = '16';
+    stellarSlider.step = '1';
+    stellarSlider.value = node.audioParams.dreamDepth || 4;
+    stellarSlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.dreamDepth = parseInt(e.target.value);
+                if (n.updateSequencePatterns) n.updateSequencePatterns();
+            }
+        });
+        stellarLabel.textContent = `Stellar Pulses: ${e.target.value}`;
+        saveState();
+    });
+    mindSection.appendChild(stellarSlider);
+    
+    // Cosmic Orbit (pattern length)
+    const orbitLabel = document.createElement('label');
+    orbitLabel.textContent = `Cosmic Orbit: ${node.audioParams.consciousnessSpan || 16}`;
+    orbitLabel.title = "How many steps the cosmic wheel takes to complete one journey";
+    orbitLabel.style.display = 'block';
+    orbitLabel.style.marginTop = '10px';
+    orbitLabel.style.marginBottom = '5px';
+    mindSection.appendChild(orbitLabel);
+    
+    const orbitSlider = document.createElement('input');
+    orbitSlider.type = 'range';
+    orbitSlider.min = '4';
+    orbitSlider.max = '32';
+    orbitSlider.step = '1';
+    orbitSlider.value = node.audioParams.consciousnessSpan || 16;
+    orbitSlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.consciousnessSpan = parseInt(e.target.value);
+                if (n.updateSequencePatterns) n.updateSequencePatterns();
+            }
+        });
+        orbitLabel.textContent = `Cosmic Orbit: ${e.target.value}`;
+        saveState();
+    });
+    mindSection.appendChild(orbitSlider);
+    
+    // Mystical Flows Section
+    const flowSection = document.createElement('div');
+    flowSection.innerHTML = '<h4 style="margin: 15px 0 5px 0; color: #ff1493;">⚡ Mystical Flows</h4>';
+    mindSection.appendChild(flowSection);
+    
+    // Fairy Velocity (subdivision speed)
+    const velocityLabel = document.createElement('label');
+    velocityLabel.textContent = `Fairy Velocity: ${node.audioParams.thoughtSpeed || 1}x`;
+    velocityLabel.title = "How swiftly the fairies dance through time";
+    velocityLabel.style.display = 'block';
+    velocityLabel.style.marginBottom = '5px';
+    mindSection.appendChild(velocityLabel);
+    
+    const velocitySlider = document.createElement('input');
+    velocitySlider.type = 'range';
+    velocitySlider.min = '0.25';
+    velocitySlider.max = '4';
+    velocitySlider.step = '0.25';
+    velocitySlider.value = node.audioParams.thoughtSpeed || 1;
+    velocitySlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.thoughtSpeed = parseFloat(e.target.value);
+                // Force restart with new parameters if running
+                if (n.stopLifeGeneration && n.startLifeGeneration && n.lifeSystem.isGenerating) {
+                    n.stopLifeGeneration();
+                    // Let the main loop restart it with proper sync parameters
+                }
+            }
+        });
+        velocityLabel.textContent = `Fairy Velocity: ${e.target.value}x`;
+        saveState();
+    });
+    mindSection.appendChild(velocitySlider);
+    
+    // Temporal Shift (pattern offset)
+    const shiftLabel = document.createElement('label');
+    shiftLabel.textContent = `Temporal Shift: ${node.audioParams.memoryEcho || 0}`;
+    shiftLabel.title = "How the ancient memories twist the flow of time";
+    shiftLabel.style.display = 'block';
+    shiftLabel.style.marginTop = '10px';
+    shiftLabel.style.marginBottom = '5px';
+    mindSection.appendChild(shiftLabel);
+    
+    const shiftSlider = document.createElement('input');
+    shiftSlider.type = 'range';
+    shiftSlider.min = '0';
+    shiftSlider.max = '15';
+    shiftSlider.step = '1';
+    shiftSlider.value = node.audioParams.memoryEcho || 0;
+    shiftSlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.memoryEcho = parseInt(e.target.value);
+            }
+        });
+        shiftLabel.textContent = `Temporal Shift: ${e.target.value}`;
+        saveState();
+    });
+    mindSection.appendChild(shiftSlider);
+    
+    // Enchanted Forces Section
+    const enchantSection = document.createElement('div');
+    enchantSection.innerHTML = '<h4 style="margin: 15px 0 5px 0; color: #9370db;">✨ Enchanted Forces</h4>';
+    mindSection.appendChild(enchantSection);
+    
+    // Life Essence (intensity)
+    const essenceLabel = document.createElement('label');
+    essenceLabel.textContent = `Life Essence: ${(node.audioParams.focusIntensity || 1.0).toFixed(2)}`;
+    essenceLabel.title = "The potency of life force flowing through the veins";
+    essenceLabel.style.display = 'block';
+    essenceLabel.style.marginBottom = '5px';
+    mindSection.appendChild(essenceLabel);
+    
+    const essenceSlider = document.createElement('input');
+    essenceSlider.type = 'range';
+    essenceSlider.min = '0.1';
+    essenceSlider.max = '2.0';
+    essenceSlider.step = '0.1';
+    essenceSlider.value = node.audioParams.focusIntensity || 1.0;
+    essenceSlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.focusIntensity = parseFloat(e.target.value);
+            }
+        });
+        essenceLabel.textContent = `Life Essence: ${parseFloat(e.target.value).toFixed(2)}`;
+        saveState();
+    });
+    mindSection.appendChild(essenceSlider);
+    
+    // Fractal Magic (complexity)
+    const fractalLabel = document.createElement('label');
+    fractalLabel.textContent = `Fractal Magic: ${node.audioParams.spellComplexity || 1}`;
+    fractalLabel.title = "The mystical complexity that transforms simple patterns into wonders";
+    fractalLabel.style.display = 'block';
+    fractalLabel.style.marginTop = '10px';
+    fractalLabel.style.marginBottom = '5px';
+    mindSection.appendChild(fractalLabel);
+    
+    const fractalSlider = document.createElement('input');
+    fractalSlider.type = 'range';
+    fractalSlider.min = '1';
+    fractalSlider.max = '5';
+    fractalSlider.step = '1';
+    fractalSlider.value = node.audioParams.spellComplexity || 1;
+    fractalSlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.spellComplexity = parseInt(e.target.value);
+                if (n.updateSequencePatterns) n.updateSequencePatterns();
+            }
+        });
+        fractalLabel.textContent = `Fractal Magic: ${e.target.value}`;
+        saveState();
+    });
+    mindSection.appendChild(fractalSlider);
+    
+    // Dream Seed (randomization)
+    const dreamLabel = document.createElement('label');
+    dreamLabel.textContent = `Dream Seed: ${node.audioParams.imaginationSeed || 1}`;
+    dreamLabel.title = "The seed of infinite possibilities, shaping unique cosmic dreams";
+    dreamLabel.style.display = 'block';
+    dreamLabel.style.marginTop = '10px';
+    dreamLabel.style.marginBottom = '5px';
+    mindSection.appendChild(dreamLabel);
+    
+    const dreamSlider = document.createElement('input');
+    dreamSlider.type = 'range';
+    dreamSlider.min = '1';
+    dreamSlider.max = '100';
+    dreamSlider.step = '1';
+    dreamSlider.value = node.audioParams.imaginationSeed || 1;
+    dreamSlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.imaginationSeed = parseInt(e.target.value);
+                if (n.updateSequencePatterns) n.updateSequencePatterns();
+            }
+        });
+        dreamLabel.textContent = `Dream Seed: ${e.target.value}`;
+        saveState();
+    });
+    mindSection.appendChild(dreamSlider);
+    
+    // Sync Controls Section (like other nodes)
+    const syncSection = document.createElement('div');
+    syncSection.innerHTML = '<h4 style="margin: 15px 0 5px 0; color: #4169e1;">⏱️ Temporal Synchronization</h4>';
+    mindSection.appendChild(syncSection);
+    
+    // Ignore Global Sync checkbox (appears when global sync is enabled)
+    if (isGlobalSyncEnabled) {
+      const ignoreSyncLabel = document.createElement('label');
+      ignoreSyncLabel.textContent = 'Ignore Global Sync: ';
+      ignoreSyncLabel.style.display = 'block';
+      ignoreSyncLabel.style.marginBottom = '5px';
+      mindSection.appendChild(ignoreSyncLabel);
+      
+      const ignoreSyncCheckbox = document.createElement('input');
+      ignoreSyncCheckbox.type = 'checkbox';
+      ignoreSyncCheckbox.checked = node.audioParams.ignoreGlobalSync || false;
+      ignoreSyncCheckbox.addEventListener('change', (e) => {
+        selectedArray.forEach(elData => {
+          const n = findNodeById(elData.id);
+          if (n && n.type === 'mind' && n.audioParams) {
+            n.audioParams.ignoreGlobalSync = e.target.checked;
+            // Force restart with new sync settings
+            if (n.lifeSystem && n.lifeSystem.isGenerating) {
+              n.stopLifeGeneration();
+            }
+          }
+        });
+        saveState();
+      });
+      ignoreSyncLabel.appendChild(ignoreSyncCheckbox);
+    }
+    
+    // Subdivision selector (when global sync is enabled and not ignored)
+    if (isGlobalSyncEnabled && !node.audioParams.ignoreGlobalSync) {
+      const subdivLabel = document.createElement('label');
+      subdivLabel.textContent = 'Cosmic Rhythm: ';
+      subdivLabel.title = 'How the mind pulses align with the universal beat';
+      subdivLabel.style.display = 'block';
+      subdivLabel.style.marginTop = '10px';
+      subdivLabel.style.marginBottom = '5px';
+      mindSection.appendChild(subdivLabel);
+      
+      const subdivSelect = document.createElement('select');
+      
+      subdivisionOptions.forEach((opt, index) => {
+        const optionEl = document.createElement('option');
+        optionEl.value = index;
+        optionEl.textContent = opt.label;
+        if (index === (node.audioParams.syncSubdivisionIndex || 2)) optionEl.selected = true;
+        subdivSelect.appendChild(optionEl);
+      });
+      
+      subdivSelect.addEventListener('change', (e) => {
+        selectedArray.forEach(elData => {
+          const n = findNodeById(elData.id);
+          if (n && n.type === 'mind' && n.audioParams) {
+            n.audioParams.syncSubdivisionIndex = parseInt(e.target.value);
+            // Force restart with new subdivision
+            if (n.lifeSystem && n.lifeSystem.isGenerating) {
+              n.stopLifeGeneration();
+            }
+          }
+        });
+        saveState();
+      });
+      
+      mindSection.appendChild(subdivSelect);
+    }
+    
+    // Manual timing interval (when sync is off or ignored)
+    if (!isGlobalSyncEnabled || node.audioParams.ignoreGlobalSync) {
+      const intervalLabel = document.createElement('label');
+      intervalLabel.textContent = `Mind Clock: ${(node.audioParams.triggerInterval || 0.5).toFixed(2)}s`;
+      intervalLabel.title = 'How fast the mind pulses when not synchronized';
+      intervalLabel.style.display = 'block';
+      intervalLabel.style.marginTop = '10px';
+      intervalLabel.style.marginBottom = '5px';
+      mindSection.appendChild(intervalLabel);
+      
+      const intervalSlider = document.createElement('input');
+      intervalSlider.type = 'range';
+      intervalSlider.min = '0.1';
+      intervalSlider.max = '4.0';
+      intervalSlider.step = '0.1';
+      intervalSlider.value = node.audioParams.triggerInterval || 0.5;
+      intervalSlider.addEventListener('input', (e) => {
+        selectedArray.forEach(elData => {
+          const n = findNodeById(elData.id);
+          if (n && n.type === 'mind' && n.audioParams) {
+            n.audioParams.triggerInterval = parseFloat(e.target.value);
+            // Force restart with new timing
+            if (n.lifeSystem && n.lifeSystem.isGenerating) {
+              n.stopLifeGeneration();
+            }
+          }
+        });
+        intervalLabel.textContent = `Mind Clock: ${parseFloat(e.target.value).toFixed(2)}s`;
+        saveState();
+      });
+      mindSection.appendChild(intervalSlider);
+    }
+    
+    // Cosmic Status Display
+    const statusSection = document.createElement('div');
+    statusSection.innerHTML = '<h4 style="margin: 15px 0 5px 0; color: #20b2aa;">🔮 Cosmic Status</h4>';
+    mindSection.appendChild(statusSection);
+    
+    const veinStatus = document.createElement('div');
+    veinStatus.className = 'cosmic-status';
+    veinStatus.style.padding = '10px';
+    veinStatus.style.background = 'rgba(32, 178, 170, 0.1)';
+    veinStatus.style.borderRadius = '8px';
+    veinStatus.style.fontSize = '12px';
+    veinStatus.style.border = '1px solid rgba(32, 178, 170, 0.3)';
+    
+    const veinCount = node.lifeSystem ? node.lifeSystem.veins.length : 0;
+    const currentStep = node.lifeSystem ? node.lifeSystem.sequenceStep : 0;
+    const isActive = node.lifeSystem ? node.lifeSystem.isGenerating : false;
+    
+    veinStatus.innerHTML = `
+        <strong>Life Veins:</strong> ${veinCount} connected<br>
+        <strong>Cosmic Step:</strong> ${currentStep}/${node.audioParams.consciousnessSpan || 16}<br>
+        <strong>Mind State:</strong> ${isActive ? '🌟 Weaving Dreams' : '💤 Slumbering'}<br>
+        <small style="opacity: 0.7;">Each vein pulses with its own celestial rhythm</small>
+    `;
+    mindSection.appendChild(veinStatus);
+    
+    fragment.appendChild(mindSection);
+}
+
+function hideMindOrbMenu() {
+    // Mind parameters are now integrated into the hamburger menu, no separate panel needed
+    if (el.mindOrbPanelContent) el.mindOrbPanelContent.innerHTML = '';
+}
+
+function showMindOrbPanel(node) {
+    // Mind parameters are now integrated into the hamburger menu, no separate panel needed
+}
+
+function hideMindOrbPanel() {
+    // Mind parameters are now integrated into the hamburger menu, no separate panel needed
 }
 
 function hideResonauterOrbMenu() {
@@ -28414,6 +29069,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.pulseDecay = CLOCKWORK_DECAY_DEFAULT;
     newNode.audioParams.pulseForce = newNode.pulseForce;
     newNode.audioParams.pulseDecay = newNode.pulseDecay;
+  } else if (type === "mind") {
+    newNode.audioParams = Object.assign({}, DEFAULT_MIND_PARAMS);
+    newNode.audioParams.scaleIndex = 0;
+    newNode.audioParams.pitch = 440; // Not used for audio but for compatibility
+    visualStyle = "mind_core";
+    newNode.isStartNode = true; // Mind generates Life pulses
   } else {
     const initialLowPassFreq =
       audioDetails.lowPassFreq !== undefined ?
@@ -28870,6 +29531,15 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   }
 
   nodes.push(newNode);
+  
+  // Add triggerFromLife method to all orbs that can receive Life units
+  if (["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, 
+       RESONAUTER_TYPE, RADIO_ORB_TYPE].includes(newNode.type) || isDrumType(newNode.type)) {
+    newNode.triggerFromLife = function(intensity) {
+      triggerNodeEffect(this, { intensity: intensity || 1.0, fromLife: true });
+    };
+  }
+  
   identifyAndRouteAllGroups();
   updateMistWetness();
   updateCrushWetness();
@@ -29264,6 +29934,12 @@ if (clockworkOrbPanelCloseBtn) {
     hideClockworkOrbMenu();
   });
 }
+if (el.mindOrbPanelCloseBtn) {
+  el.mindOrbPanelCloseBtn.addEventListener('click', () => {
+    hideMindOrbPanel();
+    hideMindOrbMenu();
+  });
+}
 if (stringPanelCloseBtn) {
   stringPanelCloseBtn.addEventListener('click', () => {
     hideStringPanel();
@@ -29476,6 +30152,11 @@ if (connectionsMenuBtn) {
 if (dronesMenuBtn) {
   dronesMenuBtn.addEventListener("click", () => {
     populateDroneMenu();
+  });
+}
+if (el.symphioseMenuBtn) {
+  el.symphioseMenuBtn.addEventListener("click", () => {
+    populateSymphioseMenu();
   });
 }
 
@@ -30148,6 +30829,75 @@ async function loadAndDecodeAudio(arrayBuffer, connection) {
       connection.audioParams.waveformPath = null;
       populateEditPanel();
   }
+}
+
+// Simple hash code function for string-based animation seeding
+String.prototype.hashCode = function() {
+  let hash = 0;
+  for (let i = 0; i < this.length; i++) {
+    const char = this.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return hash;
+};
+
+function drawVeins() {
+  // Draw Vein connections from Mind nodes
+  nodes.forEach(node => {
+    if (node.type === "mind" && node.lifeSystem && node.lifeSystem.veins.length > 0) {
+      node.lifeSystem.veins.forEach(vein => {
+        if (!vein.targetNode || !vein.isActive) return;
+        
+        ctx.save();
+        
+        // Organic, flowing vein visual style with Life pulse effects
+        const time = Date.now() * 0.002;
+        const timeSinceLastPulse = vein.lastPulseTime ? (Date.now() - vein.lastPulseTime) : 10000;
+        const pulseEffect = Math.max(0, 1 - timeSinceLastPulse / 1000); // Fade over 1 second
+        const basePulseIntensity = 0.5 + 0.3 * Math.sin(time * 3 + vein.id.hashCode());
+        const pulseIntensity = basePulseIntensity + pulseEffect * 0.8;
+        
+        ctx.strokeStyle = `rgba(200, 100, 255, ${Math.min(1.0, 0.6 * pulseIntensity)})`;
+        ctx.lineWidth = Math.max(1.5 / viewScale, (2.5 + pulseEffect * 2) / viewScale * pulseIntensity);
+        ctx.lineCap = "round";
+        ctx.setLineDash([]);
+        
+        // Create flowing, organic path
+        const startX = node.x;
+        const startY = node.y;
+        const endX = vein.targetNode.x;
+        const endY = vein.targetNode.y;
+        
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > 0) {
+          // Add organic curve with animated flowing effect
+          const midX = startX + dx * 0.5 + Math.sin(time + vein.id.hashCode()) * 20;
+          const midY = startY + dy * 0.5 + Math.cos(time * 1.3 + vein.id.hashCode()) * 15;
+          
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.quadraticCurveTo(midX, midY, endX, endY);
+          ctx.stroke();
+          
+          // Add flowing gradient effect
+          const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+          gradient.addColorStop(0, `rgba(200, 100, 255, 0.8)`);
+          gradient.addColorStop(0.5, `rgba(150, 200, 255, 0.6)`);
+          gradient.addColorStop(1, `rgba(100, 255, 150, 0.4)`);
+          
+          ctx.strokeStyle = gradient;
+          ctx.lineWidth = Math.max(0.8 / viewScale, 1.2 / viewScale * pulseIntensity);
+          ctx.stroke();
+        }
+        
+        ctx.restore();
+      });
+    }
+  });
 }
 
 function drawConnection(conn) {

@@ -148,6 +148,36 @@ export function populateSideToolbar(contentType, title) {
         currentSelectionKey = window.waveformToAdd;
       }
       break;
+    case "symphiose":
+      // Create Symphiose-specific UI
+      const symphioseSection = document.createElement("div");
+      symphioseSection.classList.add("symphiose-section");
+      
+      // Add Mind button
+      const addMindBtn = document.createElement("button");
+      addMindBtn.classList.add("symphiose-button", "add-mind-btn");
+      addMindBtn.textContent = "🧠 Add Mind";
+      addMindBtn.title = "Add a Mind core that generates 8 Life units per bar";
+      addMindBtn.addEventListener("click", () => {
+        window.nodeTypeToAdd = "mind";
+        window.waveformToAdd = "mind";
+        window.closeAllSidePanels();
+      });
+      
+      // Add Vein button
+      const addVeinBtn = document.createElement("button");
+      addVeinBtn.classList.add("symphiose-button", "add-vein-btn");
+      addVeinBtn.textContent = "🌿 Add Vein";
+      addVeinBtn.title = "Connect a Mind to Instrument Orbs";
+      addVeinBtn.addEventListener("click", () => {
+        window.currentTool = "vein";
+        window.closeAllSidePanels();
+      });
+      
+      symphioseSection.appendChild(addMindBtn);
+      symphioseSection.appendChild(addVeinBtn);
+      groupDiv.appendChild(symphioseSection);
+      break;
   }
 
   if (targetPresetArray.length > 0) {
