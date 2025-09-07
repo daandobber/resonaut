@@ -14,6 +14,11 @@ export const DEFAULT_MIND_PARAMS = {
   enchantmentPhases: [1], // Polyrhythmic phases for different veins
   spellComplexity: 1,     // Fractal Magic - The mystical complexity that transforms simple patterns into wonders
   
+  // Living Mind System
+  isAlive: false,          // When true, Mind autonomously seeks connections
+  maxFloatingVeins: 3,     // Maximum number of searching veins when alive
+  searchRadius: 300,       // How far veins can search for orbs (pixels)
+  
   // Sync system integration (like other Resonaut nodes)
   ignoreGlobalSync: false,
   syncSubdivisionIndex: 2, // Default to 1/4 notes (index 2 in subdivisionOptions)
@@ -55,10 +60,12 @@ export function createMindOrb(node) {
 
   // Initialize advanced sequencing system
   node.lifeSystem = {
-    veins: [], // Array of Vein connections
+    veins: [], // Array of Vein connections (both connected and floating)
+    floatingVeins: [], // Veins actively searching for targets
     sequenceStep: 0,
     patternCycle: 0,
     lifeTimer: null,
+    searchTimer: null, // Timer for vein search behavior
     isGenerating: false,
     euclideanPatterns: [], // Generated euclidean patterns for each vein
     polyrhythmicCounters: [], // Individual counters for each vein's polyrhythm
@@ -237,6 +244,166 @@ export function createMindOrb(node) {
 
   node.removeVein = function(veinId) {
     node.lifeSystem.veins = node.lifeSystem.veins.filter(v => v.id !== veinId);
+    node.lifeSystem.floatingVeins = node.lifeSystem.floatingVeins.filter(v => v.id !== veinId);
+  };
+  
+  // Create floating vein (for alive minds)
+  node.createFloatingVein = function() {
+    const vein = {
+      id: `floating_vein_${Date.now()}_${Math.random()}`,
+      targetNode: null,
+      isFloating: true,
+      searchX: node.x + (Math.random() - 0.5) * 200, // Start search near mind
+      searchY: node.y + (Math.random() - 0.5) * 200,
+      searchDirection: Math.random() * Math.PI * 2, // Random initial direction
+      searchSpeed: 0.5 + Math.random() * 1.0, // Floating speed
+      travelTime: 500,
+      isActive: true,
+      lastSearchTime: Date.now(),
+    };
+    
+    node.lifeSystem.floatingVeins.push(vein);
+    return vein;
+  };
+  
+  // Start alive mind behavior
+  node.startAliveBehavior = function(findNodeById, createParticles) {
+    if (node.lifeSystem.searchTimer) return;
+    
+    // Create initial floating veins
+    const maxVeins = p.maxFloatingVeins || 3;
+    for (let i = 0; i < maxVeins; i++) {
+      node.createFloatingVein();
+    }
+    
+    // Start search behavior
+    node.lifeSystem.searchTimer = setInterval(() => {
+      node.updateFloatingVeins(findNodeById, createParticles);
+    }, 100); // Update search every 100ms
+  };
+  
+  // Stop alive mind behavior
+  node.stopAliveBehavior = function() {
+    if (node.lifeSystem.searchTimer) {
+      clearInterval(node.lifeSystem.searchTimer);
+      node.lifeSystem.searchTimer = null;
+    }
+    // Convert floating veins to regular veins or remove them
+    node.lifeSystem.floatingVeins = [];
+  };
+  
+  // Update floating vein behavior
+  node.updateFloatingVeins = function(findNodeById, createParticles) {
+    if (!p.isAlive || !findNodeById) return;
+    
+    const searchRadius = p.searchRadius || 300;
+    
+    // Slow, scary drift behavior when no connections exist
+    const hasConnections = node.lifeSystem.veins && node.lifeSystem.veins.some(v => v.targetNode && !v.isFloating);
+    if (!hasConnections && node.lifeSystem.floatingVeins.length === 0) {
+      // Mind drifts slowly across canvas when completely alone - scary alien behavior
+      const slowTime = Date.now() * 0.0003; // Very slow movement
+      const driftRadius = 50; // Maximum drift distance from original position
+      
+      // Store original position if not already stored
+      if (!node.originalDriftX) {
+        node.originalDriftX = node.x;
+        node.originalDriftY = node.y;
+      }
+      
+      // Slow, ominous drift pattern
+      const driftX = Math.sin(slowTime * 0.7 + node.id.hashCode() * 0.1) * driftRadius;
+      const driftY = Math.cos(slowTime * 0.5 + node.id.hashCode() * 0.15) * driftRadius * 0.6;
+      
+      // Apply drift with bounds checking to keep it on canvas
+      const canvas = typeof window !== 'undefined' && window.canvas;
+      if (canvas) {
+        node.x = Math.max(50, Math.min(canvas.width - 50, node.originalDriftX + driftX));
+        node.y = Math.max(50, Math.min(canvas.height - 50, node.originalDriftY + driftY));
+      } else {
+        node.x = node.originalDriftX + driftX;
+        node.y = node.originalDriftY + driftY;
+      }
+    } else if (hasConnections && node.originalDriftX) {
+      // Stop drifting when connections are made
+      delete node.originalDriftX;
+      delete node.originalDriftY;
+    }
+    const compatibleTypes = ["sound", "alien_orb", "alien_drone", "arvo_drone", 
+                             "fm_drone", "resonauter", "radio_orb"];
+    
+    // Get all available nodes (need access to global nodes array)
+    const availableOrbs = [];
+    if (typeof window !== 'undefined' && window.nodes) {
+      window.nodes.forEach(n => {
+        if (n === node) return; // Skip self
+        if (compatibleTypes.includes(n.type) || (n.type && n.type.startsWith('drum_'))) {
+          // Check if this orb is already connected to this mind
+          const alreadyConnected = node.lifeSystem.veins.some(v => 
+            v.targetNode && v.targetNode.id === n.id && !v.isFloating
+          );
+          if (!alreadyConnected) {
+            availableOrbs.push(n);
+          }
+        }
+      });
+    }
+    
+    // Update each floating vein
+    node.lifeSystem.floatingVeins.forEach((vein, index) => {
+      if (!vein.isFloating) return;
+      
+      // Move vein in search pattern
+      vein.searchX += Math.cos(vein.searchDirection) * vein.searchSpeed;
+      vein.searchY += Math.sin(vein.searchDirection) * vein.searchSpeed;
+      
+      // Gradually change direction (organic movement)
+      vein.searchDirection += (Math.random() - 0.5) * 0.3;
+      
+      // Keep within search radius of mind
+      const distFromMind = Math.sqrt(
+        Math.pow(vein.searchX - node.x, 2) + 
+        Math.pow(vein.searchY - node.y, 2)
+      );
+      
+      if (distFromMind > searchRadius) {
+        // Turn back toward mind
+        vein.searchDirection = Math.atan2(node.y - vein.searchY, node.x - vein.searchX) + (Math.random() - 0.5) * 0.5;
+      }
+      
+      // Look for nearby orbs to connect to
+      availableOrbs.forEach(orb => {
+        const distToOrb = Math.sqrt(
+          Math.pow(orb.x - vein.searchX, 2) + 
+          Math.pow(orb.y - vein.searchY, 2)
+        );
+        
+        if (distToOrb < 50) { // Close enough to connect
+          // Connect the vein
+          vein.targetNode = orb;
+          vein.isFloating = false;
+          
+          // Move from floating to regular veins
+          node.lifeSystem.veins.push(vein);
+          node.lifeSystem.floatingVeins = node.lifeSystem.floatingVeins.filter(v => v.id !== vein.id);
+          
+          // Visual feedback
+          if (createParticles) {
+            createParticles(orb.x, orb.y, 30);
+          }
+          
+          // Create a new floating vein to maintain the search
+          if (node.lifeSystem.floatingVeins.length < (p.maxFloatingVeins || 3)) {
+            node.createFloatingVein();
+          }
+          
+          // Update patterns for new connection
+          if (node.lifeSystem.isGenerating) {
+            node.updateSequencePatterns();
+          }
+        }
+      });
+    });
   };
 
   return {

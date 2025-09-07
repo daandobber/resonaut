@@ -110,12 +110,20 @@ export function createPulseSynthOrb(node) {
   }
 
   // removed verbose init logging
-  // Start base oscillator
-  try { osc.start(); } catch {}
+  // Don't start base oscillator immediately - wait for first trigger
+  let oscillatorStarted = false;
 
   // Envelope via osc1Gain (main voice) to decouple from Orbitone timing
   let noteOnBaseFreq = 440;
   const triggerStart = (time, velocity = 1) => {
+    // Start oscillator on first trigger if not already started
+    if (!oscillatorStarted) {
+      try { 
+        osc.start(); 
+        oscillatorStarted = true; 
+      } catch {}
+    }
+    
     const ap = node.audioParams || {};
     // Update runtime params
     try {

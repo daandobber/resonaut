@@ -10283,6 +10283,18 @@ export function stopNodeAudio(node) {
       node.audioNodes.reverbSendGain?.disconnect();
       node.audioNodes.delaySendGain?.disconnect();
       node.audioNodes.mainGain?.disconnect();
+    } else if (node.type === "mind") {
+      // Stop Mind's life generation and alive behavior
+      if (node.stopLifeGeneration) {
+        node.stopLifeGeneration();
+      }
+      if (node.stopAliveBehavior) {
+        node.stopAliveBehavior();
+      }
+      // Disconnect audio nodes
+      node.audioNodes.reverbSendGain?.disconnect();
+      node.audioNodes.delaySendGain?.disconnect();
+      node.audioNodes.gainNode?.disconnect();
     }
   } catch (e) {}
   node.audioNodes = null;
@@ -10333,6 +10345,50 @@ function removeNode(nodeToRemove) {
       (conn) => conn.nodeAId === id || conn.nodeBId === id,
     );
     connectionsToRemove.forEach((conn) => removeConnection(conn, false));
+    // Handle vein reconnection for living minds when connected orbs are removed
+    const removedNode = nodes.find(n => n.id === id);
+    if (removedNode) {
+      // Check all minds for veins that were connected to this removed node
+      nodes.forEach(mind => {
+        if (mind.type === "mind" && mind.lifeSystem && mind.audioParams.isAlive) {
+          // Find veins connected to the removed node
+          const affectedVeins = mind.lifeSystem.veins.filter(v => 
+            v.targetNode && v.targetNode.id === id && !v.isFloating
+          );
+          
+          if (affectedVeins.length > 0) {
+            // Convert connected veins back to floating veins for reconnection
+            affectedVeins.forEach(vein => {
+              vein.targetNode = null;
+              vein.isFloating = true;
+              vein.searchX = mind.x + (Math.random() - 0.5) * 100;
+              vein.searchY = mind.y + (Math.random() - 0.5) * 100;
+              vein.searchDirection = Math.random() * Math.PI * 2;
+              vein.searchSpeed = 0.5 + Math.random() * 1.0;
+              vein.lastSearchTime = Date.now();
+              
+              // Move from regular veins to floating veins
+              mind.lifeSystem.floatingVeins = mind.lifeSystem.floatingVeins || [];
+              mind.lifeSystem.floatingVeins.push(vein);
+            });
+            
+            // Remove the affected veins from regular veins array
+            mind.lifeSystem.veins = mind.lifeSystem.veins.filter(v => 
+              !affectedVeins.some(av => av.id === v.id)
+            );
+            
+            // Visual feedback for reconnection
+            createParticles(mind.x, mind.y, 20);
+            
+            // Update patterns since connections changed
+            if (mind.lifeSystem.isGenerating) {
+              mind.updateSequencePatterns();
+            }
+          }
+        }
+      });
+    }
+    
     nodes = nodes.filter((n) => n.id !== id);
     if (typeof window !== 'undefined') {
         window.nodes = nodes;
@@ -12280,8 +12336,78 @@ function animationLoop() {
       
       // Handle Mind Life generation (like other sequencer nodes)
       if (node.type === "mind") {
+        // Handle alive mind behavior with movement
+        if (node.audioParams.isAlive) {
+          if (!node.lifeSystem.searchTimer && node.startAliveBehavior) {
+            node.startAliveBehavior(findNodeById, createParticles);
+          }
+          
+          // Make mind move toward orbs and drag connected ones
+          if (node.lifeSystem.floatingVeins && node.lifeSystem.floatingVeins.length > 0) {
+            // Find nearby orbs to target
+            const nearbyOrbs = nodes.filter(otherNode => {
+              if (otherNode === node || otherNode.type === "mind") return false;
+              const dx = otherNode.x - node.x;
+              const dy = otherNode.y - node.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              return distance < (node.audioParams.searchRadius || 300);
+            });
+            
+            // Move mind slowly toward closest orb
+            if (nearbyOrbs.length > 0) {
+              const closestOrb = nearbyOrbs.reduce((closest, orb) => {
+                const dx1 = orb.x - node.x;
+                const dy1 = orb.y - node.y;
+                const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+                
+                const dx2 = closest.x - node.x;
+                const dy2 = closest.y - node.y;
+                const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+                
+                return dist1 < dist2 ? orb : closest;
+              });
+              
+              // Move mind slowly toward the closest orb
+              const mindSpeed = 0.3 * deltaTime;
+              const dx = closestOrb.x - node.x;
+              const dy = closestOrb.y - node.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              
+              if (distance > 50) { // Stop moving when close enough
+                node.x += (dx / distance) * mindSpeed;
+                node.y += (dy / distance) * mindSpeed;
+              }
+            }
+            
+            // Drag connected orbs with veins
+            if (node.lifeSystem.veins && node.lifeSystem.veins.length > 0) {
+              node.lifeSystem.veins.forEach(vein => {
+                const connectedNode = findNodeById(vein.nodeId);
+                if (connectedNode && connectedNode !== node) {
+                  // Calculate desired position for connected orb (stay within vein length)
+                  const maxVeinLength = 150;
+                  const dx = connectedNode.x - node.x;
+                  const dy = connectedNode.y - node.y;
+                  const distance = Math.sqrt(dx * dx + dy * dy);
+                  
+                  if (distance > maxVeinLength) {
+                    // Pull the orb closer to maintain vein connection
+                    const pullSpeed = 0.5 * deltaTime;
+                    const pullDirection = (distance - maxVeinLength) / distance;
+                    connectedNode.x -= (dx * pullDirection) * pullSpeed;
+                    connectedNode.y -= (dy * pullDirection) * pullSpeed;
+                  }
+                }
+              });
+            }
+          }
+        } else if (node.lifeSystem.searchTimer && node.stopAliveBehavior) {
+          node.stopAliveBehavior();
+        }
+        
         // Mind should always be running when it has veins connected, regardless of sync mode
-        if (node.lifeSystem && node.lifeSystem.veins.length > 0) {
+        const totalVeins = (node.lifeSystem.veins.length || 0) + (node.lifeSystem.floatingVeins?.length || 0);
+        if (node.lifeSystem && totalVeins > 0) {
           if (!node.lifeSystem.isGenerating) {
             // Start the Mind sequencer with proper sync parameters
             node.startLifeGeneration(isGlobalSyncEnabled, globalBPM, subdivisionOptions);
@@ -13574,14 +13700,14 @@ function drawNode(node) {
     accentColor = hslToRgba(nodeBaseHue, saturation * 0.9, lightness * 0.3, Math.min(0.95, baseAlpha));
     glowColor = borderColor;
   } else if (node.type === "mind") {
-    // Mind orbs have a distinctive purple/pink brain-like coloring
-    const mindHue = 280; // Purple-pink hue for brain/consciousness theme
-    const lightness = scaleBase.l * (0.7 + node.size * 0.3);
-    const saturation = 70;
-    fillColor = hslToRgba(mindHue, saturation, lightness, Math.min(0.9, baseAlpha));
-    borderColor = hslToRgba(mindHue, saturation * 0.9, lightness * 0.5, 0.95);
-    accentColor = hslToRgba(mindHue + 20, saturation * 0.8, lightness * 0.8, Math.min(0.8, baseAlpha));
-    glowColor = hslToRgba(mindHue, saturation * 1.2, lightness * 1.3, 0.8);
+    // Mind orbs respond to theme/scale changes like other orbs but with alien scary coloring
+    const nodeBaseHue = (scaleBase.h + ((params?.scaleIndex || 0) % currentScale.notes.length) * HUE_STEP + 180) % 360; // Opposite side of color wheel for alien feel
+    const lightness = scaleBase.l * (0.6 + node.size * 0.3); // Slightly darker for scary effect
+    const saturation = Math.min(90, scaleBase.s + 20); // Higher saturation for intensity
+    fillColor = hslToRgba(nodeBaseHue, saturation, lightness, Math.min(0.9, baseAlpha));
+    borderColor = hslToRgba(nodeBaseHue, saturation * 0.9, lightness * 0.5, 0.95);
+    accentColor = hslToRgba((nodeBaseHue + 30) % 360, saturation * 0.8, lightness * 0.8, Math.min(0.8, baseAlpha));
+    glowColor = hslToRgba(nodeBaseHue, Math.min(100, saturation * 1.2), Math.min(100, lightness * 1.3), 0.8);
   } else if (
     node.type === "sound" ||
     node.type === ALIEN_ORB_TYPE ||
@@ -26735,38 +26861,25 @@ function hideRadioOrbMenu() {
 function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     // Create Mind Orb parameters section for the hamburger menu
     const mindSection = document.createElement('div');
-    mindSection.className = 'panel-section';
-    mindSection.style.marginBottom = '15px';
-    
-    const mindTitle = document.createElement('h3');
-    mindTitle.textContent = '🧠 Celestial Mind Sequencer';
-    mindTitle.style.color = '#8a2be2';
-    mindTitle.style.marginBottom = '10px';
-    mindSection.appendChild(mindTitle);
+    mindSection.classList.add('panel-section');
     
     const node = findNodeById(selectedArray[0].id);
     if (!node || node.type !== 'mind') return;
     
-    // Astral Patterns Section
-    const astralSection = document.createElement('div');
-    astralSection.innerHTML = '<h4 style="margin: 10px 0 5px 0; color: #ff4500;">🌟 Astral Patterns</h4>';
-    mindSection.appendChild(astralSection);
+    // Dream Depth (euclidean steps)
+    const dreamDepthLabel = document.createElement('label');
+    dreamDepthLabel.textContent = `Dream Depth: ${node.audioParams.dreamDepth || 4}`;
+    dreamDepthLabel.style.display = 'block';
+    dreamDepthLabel.style.marginBottom = '5px';
+    mindSection.appendChild(dreamDepthLabel);
     
-    // Stellar Pulses (euclidean steps)
-    const stellarLabel = document.createElement('label');
-    stellarLabel.textContent = `Stellar Pulses: ${node.audioParams.dreamDepth || 4}`;
-    stellarLabel.title = "How many star beats pulse in each cosmic cycle";
-    stellarLabel.style.display = 'block';
-    stellarLabel.style.marginBottom = '5px';
-    mindSection.appendChild(stellarLabel);
-    
-    const stellarSlider = document.createElement('input');
-    stellarSlider.type = 'range';
-    stellarSlider.min = '1';
-    stellarSlider.max = '16';
-    stellarSlider.step = '1';
-    stellarSlider.value = node.audioParams.dreamDepth || 4;
-    stellarSlider.addEventListener('input', (e) => {
+    const dreamDepthSlider = document.createElement('input');
+    dreamDepthSlider.type = 'range';
+    dreamDepthSlider.min = '1';
+    dreamDepthSlider.max = '16';
+    dreamDepthSlider.step = '1';
+    dreamDepthSlider.value = node.audioParams.dreamDepth || 4;
+    dreamDepthSlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
             if (n && n.type === 'mind' && n.audioParams) {
@@ -26774,19 +26887,18 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
         });
-        stellarLabel.textContent = `Stellar Pulses: ${e.target.value}`;
+        dreamDepthLabel.textContent = `Dream Depth: ${e.target.value}`;
         saveState();
     });
-    mindSection.appendChild(stellarSlider);
+    mindSection.appendChild(dreamDepthSlider);
     
-    // Cosmic Orbit (pattern length)
-    const orbitLabel = document.createElement('label');
-    orbitLabel.textContent = `Cosmic Orbit: ${node.audioParams.consciousnessSpan || 16}`;
-    orbitLabel.title = "How many steps the cosmic wheel takes to complete one journey";
-    orbitLabel.style.display = 'block';
-    orbitLabel.style.marginTop = '10px';
-    orbitLabel.style.marginBottom = '5px';
-    mindSection.appendChild(orbitLabel);
+    // Consciousness Span (pattern length)
+    const spanLabel = document.createElement('label');
+    spanLabel.textContent = `Consciousness Span: ${node.audioParams.consciousnessSpan || 16}`;
+    spanLabel.style.display = 'block';
+    spanLabel.style.marginTop = '10px';
+    spanLabel.style.marginBottom = '5px';
+    mindSection.appendChild(spanLabel);
     
     const orbitSlider = document.createElement('input');
     orbitSlider.type = 'range';
@@ -26802,21 +26914,17 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
         });
-        orbitLabel.textContent = `Cosmic Orbit: ${e.target.value}`;
+        spanLabel.textContent = `Consciousness Span: ${e.target.value}`;
         saveState();
     });
     mindSection.appendChild(orbitSlider);
     
-    // Mystical Flows Section
-    const flowSection = document.createElement('div');
-    flowSection.innerHTML = '<h4 style="margin: 15px 0 5px 0; color: #ff1493;">⚡ Mystical Flows</h4>';
-    mindSection.appendChild(flowSection);
     
-    // Fairy Velocity (subdivision speed)
+    // Thought Speed
     const velocityLabel = document.createElement('label');
-    velocityLabel.textContent = `Fairy Velocity: ${node.audioParams.thoughtSpeed || 1}x`;
-    velocityLabel.title = "How swiftly the fairies dance through time";
+    velocityLabel.textContent = `Thought Speed: ${node.audioParams.thoughtSpeed || 1}x`;
     velocityLabel.style.display = 'block';
+    velocityLabel.style.marginTop = '10px';
     velocityLabel.style.marginBottom = '5px';
     mindSection.appendChild(velocityLabel);
     
@@ -26838,15 +26946,14 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
                 }
             }
         });
-        velocityLabel.textContent = `Fairy Velocity: ${e.target.value}x`;
+        velocityLabel.textContent = `Thought Speed: ${e.target.value}x`;
         saveState();
     });
     mindSection.appendChild(velocitySlider);
     
-    // Temporal Shift (pattern offset)
+    // Memory Echo
     const shiftLabel = document.createElement('label');
-    shiftLabel.textContent = `Temporal Shift: ${node.audioParams.memoryEcho || 0}`;
-    shiftLabel.title = "How the ancient memories twist the flow of time";
+    shiftLabel.textContent = `Memory Echo: ${node.audioParams.memoryEcho || 0}`;
     shiftLabel.style.display = 'block';
     shiftLabel.style.marginTop = '10px';
     shiftLabel.style.marginBottom = '5px';
@@ -26865,21 +26972,17 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
                 n.audioParams.memoryEcho = parseInt(e.target.value);
             }
         });
-        shiftLabel.textContent = `Temporal Shift: ${e.target.value}`;
+        shiftLabel.textContent = `Memory Echo: ${e.target.value}`;
         saveState();
     });
     mindSection.appendChild(shiftSlider);
     
-    // Enchanted Forces Section
-    const enchantSection = document.createElement('div');
-    enchantSection.innerHTML = '<h4 style="margin: 15px 0 5px 0; color: #9370db;">✨ Enchanted Forces</h4>';
-    mindSection.appendChild(enchantSection);
     
-    // Life Essence (intensity)
+    // Focus Intensity
     const essenceLabel = document.createElement('label');
-    essenceLabel.textContent = `Life Essence: ${(node.audioParams.focusIntensity || 1.0).toFixed(2)}`;
-    essenceLabel.title = "The potency of life force flowing through the veins";
+    essenceLabel.textContent = `Focus Intensity: ${(node.audioParams.focusIntensity || 1.0).toFixed(2)}`;
     essenceLabel.style.display = 'block';
+    essenceLabel.style.marginTop = '10px';
     essenceLabel.style.marginBottom = '5px';
     mindSection.appendChild(essenceLabel);
     
@@ -26896,15 +26999,14 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
                 n.audioParams.focusIntensity = parseFloat(e.target.value);
             }
         });
-        essenceLabel.textContent = `Life Essence: ${parseFloat(e.target.value).toFixed(2)}`;
+        essenceLabel.textContent = `Focus Intensity: ${parseFloat(e.target.value).toFixed(2)}`;
         saveState();
     });
     mindSection.appendChild(essenceSlider);
     
-    // Fractal Magic (complexity)
+    // Spell Complexity
     const fractalLabel = document.createElement('label');
-    fractalLabel.textContent = `Fractal Magic: ${node.audioParams.spellComplexity || 1}`;
-    fractalLabel.title = "The mystical complexity that transforms simple patterns into wonders";
+    fractalLabel.textContent = `Spell Complexity: ${node.audioParams.spellComplexity || 1}`;
     fractalLabel.style.display = 'block';
     fractalLabel.style.marginTop = '10px';
     fractalLabel.style.marginBottom = '5px';
@@ -26924,15 +27026,14 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
         });
-        fractalLabel.textContent = `Fractal Magic: ${e.target.value}`;
+        fractalLabel.textContent = `Spell Complexity: ${e.target.value}`;
         saveState();
     });
     mindSection.appendChild(fractalSlider);
     
-    // Dream Seed (randomization)
+    // Imagination Seed
     const dreamLabel = document.createElement('label');
-    dreamLabel.textContent = `Dream Seed: ${node.audioParams.imaginationSeed || 1}`;
-    dreamLabel.title = "The seed of infinite possibilities, shaping unique cosmic dreams";
+    dreamLabel.textContent = `Imagination Seed: ${node.audioParams.imaginationSeed || 1}`;
     dreamLabel.style.display = 'block';
     dreamLabel.style.marginTop = '10px';
     dreamLabel.style.marginBottom = '5px';
@@ -26952,15 +27053,11 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
         });
-        dreamLabel.textContent = `Dream Seed: ${e.target.value}`;
+        dreamLabel.textContent = `Imagination Seed: ${e.target.value}`;
         saveState();
     });
     mindSection.appendChild(dreamSlider);
     
-    // Sync Controls Section (like other nodes)
-    const syncSection = document.createElement('div');
-    syncSection.innerHTML = '<h4 style="margin: 15px 0 5px 0; color: #4169e1;">⏱️ Temporal Synchronization</h4>';
-    mindSection.appendChild(syncSection);
     
     // Ignore Global Sync checkbox (appears when global sync is enabled)
     if (isGlobalSyncEnabled) {
@@ -26992,8 +27089,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     // Subdivision selector (when global sync is enabled and not ignored)
     if (isGlobalSyncEnabled && !node.audioParams.ignoreGlobalSync) {
       const subdivLabel = document.createElement('label');
-      subdivLabel.textContent = 'Cosmic Rhythm: ';
-      subdivLabel.title = 'How the mind pulses align with the universal beat';
+      subdivLabel.textContent = 'Subdivision: ';
       subdivLabel.style.display = 'block';
       subdivLabel.style.marginTop = '10px';
       subdivLabel.style.marginBottom = '5px';
@@ -27029,8 +27125,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     // Manual timing interval (when sync is off or ignored)
     if (!isGlobalSyncEnabled || node.audioParams.ignoreGlobalSync) {
       const intervalLabel = document.createElement('label');
-      intervalLabel.textContent = `Mind Clock: ${(node.audioParams.triggerInterval || 0.5).toFixed(2)}s`;
-      intervalLabel.title = 'How fast the mind pulses when not synchronized';
+      intervalLabel.textContent = `Trigger Interval: ${(node.audioParams.triggerInterval || 0.5).toFixed(2)}s`;
       intervalLabel.style.display = 'block';
       intervalLabel.style.marginTop = '10px';
       intervalLabel.style.marginBottom = '5px';
@@ -27053,10 +27148,100 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
             }
           }
         });
-        intervalLabel.textContent = `Mind Clock: ${parseFloat(e.target.value).toFixed(2)}s`;
+        intervalLabel.textContent = `Trigger Interval: ${parseFloat(e.target.value).toFixed(2)}s`;
         saveState();
       });
       mindSection.appendChild(intervalSlider);
+    }
+    
+    
+    // Alive toggle
+    const aliveLabel = document.createElement('label');
+    aliveLabel.textContent = 'Alive Mode: ';
+    aliveLabel.style.display = 'block';
+    aliveLabel.style.marginTop = '10px';
+    aliveLabel.style.marginBottom = '5px';
+    mindSection.appendChild(aliveLabel);
+    
+    const aliveCheckbox = document.createElement('input');
+    aliveCheckbox.type = 'checkbox';
+    aliveCheckbox.checked = node.audioParams.isAlive || false;
+    aliveCheckbox.addEventListener('change', (e) => {
+        selectedArray.forEach(elData => {
+            const n = findNodeById(elData.id);
+            if (n && n.type === 'mind' && n.audioParams) {
+                n.audioParams.isAlive = e.target.checked;
+                
+                // Start/stop alive behavior
+                if (e.target.checked) {
+                    if (n.startAliveBehavior) {
+                        n.startAliveBehavior(findNodeById, createParticles);
+                    }
+                } else {
+                    if (n.stopAliveBehavior) {
+                        n.stopAliveBehavior();
+                    }
+                }
+            }
+        });
+        saveState();
+    });
+    aliveLabel.appendChild(aliveCheckbox);
+    
+    // Search Radius (when alive)
+    if (node.audioParams.isAlive) {
+        const radiusLabel = document.createElement('label');
+        radiusLabel.textContent = `Search Range: ${node.audioParams.searchRadius || 300}px`;
+        radiusLabel.title = 'How far the veins will search for connections';
+        radiusLabel.style.display = 'block';
+        radiusLabel.style.marginTop = '10px';
+        radiusLabel.style.marginBottom = '5px';
+        mindSection.appendChild(radiusLabel);
+        
+        const radiusSlider = document.createElement('input');
+        radiusSlider.type = 'range';
+        radiusSlider.min = '100';
+        radiusSlider.max = '500';
+        radiusSlider.step = '25';
+        radiusSlider.value = node.audioParams.searchRadius || 300;
+        radiusSlider.addEventListener('input', (e) => {
+            selectedArray.forEach(elData => {
+                const n = findNodeById(elData.id);
+                if (n && n.type === 'mind' && n.audioParams) {
+                    n.audioParams.searchRadius = parseInt(e.target.value);
+                }
+            });
+            radiusLabel.textContent = `Search Range: ${e.target.value}px`;
+            saveState();
+        });
+        mindSection.appendChild(radiusSlider);
+        
+        // Max Floating Veins
+        const maxVeinsLabel = document.createElement('label');
+        maxVeinsLabel.textContent = `Floating Veins: ${node.audioParams.maxFloatingVeins || 3}`;
+        maxVeinsLabel.title = 'Maximum number of searching veins';
+        maxVeinsLabel.style.display = 'block';
+        maxVeinsLabel.style.marginTop = '10px';
+        maxVeinsLabel.style.marginBottom = '5px';
+        mindSection.appendChild(maxVeinsLabel);
+        
+        const maxVeinsSlider = document.createElement('input');
+        maxVeinsSlider.type = 'range';
+        maxVeinsSlider.min = '1';
+        maxVeinsSlider.max = '6';
+        maxVeinsSlider.step = '1';
+        maxVeinsSlider.value = node.audioParams.maxFloatingVeins || 3;
+        maxVeinsSlider.addEventListener('input', (e) => {
+            selectedArray.forEach(elData => {
+                const n = findNodeById(elData.id);
+                if (n && n.type === 'mind' && n.audioParams) {
+                    n.audioParams.maxFloatingVeins = parseInt(e.target.value);
+                }
+            });
+            maxVeinsLabel.textContent = `Floating Veins: ${e.target.value}`;
+            saveState();
+        });
+        mindSection.appendChild(maxVeinsSlider);
     }
     
     // Cosmic Status Display
@@ -27072,15 +27257,25 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     veinStatus.style.fontSize = '12px';
     veinStatus.style.border = '1px solid rgba(32, 178, 170, 0.3)';
     
-    const veinCount = node.lifeSystem ? node.lifeSystem.veins.length : 0;
+    const connectedVeins = node.lifeSystem ? (node.lifeSystem.veins.filter(v => v.targetNode && !v.isFloating).length) : 0;
+    const floatingVeins = node.lifeSystem ? (node.lifeSystem.floatingVeins?.length || 0) : 0;
     const currentStep = node.lifeSystem ? node.lifeSystem.sequenceStep : 0;
     const isActive = node.lifeSystem ? node.lifeSystem.isGenerating : false;
+    const isAlive = node.audioParams.isAlive || false;
+    
+    let mindStateText = '💤 Slumbering';
+    if (isAlive && floatingVeins > 0) {
+        mindStateText = '🔍 Seeking Connections';
+    } else if (isActive) {
+        mindStateText = '🌟 Weaving Dreams';
+    }
     
     veinStatus.innerHTML = `
-        <strong>Life Veins:</strong> ${veinCount} connected<br>
+        <strong>Connected Veins:</strong> ${connectedVeins}<br>
+        ${floatingVeins > 0 ? `<strong>Searching Veins:</strong> ${floatingVeins}<br>` : ''}
         <strong>Cosmic Step:</strong> ${currentStep}/${node.audioParams.consciousnessSpan || 16}<br>
-        <strong>Mind State:</strong> ${isActive ? '🌟 Weaving Dreams' : '💤 Slumbering'}<br>
-        <small style="opacity: 0.7;">Each vein pulses with its own celestial rhythm</small>
+        <strong>Mind State:</strong> ${mindStateText}<br>
+        <small style="opacity: 0.7;">${isAlive ? 'Living mind actively seeks new connections' : 'Each vein pulses with its own celestial rhythm'}</small>
     `;
     mindSection.appendChild(veinStatus);
     
@@ -28851,6 +29046,8 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     defaultIsEnabled = false;
   } else if (type === "pulsar_manual") {
     defaultIsEnabled = true;
+  } else if (type === "sound") {
+    defaultIsEnabled = false; // Sound orbs should not auto-play when placed
   }
 
   const defaultVolumeSteps = [0.8, 0.65, 0.5];
@@ -28916,6 +29113,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   if (newNode.type === "pulsar_triggerable") {
     newNode.isEnabled = false;
   }
+  
   
   if (type === "global_key_setter") {
      newNode.isStartNode = false;
@@ -29075,6 +29273,45 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.audioParams.pitch = 440; // Not used for audio but for compatibility
     visualStyle = "mind_core";
     newNode.isStartNode = true; // Mind generates Life pulses
+    
+    // Add rhythm variety and randomization for new Minds
+    const variations = [
+      // Peaceful Mind - slow and contemplative
+      { dreamDepth: 2, consciousnessSpan: 12, thoughtSpeed: 0.7, spellComplexity: 1 },
+      // Active Mind - fast and energetic  
+      { dreamDepth: 6, consciousnessSpan: 16, thoughtSpeed: 1.5, spellComplexity: 2 },
+      // Deep Mind - complex patterns
+      { dreamDepth: 8, consciousnessSpan: 20, thoughtSpeed: 1.0, spellComplexity: 3 },
+      // Chaotic Mind - irregular patterns
+      { dreamDepth: 5, consciousnessSpan: 13, thoughtSpeed: 1.2, spellComplexity: 2 },
+      // Minimal Mind - sparse and focused
+      { dreamDepth: 1, consciousnessSpan: 8, thoughtSpeed: 0.8, spellComplexity: 1 },
+      // Polyrhythmic Mind - complex timing
+      { dreamDepth: 4, consciousnessSpan: 15, thoughtSpeed: 1.1, spellComplexity: 2, enchantmentPhases: [1, 2, 3] }
+    ];
+    
+    // Choose a random variation
+    const variation = variations[Math.floor(Math.random() * variations.length)];
+    
+    // Apply the variation with some additional randomness
+    newNode.audioParams.dreamDepth = variation.dreamDepth + Math.floor(Math.random() * 3) - 1; // ±1
+    newNode.audioParams.consciousnessSpan = Math.max(8, variation.consciousnessSpan + Math.floor(Math.random() * 5) - 2); // ±2
+    newNode.audioParams.thoughtSpeed = Math.max(0.3, variation.thoughtSpeed + (Math.random() * 0.4 - 0.2)); // ±0.2
+    newNode.audioParams.spellComplexity = Math.max(1, Math.min(4, variation.spellComplexity + Math.floor(Math.random() * 2) - 1)); // ±1, clamped 1-4
+    
+    // Random memory echo (temporal shift)
+    newNode.audioParams.memoryEcho = Math.floor(Math.random() * 4);
+    
+    // Random imagination seed for unique patterns
+    newNode.audioParams.imaginationSeed = Math.floor(Math.random() * 100) + 1;
+    
+    // Apply enchantment phases if variation has them
+    if (variation.enchantmentPhases) {
+      newNode.audioParams.enchantmentPhases = [...variation.enchantmentPhases];
+    }
+    
+    // Random focus intensity
+    newNode.audioParams.focusIntensity = 0.8 + Math.random() * 0.4; // 0.8 to 1.2
   } else {
     const initialLowPassFreq =
       audioDetails.lowPassFreq !== undefined ?
@@ -30843,59 +31080,192 @@ String.prototype.hashCode = function() {
 };
 
 function drawVeins() {
-  // Draw Vein connections from Mind nodes
+  // Time variable used throughout the function for animations
+  const time = Date.now() * 0.002;
+  
+  // Get scale base for theme-based coloring
+  const scaleBase = currentScale.baseHSL || {
+    h: 200,
+    s: 70,
+    l: 70,
+  };
+  
+  // Draw Vein connections from Mind nodes (both connected and floating)
   nodes.forEach(node => {
-    if (node.type === "mind" && node.lifeSystem && node.lifeSystem.veins.length > 0) {
-      node.lifeSystem.veins.forEach(vein => {
-        if (!vein.targetNode || !vein.isActive) return;
-        
-        ctx.save();
-        
-        // Organic, flowing vein visual style with Life pulse effects
-        const time = Date.now() * 0.002;
-        const timeSinceLastPulse = vein.lastPulseTime ? (Date.now() - vein.lastPulseTime) : 10000;
-        const pulseEffect = Math.max(0, 1 - timeSinceLastPulse / 1000); // Fade over 1 second
-        const basePulseIntensity = 0.5 + 0.3 * Math.sin(time * 3 + vein.id.hashCode());
-        const pulseIntensity = basePulseIntensity + pulseEffect * 0.8;
-        
-        ctx.strokeStyle = `rgba(200, 100, 255, ${Math.min(1.0, 0.6 * pulseIntensity)})`;
-        ctx.lineWidth = Math.max(1.5 / viewScale, (2.5 + pulseEffect * 2) / viewScale * pulseIntensity);
-        ctx.lineCap = "round";
-        ctx.setLineDash([]);
-        
-        // Create flowing, organic path
-        const startX = node.x;
-        const startY = node.y;
-        const endX = vein.targetNode.x;
-        const endY = vein.targetNode.y;
-        
-        const dx = endX - startX;
-        const dy = endY - startY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance > 0) {
-          // Add organic curve with animated flowing effect
-          const midX = startX + dx * 0.5 + Math.sin(time + vein.id.hashCode()) * 20;
-          const midY = startY + dy * 0.5 + Math.cos(time * 1.3 + vein.id.hashCode()) * 15;
+    if (node.type === "mind" && node.lifeSystem) {
+      
+      // Draw connected veins
+      if (node.lifeSystem.veins && node.lifeSystem.veins.length > 0) {
+        node.lifeSystem.veins.forEach(vein => {
+          if (!vein.targetNode || !vein.isActive || vein.isFloating) return;
           
-          ctx.beginPath();
-          ctx.moveTo(startX, startY);
-          ctx.quadraticCurveTo(midX, midY, endX, endY);
-          ctx.stroke();
+          ctx.save();
           
-          // Add flowing gradient effect
-          const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
-          gradient.addColorStop(0, `rgba(200, 100, 255, 0.8)`);
-          gradient.addColorStop(0.5, `rgba(150, 200, 255, 0.6)`);
-          gradient.addColorStop(1, `rgba(100, 255, 150, 0.4)`);
+          // Get Mind's theme-based color
+          const params = node.audioParams;
+          const nodeBaseHue = (scaleBase.h + ((params?.scaleIndex || 0) % currentScale.notes.length) * HUE_STEP + 180) % 360;
+          const saturation = Math.min(90, scaleBase.s + 20);
+          const lightness = scaleBase.l * 0.8;
           
-          ctx.strokeStyle = gradient;
-          ctx.lineWidth = Math.max(0.8 / viewScale, 1.2 / viewScale * pulseIntensity);
-          ctx.stroke();
-        }
-        
-        ctx.restore();
-      });
+          // Organic, flowing vein visual style with Life pulse effects
+          const timeSinceLastPulse = vein.lastPulseTime ? (Date.now() - vein.lastPulseTime) : 10000;
+          const pulseEffect = Math.max(0, 1 - timeSinceLastPulse / 1000); // Fade over 1 second
+          const basePulseIntensity = 0.5 + 0.3 * Math.sin(time * 3 + vein.id.hashCode());
+          const pulseIntensity = basePulseIntensity + pulseEffect * 0.8;
+          
+          const veinColor = hslToRgba(nodeBaseHue, saturation, lightness, Math.min(1.0, 0.6 * pulseIntensity));
+          ctx.strokeStyle = veinColor;
+          ctx.lineWidth = Math.max(1.5 / viewScale, (2.5 + pulseEffect * 2) / viewScale * pulseIntensity);
+          ctx.lineCap = "round";
+          ctx.setLineDash([]);
+          
+          // Create flowing, organic path
+          const startX = node.x;
+          const startY = node.y;
+          const endX = vein.targetNode.x;
+          const endY = vein.targetNode.y;
+          
+          const dx = endX - startX;
+          const dy = endY - startY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > 0) {
+            // Add organic curve with animated flowing effect
+            const midX = startX + dx * 0.5 + Math.sin(time + vein.id.hashCode()) * 20;
+            const midY = startY + dy * 0.5 + Math.cos(time * 1.3 + vein.id.hashCode()) * 15;
+            
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.quadraticCurveTo(midX, midY, endX, endY);
+            ctx.stroke();
+            
+            // Add flowing gradient effect with theme colors
+            const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+            gradient.addColorStop(0, hslToRgba(nodeBaseHue, saturation, lightness, 0.8));
+            gradient.addColorStop(0.5, hslToRgba((nodeBaseHue + 30) % 360, saturation * 0.8, lightness * 1.2, 0.6));
+            gradient.addColorStop(1, hslToRgba((nodeBaseHue + 60) % 360, saturation * 0.6, lightness * 1.4, 0.4));
+            
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = Math.max(0.8 / viewScale, 1.2 / viewScale * pulseIntensity);
+            ctx.stroke();
+          }
+          
+          ctx.restore();
+        });
+      }
+      
+      // Draw floating/searching veins - alien tentacles
+      if (node.lifeSystem.floatingVeins && node.lifeSystem.floatingVeins.length > 0) {
+        node.lifeSystem.floatingVeins.forEach(vein => {
+          if (!vein.isActive) return;
+          
+          ctx.save();
+          
+          // Slow, scary organic movement
+          const slowTime = Date.now() * 0.0008; // Much slower movement
+          const searchPulse = 0.4 + 0.3 * Math.sin(slowTime * 2 + vein.id.hashCode());
+          const breathingEffect = 0.8 + 0.2 * Math.sin(slowTime * 0.7 + vein.id.hashCode());
+          
+          // Make tentacles look like connected veins but with scary alien movement
+          const baseIntensity = 0.5 + 0.2 * Math.sin(slowTime * 1.5 + vein.id.hashCode());
+          const pulseIntensity = baseIntensity * searchPulse * breathingEffect;
+          
+          // Get Mind's theme-based color for floating veins
+          const params = node.audioParams;
+          const nodeBaseHue = (scaleBase.h + ((params?.scaleIndex || 0) % currentScale.notes.length) * HUE_STEP + 180) % 360;
+          const saturation = Math.min(90, scaleBase.s + 20);
+          const lightness = scaleBase.l * 0.6; // Darker for scary floating tentacles
+          
+          // Use theme colors but dimmer for scary alien tentacle effect
+          const tentacleColor = hslToRgba(nodeBaseHue, saturation, lightness, Math.min(0.8, 0.4 * pulseIntensity));
+          ctx.strokeStyle = tentacleColor;
+          ctx.lineWidth = Math.max(1.2 / viewScale, (2.0 + searchPulse) / viewScale * pulseIntensity);
+          ctx.lineCap = "round";
+          ctx.setLineDash([]); // Remove dashed lines for more organic look
+          
+          // Find nearby orbs to target
+          const nearbyOrbs = nodes.filter(otherNode => {
+            if (otherNode === node || otherNode.type === "mind") return false;
+            const dx = otherNode.x - node.x;
+            const dy = otherNode.y - node.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < (node.audioParams.searchRadius || 300);
+          });
+          
+          // Target closest orb if available, otherwise keep current search position
+          let targetX = vein.searchX;
+          let targetY = vein.searchY;
+          
+          if (nearbyOrbs.length > 0) {
+            const closestOrb = nearbyOrbs.reduce((closest, orb) => {
+              const dx1 = orb.x - node.x;
+              const dy1 = orb.y - node.y;
+              const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+              
+              const dx2 = closest.x - node.x;
+              const dy2 = closest.y - node.y;
+              const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+              
+              return dist1 < dist2 ? orb : closest;
+            });
+            
+            // Slowly move the vein toward the closest orb
+            const speed = 0.02;
+            const dx = closestOrb.x - vein.searchX;
+            const dy = closestOrb.y - vein.searchY;
+            vein.searchX += dx * speed;
+            vein.searchY += dy * speed;
+            
+            targetX = vein.searchX;
+            targetY = vein.searchY;
+          }
+          
+          // Draw searching vein from mind to target position
+          const startX = node.x;
+          const startY = node.y;
+          const endX = targetX;
+          const endY = targetY;
+          
+          const dx = endX - startX;
+          const dy = endY - startY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > 5) {
+            // Create organic, flowing tentacle like connected veins
+            const midX = startX + dx * 0.5 + Math.sin(slowTime * 1.2 + vein.id.hashCode()) * 25 * searchPulse;
+            const midY = startY + dy * 0.5 + Math.cos(slowTime * 0.9 + vein.id.hashCode()) * 20 * searchPulse;
+            
+            // Additional control points for more organic movement
+            const quarterX = startX + dx * 0.25 + Math.sin(slowTime * 0.8 + vein.id.hashCode()) * 15;
+            const quarterY = startY + dy * 0.25 + Math.cos(slowTime * 1.1 + vein.id.hashCode()) * 12;
+            const threeQuarterX = startX + dx * 0.75 + Math.sin(slowTime * 1.4 + vein.id.hashCode()) * 12;
+            const threeQuarterY = startY + dy * 0.75 + Math.cos(slowTime * 0.6 + vein.id.hashCode()) * 18;
+            
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.bezierCurveTo(quarterX, quarterY, midX, midY, threeQuarterX, threeQuarterY);
+            ctx.quadraticCurveTo(midX + (endX - midX) * 0.8, midY + (endY - midY) * 0.8, endX, endY);
+            ctx.stroke();
+            
+            // Add subtle gradient effect with theme colors but darker for scary alien tentacles
+            const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+            gradient.addColorStop(0, hslToRgba(nodeBaseHue, saturation, lightness, 0.6));
+            gradient.addColorStop(0.5, hslToRgba((nodeBaseHue + 20) % 360, saturation * 0.8, lightness * 0.8, 0.4));
+            gradient.addColorStop(1, hslToRgba((nodeBaseHue + 40) % 360, saturation * 0.6, lightness * 0.6, 0.3));
+            
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = Math.max(0.6 / viewScale, 1.0 / viewScale * pulseIntensity);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.bezierCurveTo(quarterX, quarterY, midX, midY, threeQuarterX, threeQuarterY);
+            ctx.quadraticCurveTo(midX + (endX - midX) * 0.8, midY + (endY - midY) * 0.8, endX, endY);
+            ctx.stroke();
+            
+          }
+          
+          ctx.restore();
+        });
+      }
     }
   });
 }
