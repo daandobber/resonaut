@@ -12,6 +12,7 @@ import { showToneFmSynthMenu } from './orbs/tone-fm-synth-ui.js';
 import { showTonePluckSynthMenu } from './orbs/tone-pluck-synth-ui.js';
 import { showPulseSynthMenu } from './orbs/pulse-synth-ui.js';
 import * as Tone from 'tone';
+import { createMasterEQChain, masterEQConfig, updateMasterEQChain } from './masterEQChain.js';
 import { playWithToneSampler } from './samplerPlayer.js';
 import { createSamplerOrbAudioNodes } from './orbs/sampler-orb.js';
 import { sanitizeWaveformType } from './utils/oscillatorUtils.js';
@@ -675,6 +676,7 @@ let unsavedChanges = false;
 let audioContext;
 let masterGain;
 let masterPannerNode;
+let masterEQChain;
 let masterAnalyser;
 let reverbNode;
 let reverbWetGain;
@@ -799,6 +801,52 @@ function createMissingAudioNodes(nodesList) {
   });
 }
 
+function restoreMindVeinConnections() {
+  // Restore vein connections for Mind orbs after state load
+  nodes.forEach(node => {
+    if (node.type === "mind" && node.lifeSystem) {
+      // Check if Mind should have vein connections based on its saved state
+      // Mind orbs were likely connected to nodes they could trigger
+      const compatibleTypes = ["sound", "alien_orb", "alien_drone", "arvo_drone", 
+                              "fm_drone", "resonauter", "radio_orb"];
+      
+      // Find all nodes this Mind could potentially be connected to
+      const targetNodes = nodes.filter(targetNode => {
+        if (targetNode === node) return false; // Skip self
+        return compatibleTypes.includes(targetNode.type) || 
+               (targetNode.type && targetNode.type.startsWith('drum_'));
+      });
+      
+      // Restore vein connections - for now, we'll connect to nearby nodes
+      // This is a reasonable heuristic since Mind orbs typically connect to nearby instruments
+      targetNodes.forEach(targetNode => {
+        const distance = Math.sqrt(
+          Math.pow(node.x - targetNode.x, 2) + 
+          Math.pow(node.y - targetNode.y, 2)
+        );
+        
+        // Connect to nodes within a reasonable distance (300 pixels)
+        // This matches the default searchRadius
+        if (distance <= 300) {
+          const vein = node.addVein(targetNode);
+          if (vein) {
+            // Mark as connected (not floating)
+            vein.isFloating = false;
+          }
+        }
+      });
+      
+      // If this is an alive mind and we didn't find close connections, restore some floating veins
+      if (node.audioParams.isAlive && node.lifeSystem.veins.length === 0) {
+        const maxFloatingVeins = node.audioParams.maxFloatingVeins || 3;
+        for (let i = 0; i < maxFloatingVeins; i++) {
+          node.createFloatingVein();
+        }
+      }
+    }
+  });
+}
+
 async function startApplication() {
   if (loadingIndicator) {
     samplesLoadedCount = 0;
@@ -815,6 +863,8 @@ async function startApplication() {
       if (typeof window !== 'undefined') window.isAudioReady = true;
       try { globalThis.isAudioReady = true; } catch {}
       createMissingAudioNodes(nodes);
+      // Restore vein connections for Mind orbs after audio nodes are created
+      restoreMindVeinConnections();
       // Ensure effect sends on all nodes are connected to global effect inputs
       try { ensureAllNodesEffectSendsConnected(); } catch {}
       updateMixerGUI();
@@ -988,6 +1038,7 @@ let currentTool = "edit";
 let nodeTypeToAdd = null;
 let waveformToAdd = null;
 let soundEngineToAdd = null;
+let currentSubmenuType = null;
 let noteIndexToAdd = -1;
 let connectionTypeToAdd = "standard";
 let noteSelectContainer = null;
@@ -2005,6 +2056,10 @@ export async function setupAudio() {
 
 
     masterGain.connect(masterPannerNode);
+    
+    // Create and connect master EQ chain before global effects
+    masterEQChain = createMasterEQChain(audioContext, masterEQConfig);
+    
     mrfaInput = audioContext.createGain();
     mrfaOutput = audioContext.createGain();
     mrfaWetGain = audioContext.createGain();
@@ -2013,7 +2068,10 @@ export async function setupAudio() {
     mrfaWetGain.gain.value = 0;
     mrfaDryGain.gain.value = 1;
     mrfaDirectGain.gain.value = 1.0;
-    masterPannerNode.connect(mrfaInput);
+    
+    // Connect master panner → EQ chain → MRFA input
+    masterPannerNode.connect(masterEQChain.input);
+    masterEQChain.output.connect(mrfaInput);
     mrfaInput.connect(mrfaDryGain);
     mrfaWetGain.connect(mrfaOutput);
     mrfaDryGain.connect(mrfaOutput);
@@ -2308,7 +2366,20 @@ export async function setupAudio() {
   }
 }
 
- 
+// Master EQ Chain access functions
+export function getMasterEQChain() {
+  return masterEQChain;
+}
+
+export function updateMasterEQ(config) {
+  if (masterEQChain) {
+    updateMasterEQChain(masterEQChain, config);
+  }
+}
+
+export function getMasterEQConfig() {
+  return masterEQConfig;
+}
 
 function populateReverbIRSelect() {
     if (!reverbIRSelect) return;
@@ -20659,6 +20730,44 @@ function handleMouseUp(event) {
               clickedOnSpaceRadarOriginal;
 
           if (canPlaceNodeHereOriginal) {
+              // Auto-select random preset if sound instrument selected but no preset chosen
+              if (nodeTypeToAdd === "sound" && !waveformToAdd && soundEngineToAdd !== 'pulse' && soundEngineToAdd !== 'etheraura') {
+                  let availablePresets = [];
+                  
+                  // Determine instrument type based on submenu type first, then sound engine
+                  if (currentSubmenuType === "samplers") {
+                      // Sampler instruments
+                      availablePresets = samplerWaveformTypes.map(s => s.type);
+                  } else if (soundEngineToAdd === "tone") {
+                      // Analog synthesizers
+                      availablePresets = analogWaveformPresets.map(p => p.type);
+                  } else if (soundEngineToAdd === "tonefm") {
+                      // FM synthesizers
+                      availablePresets = fmSynthPresets.map(p => p.type);
+                  } else if (soundEngineToAdd === "tonepluck") {
+                      // Pluck synthesizers
+                      availablePresets = typeof pluckSynthPresets !== 'undefined' ? pluckSynthPresets.map(p => p.type) : [];
+                  } else {
+                      // Default to analog waveforms for unknown types
+                      availablePresets = analogWaveformPresets.map(p => p.type);
+                  }
+                  
+                  // Select random preset if any available
+                  if (availablePresets.length > 0) {
+                      const randomIndex = Math.floor(Math.random() * availablePresets.length);
+                      waveformToAdd = availablePresets[randomIndex];
+                  }
+              }
+              
+              // Handle other instrument types that need random presets
+              if (nodeTypeToAdd === RADIO_ORB_TYPE && !waveformToAdd) {
+                  // Radio orb also uses samplers
+                  if (samplerWaveformTypes.length > 0) {
+                      const randomIndex = Math.floor(Math.random() * samplerWaveformTypes.length);
+                      waveformToAdd = samplerWaveformTypes[randomIndex].type;
+                  }
+              }
+              
               const canActuallyAddThisNode =
                   (nodeTypeToAdd !== "sound" && nodeTypeToAdd !== "nebula") ||
                   (nodeTypeToAdd === "sound" && (waveformToAdd || soundEngineToAdd === 'pulse' || soundEngineToAdd === 'etheraura')) ||
@@ -30326,6 +30435,7 @@ function setupAddTool(
   const previousType = nodeTypeToAdd;
   setActiveTool("add");
   nodeTypeToAdd = type;
+  currentSubmenuType = submenuType; // Track the current submenu type
 
   if (currentTool !== "add" || previousType !== type) {
     waveformToAdd = null;
