@@ -164,6 +164,17 @@ export function populateSideToolbar(contentType, title) {
         window.closeAllSidePanels();
       });
       
+      // Add Queen Mind button
+      const addQueenMindBtn = document.createElement("button");
+      addQueenMindBtn.classList.add("symphiose-button", "add-queen-mind-btn");
+      addQueenMindBtn.textContent = "👑 Add Queen Mind";
+      addQueenMindBtn.title = "Add a Queen Mind that can control and coordinate other Minds in hive formations";
+      addQueenMindBtn.addEventListener("click", () => {
+        window.nodeTypeToAdd = "queen_mind";
+        window.waveformToAdd = "queen_mind";
+        window.closeAllSidePanels();
+      });
+      
       // Add Vein button
       const addVeinBtn = document.createElement("button");
       addVeinBtn.classList.add("symphiose-button", "add-vein-btn");
@@ -175,6 +186,7 @@ export function populateSideToolbar(contentType, title) {
       });
       
       symphioseSection.appendChild(addMindBtn);
+      symphioseSection.appendChild(addQueenMindBtn);
       symphioseSection.appendChild(addVeinBtn);
       groupDiv.appendChild(symphioseSection);
       break;

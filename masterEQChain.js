@@ -114,28 +114,21 @@ export function createMasterEQChain(audioContext, config = masterEQConfig) {
       currentNode = airEQ;
     }
     
-    // Limiter using Tone.js for more advanced processing
+    // Limiter using Web Audio API (simpler and more reliable)
     if (config.limiter.enabled) {
-      const limiter = new Tone.Limiter(config.limiter.threshold);
-      
-      // Create Web Audio nodes for the Tone.js limiter to interface with
-      const limiterInput = audioContext.createGain();
-      const limiterOutput = audioContext.createGain();
-      limiterInput.gain.value = 1.0;
-      limiterOutput.gain.value = 1.0;
-      
-      // Connect Web Audio to Tone.js
-      currentNode.connect(limiterInput);
-      limiterInput.connect(limiter.input._getNativeNode());
-      limiter.connect(limiterOutput);
+      const compressor = audioContext.createDynamicsCompressor();
+      compressor.threshold.value = config.limiter.threshold;
+      compressor.ratio.value = config.limiter.ratio || 10;
+      compressor.attack.value = config.limiter.attack || 0.003;
+      compressor.release.value = config.limiter.release || 0.1;
+      compressor.knee.value = 0; // Hard knee for limiting
       
       chain.limiter = {
-        toneNode: limiter,
-        inputGain: limiterInput,
-        outputGain: limiterOutput
+        compressor: compressor
       };
       
-      currentNode = limiterOutput;
+      currentNode.connect(compressor);
+      currentNode = compressor;
     }
     
     // Connect final node to output
@@ -150,10 +143,8 @@ export function createMasterEQChain(audioContext, config = masterEQConfig) {
           }
         });
         
-        if (chain.limiter) {
-          chain.limiter.toneNode.dispose();
-          if (chain.limiter.inputGain) chain.limiter.inputGain.disconnect();
-          if (chain.limiter.outputGain) chain.limiter.outputGain.disconnect();
+        if (chain.limiter && chain.limiter.compressor) {
+          chain.limiter.compressor.disconnect();
         }
         
         if (chain.input) chain.input.disconnect();
@@ -220,8 +211,19 @@ export function updateMasterEQChain(chain, config) {
       }
     }
     
-    if (config.limiter && chain.limiter && config.limiter.threshold !== undefined) {
-      chain.limiter.toneNode.threshold.value = config.limiter.threshold;
+    if (config.limiter && chain.limiter && chain.limiter.compressor) {
+      if (config.limiter.threshold !== undefined) {
+        chain.limiter.compressor.threshold.value = config.limiter.threshold;
+      }
+      if (config.limiter.ratio !== undefined) {
+        chain.limiter.compressor.ratio.value = config.limiter.ratio;
+      }
+      if (config.limiter.attack !== undefined) {
+        chain.limiter.compressor.attack.value = config.limiter.attack;
+      }
+      if (config.limiter.release !== undefined) {
+        chain.limiter.compressor.release.value = config.limiter.release;
+      }
     }
     
   } catch (err) {

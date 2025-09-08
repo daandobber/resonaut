@@ -74,7 +74,7 @@ import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGala
 import { MOTHER_SHIPP_TYPE, initMotherShippNode, handleMotherShippPulse, updateMotherShipp } from './orbs/mother-shipp.js';
 import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS } from './orbs/tonnetz-sequencer.js';
 import { PULSE_BURST_TYPE, initPulseBurstNode, handlePulseBurstPulse, buildPulseBurstPanel } from './orbs/pulse-burst.js';
-import { createMindOrb, DEFAULT_MIND_PARAMS } from './orbs/mind-orb.js';
+import { createMindOrb, DEFAULT_MIND_PARAMS, DEFAULT_QUEEN_MIND_PARAMS } from './orbs/mind-orb.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
 import { generateWaveformPath } from "./utils/waveformUtils.js";
 import { SAMPLER_DEFINITIONS } from './samplers.js';
@@ -466,6 +466,7 @@ const ZODIAC_PRESETS = {
 const MIDI_ORB_TYPE = "midi_orb";
 const RESONAUTER_TYPE = "resonauter";
 const RADIO_ORB_TYPE = "radio_orb";
+const QUEEN_MIND_TYPE = "queen_mind";
 const ALIEN_DRONE_TYPE = "alien_drone";
 const CANVAS_SEND_ORB_TYPE = "canvas_orb_send";
 const CANVAS_RECEIVE_ORB_TYPE = "canvas_orb_receive";
@@ -837,7 +838,7 @@ function restoreMindVeinConnections() {
       });
       
       // If this is an alive mind and we didn't find close connections, restore some floating veins
-      if (node.audioParams.isAlive && node.lifeSystem.veins.length === 0) {
+      if (node.audioParams.isAlive && node.lifeSystem && node.lifeSystem.veins.length === 0) {
         const maxFloatingVeins = node.audioParams.maxFloatingVeins || 3;
         for (let i = 0; i < maxFloatingVeins; i++) {
           node.createFloatingVein();
@@ -3149,7 +3150,7 @@ export function createAudioNodesForNode(node) {
             audioNodes.gainNode.gain.value = 1.0;
             audioNodes.gainNode.connect(masterGain);
             return audioNodes;
-        } else if (node.type === "mind") {
+        } else if (node.type === "mind" || node.type === QUEEN_MIND_TYPE) {
             return createMindOrb(node);
         } else if (node.type === "nebula") {
             const audioNodes = {};
@@ -9746,6 +9747,10 @@ export function saveState() {
       if (key === "audioNodes" || key === "buffer" || key === "waveformPath" || key === "activeRetriggers" || key === "triggeredInThisSweep") {
           return undefined;
       }
+      // Exclude circular references from Queen Mind hive system
+      if (key === "hiveMinds" || key === "queenController") {
+          return undefined;
+      }
       if (value instanceof Set) {
           return Array.from(value);
       }
@@ -10458,6 +10463,11 @@ function removeNode(nodeToRemove) {
           }
         }
       });
+    }
+    
+    // Clean up Queen Mind resources before removing
+    if (node && (node.type === QUEEN_MIND_TYPE || node.type === "mind") && node.dispose) {
+      node.dispose();
     }
     
     nodes = nodes.filter((n) => n.id !== id);
@@ -12406,47 +12416,69 @@ function animationLoop() {
       }
       
       // Handle Mind Life generation (like other sequencer nodes)
-      if (node.type === "mind") {
+      if (node.type === "mind" || node.type === QUEEN_MIND_TYPE) {
         // Handle alive mind behavior with movement
-        if (node.audioParams.isAlive) {
+        if (node.audioParams.isAlive && node.lifeSystem) {
           if (!node.lifeSystem.searchTimer && node.startAliveBehavior) {
             node.startAliveBehavior(findNodeById, createParticles);
           }
           
-          // Make mind move toward orbs and drag connected ones
-          if (node.lifeSystem.floatingVeins && node.lifeSystem.floatingVeins.length > 0) {
-            // Find nearby orbs to target
-            const nearbyOrbs = nodes.filter(otherNode => {
-              if (otherNode === node || otherNode.type === "mind") return false;
-              const dx = otherNode.x - node.x;
-              const dy = otherNode.y - node.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
-              return distance < (node.audioParams.searchRadius || 300);
-            });
+          // Make mind move toward orbs with smooth tracking
+          if (node.lifeSystem && node.lifeSystem.floatingVeins && node.lifeSystem.floatingVeins.length > 0) {
+            // Initialize mind movement system if not present
+            if (!node.mindMovement) {
+              node.mindMovement = {
+                targetX: node.x,
+                targetY: node.y,
+                currentTarget: null,
+                retargetTimer: 0
+              };
+            }
             
-            // Move mind slowly toward closest orb
-            if (nearbyOrbs.length > 0) {
-              const closestOrb = nearbyOrbs.reduce((closest, orb) => {
-                const dx1 = orb.x - node.x;
-                const dy1 = orb.y - node.y;
-                const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-                
-                const dx2 = closest.x - node.x;
-                const dy2 = closest.y - node.y;
-                const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-                
-                return dist1 < dist2 ? orb : closest;
+            // Update target periodically instead of every frame to reduce jitter
+            node.mindMovement.retargetTimer += deltaTime;
+            if (node.mindMovement.retargetTimer > 0.5 || !node.mindMovement.currentTarget) { // Retarget every 0.5 seconds
+              node.mindMovement.retargetTimer = 0;
+              
+              // Find nearby orbs to target
+              const nearbyOrbs = nodes.filter(otherNode => {
+                if (otherNode === node || otherNode.type === "mind") return false;
+                const dx = otherNode.x - node.x;
+                const dy = otherNode.y - node.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < (node.audioParams.searchRadius || 300);
               });
               
-              // Move mind slowly toward the closest orb
-              const mindSpeed = 0.3 * deltaTime;
-              const dx = closestOrb.x - node.x;
-              const dy = closestOrb.y - node.y;
+              if (nearbyOrbs.length > 0) {
+                const closestOrb = nearbyOrbs.reduce((closest, orb) => {
+                  const dx1 = orb.x - node.x;
+                  const dy1 = orb.y - node.y;
+                  const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+                  
+                  const dx2 = closest.x - node.x;
+                  const dy2 = closest.y - node.y;
+                  const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+                  
+                  return dist1 < dist2 ? orb : closest;
+                });
+                
+                node.mindMovement.currentTarget = closestOrb;
+                node.mindMovement.targetX = closestOrb.x;
+                node.mindMovement.targetY = closestOrb.y;
+              }
+            }
+            
+            // Smooth movement toward current target (like UFO)
+            if (node.mindMovement.currentTarget) {
+              const dx = node.mindMovement.targetX - node.x;
+              const dy = node.mindMovement.targetY - node.y;
               const distance = Math.sqrt(dx * dx + dy * dy);
               
               if (distance > 50) { // Stop moving when close enough
-                node.x += (dx / distance) * mindSpeed;
-                node.y += (dy / distance) * mindSpeed;
+                const mindSpeed = 1.5; // Slightly faster base speed
+                const moveSpeed = mindSpeed * deltaTime * 60;
+                node.x += (dx / distance) * moveSpeed;
+                node.y += (dy / distance) * moveSpeed;
               }
             }
             
@@ -12463,7 +12495,7 @@ function animationLoop() {
                   
                   if (distance > maxVeinLength) {
                     // Pull the orb closer to maintain vein connection
-                    const pullSpeed = 0.5 * deltaTime;
+                    const pullSpeed = 2.0 * deltaTime * 60; // Consistent with other movement
                     const pullDirection = (distance - maxVeinLength) / distance;
                     connectedNode.x -= (dx * pullDirection) * pullSpeed;
                     connectedNode.y -= (dy * pullDirection) * pullSpeed;
@@ -12472,12 +12504,12 @@ function animationLoop() {
               });
             }
           }
-        } else if (node.lifeSystem.searchTimer && node.stopAliveBehavior) {
+        } else if (node.lifeSystem && node.lifeSystem.searchTimer && node.stopAliveBehavior) {
           node.stopAliveBehavior();
         }
         
         // Mind should always be running when it has veins connected, regardless of sync mode
-        const totalVeins = (node.lifeSystem.veins.length || 0) + (node.lifeSystem.floatingVeins?.length || 0);
+        const totalVeins = node.lifeSystem ? ((node.lifeSystem.veins?.length || 0) + (node.lifeSystem.floatingVeins?.length || 0)) : 0;
         if (node.lifeSystem && totalVeins > 0) {
           if (!node.lifeSystem.isGenerating) {
             // Start the Mind sequencer with proper sync parameters
@@ -12504,8 +12536,319 @@ function animationLoop() {
           // Stop if no veins connected
           node.stopLifeGeneration();
         }
+        
+        // Handle Queen Mind hive behavior
+        if (node.type === QUEEN_MIND_TYPE && node.audioParams.isQueen && node.lifeSystem) {
+          if (!node.lifeSystem.hiveCommandTimer && node.startQueenBehavior) {
+            node.startQueenBehavior(nodes);
+          }
+        } else if (node.type === QUEEN_MIND_TYPE && node.stopQueenBehavior) {
+          // Stop Queen behavior if no longer a Queen
+          node.stopQueenBehavior();
+        }
+        
         return;
       }
+      
+      // Handle UFO Pulsar flying behavior
+      if (node.type === "pulsar_ufo" && node.ufoSystem && node.audioParams.ufoFlying) {
+        const ufo = node.ufoSystem;
+        let speed = node.audioParams.ufoSpeed || 5.0;
+        const patrolRadius = node.audioParams.ufoPatrolRadius || 300;
+        
+        // Apply sync-based speed if enabled
+        if (node.audioParams.ufoSyncToGlobal && isGlobalSyncEnabled) {
+          const subdivisionIndex = node.audioParams.ufoSyncSubdivisionIndex ?? 2;
+          if (subdivisionIndex >= 0 && subdivisionIndex < subdivisionOptions.length) {
+            const subdivision = subdivisionOptions[subdivisionIndex];
+            if (subdivision && typeof subdivision.value === "number" && secondsPerBeat > 0) {
+              // Calculate speed based on subdivision timing
+              const subdiv = subdivision.value; // e.g., 0.25 for 1/4 note, 0.5 for 1/2 note
+              // Scale the base speed by the subdivision timing
+              speed = speed * (subdiv / 0.25); // Normalize to quarter note as base
+            }
+          }
+        }
+        
+        
+        // Update patrol movement based on mode - move UFO directly along pattern
+        ufo.isFlying = true;
+        let newX, newY, movementAngle;
+        
+        if (node.audioParams.ufoPatrolMode === 'circle') {
+          ufo.angle += deltaTime * speed * 0.01;
+          newX = ufo.patrolCenter.x + Math.cos(ufo.angle) * patrolRadius;
+          newY = ufo.patrolCenter.y + Math.sin(ufo.angle) * patrolRadius;
+          movementAngle = ufo.angle + Math.PI / 2; // Tangent to circle
+        } else if (node.audioParams.ufoPatrolMode === 'figure8') {
+          ufo.angle += deltaTime * speed * 0.01;
+          newX = ufo.patrolCenter.x + Math.cos(ufo.angle) * patrolRadius;
+          newY = ufo.patrolCenter.y + Math.sin(ufo.angle * 2) * (patrolRadius * 0.5);
+          // Calculate movement direction based on path derivative
+          const dx = -Math.sin(ufo.angle) * patrolRadius;
+          const dy = Math.cos(ufo.angle * 2) * 2 * (patrolRadius * 0.5);
+          movementAngle = Math.atan2(dy, dx);
+        } else if (node.audioParams.ufoPatrolMode === 'square') {
+          ufo.angle += deltaTime * speed * 0.005;
+          const side = Math.floor((ufo.angle % (Math.PI * 2)) / (Math.PI * 0.5));
+          const progress = ((ufo.angle % (Math.PI * 2)) % (Math.PI * 0.5)) / (Math.PI * 0.5);
+          const r = patrolRadius * 0.7;
+          
+          switch(side) {
+            case 0: // Top side - moving right
+              newX = ufo.patrolCenter.x + (progress * 2 - 1) * r;
+              newY = ufo.patrolCenter.y - r;
+              movementAngle = 0; // Moving right
+              break;
+            case 1: // Right side - moving down
+              newX = ufo.patrolCenter.x + r;
+              newY = ufo.patrolCenter.y + (progress * 2 - 1) * r;
+              movementAngle = Math.PI / 2; // Moving down
+              break;
+            case 2: // Bottom side - moving left
+              newX = ufo.patrolCenter.x + (1 - progress * 2) * r;
+              newY = ufo.patrolCenter.y + r;
+              movementAngle = Math.PI; // Moving left
+              break;
+            case 3: // Left side - moving up
+              newX = ufo.patrolCenter.x - r;
+              newY = ufo.patrolCenter.y + (1 - progress * 2) * r;
+              movementAngle = -Math.PI / 2; // Moving up
+              break;
+          }
+        } else if (node.audioParams.ufoPatrolMode === 'zigzag') {
+          ufo.angle += deltaTime * speed * 0.01;
+          newX = ufo.patrolCenter.x + Math.cos(ufo.angle) * patrolRadius;
+          newY = ufo.patrolCenter.y + Math.sin(ufo.angle * 4) * (patrolRadius * 0.3);
+          // Calculate movement direction
+          const dx = -Math.sin(ufo.angle) * patrolRadius;
+          const dy = Math.cos(ufo.angle * 4) * 4 * (patrolRadius * 0.3);
+          movementAngle = Math.atan2(dy, dx);
+        } else if (node.audioParams.ufoPatrolMode === 'spiral') {
+          ufo.angle += deltaTime * speed * 0.008;
+          const spiralRadius = patrolRadius * (0.3 + 0.7 * Math.sin(ufo.angle * 0.2));
+          newX = ufo.patrolCenter.x + Math.cos(ufo.angle) * spiralRadius;
+          newY = ufo.patrolCenter.y + Math.sin(ufo.angle) * spiralRadius;
+          movementAngle = ufo.angle + Math.PI / 2; // Tangent to spiral
+        } else if (node.audioParams.ufoPatrolMode === 'random') {
+          if (!ufo.nextRandomMove || now > ufo.nextRandomMove) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * patrolRadius;
+            ufo.targetX = ufo.patrolCenter.x + Math.cos(angle) * distance;
+            ufo.targetY = ufo.patrolCenter.y + Math.sin(angle) * distance;
+            ufo.nextRandomMove = now + 2 + Math.random() * 3;
+          }
+          // Use smooth interpolation for random mode
+          const dx = ufo.targetX - node.x;
+          const dy = ufo.targetY - node.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > 5) {
+            const moveSpeed = speed * deltaTime * 60;
+            newX = node.x + (dx / distance) * moveSpeed;
+            newY = node.y + (dy / distance) * moveSpeed;
+            movementAngle = Math.atan2(dy, dx);
+          } else {
+            newX = node.x;
+            newY = node.y;
+            movementAngle = node.audioParams.rocketDirectionAngle - Math.PI / 2;
+            ufo.isFlying = false;
+          }
+        } else if (node.audioParams.ufoPatrolMode === 'hunt') {
+          // Aggressive hunting mode - use smooth interpolation
+          let nearestOrb = null;
+          let nearestDistance = Infinity;
+          
+          nodes.forEach(otherNode => {
+            if (otherNode !== node && otherNode.type !== "pulsar_ufo" && 
+                otherNode.type !== QUEEN_MIND_TYPE && otherNode.isEnabled) {
+              const orbDx = otherNode.x - node.x;
+              const orbDy = otherNode.y - node.y;
+              const orbDistance = Math.sqrt(orbDx * orbDx + orbDy * orbDy);
+              
+              if (orbDistance < nearestDistance) {
+                nearestDistance = orbDistance;
+                nearestOrb = otherNode;
+              }
+            }
+          });
+          
+          if (nearestOrb && nearestDistance < patrolRadius * 2) {
+            ufo.targetX = nearestOrb.x;
+            ufo.targetY = nearestOrb.y;
+          } else {
+            ufo.targetX = ufo.patrolCenter.x;
+            ufo.targetY = ufo.patrolCenter.y;
+          }
+          
+          const dx = ufo.targetX - node.x;
+          const dy = ufo.targetY - node.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > 5) {
+            const moveSpeed = speed * deltaTime * 60;
+            newX = node.x + (dx / distance) * moveSpeed;
+            newY = node.y + (dy / distance) * moveSpeed;
+            movementAngle = Math.atan2(dy, dx);
+          } else {
+            newX = node.x;
+            newY = node.y;
+            movementAngle = node.audioParams.rocketDirectionAngle - Math.PI / 2;
+            ufo.isFlying = false;
+          }
+        }
+        
+        // Apply new position and rotation
+        if (newX !== undefined && newY !== undefined) {
+          node.x = newX;
+          node.y = newY;
+          
+          // Update UFO rotation to face movement direction
+          if (movementAngle !== undefined) {
+            node.audioParams.rocketDirectionAngle = movementAngle + Math.PI / 2;
+          }
+        }
+        
+        // Handle tractor beam behavior
+        if (node.audioParams.ufoTractorBeamEnabled) {
+          // Initialize tractor beam if not present (for existing UFOs)
+          if (!ufo.tractorBeam) {
+            ufo.tractorBeam = {
+              active: false,
+              targetOrb: null,
+              grabTime: 0,
+              releaseTime: 0,
+              nextGrabCheck: 0
+            };
+          }
+          
+          const tractorBeam = ufo.tractorBeam;
+          const beamRange = node.audioParams.ufoTractorBeamRange || 200;
+          const grabChance = node.audioParams.ufoTractorBeamChance || 0.3;
+          
+          // Check if we should try to grab an orb
+          if (!tractorBeam.active && now > tractorBeam.nextGrabCheck) {
+            tractorBeam.nextGrabCheck = now + 1 + Math.random() * 3; // Check every 1-4 seconds
+            
+            if (Math.random() < grabChance) {
+              // Find nearby orbs to grab
+              const nearbyOrbs = nodes.filter(otherNode => {
+                if (otherNode === node || otherNode.type === "pulsar_ufo" || 
+                    otherNode.type === QUEEN_MIND_TYPE) return false;
+                
+                const dx = otherNode.x - node.x;
+                const dy = otherNode.y - node.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < beamRange;
+              });
+              
+              if (nearbyOrbs.length > 0) {
+                // Grab a random nearby orb
+                const targetOrb = nearbyOrbs[Math.floor(Math.random() * nearbyOrbs.length)];
+                tractorBeam.active = true;
+                tractorBeam.targetOrb = targetOrb;
+                tractorBeam.grabTime = now;
+                tractorBeam.releaseTime = now + 3 + Math.random() * 5; // Hold for 3-8 seconds
+                
+                // Store original position for restoration if needed
+                if (!targetOrb.originalPosition) {
+                  targetOrb.originalPosition = { x: targetOrb.x, y: targetOrb.y };
+                }
+              }
+            }
+          }
+          
+          // Handle active tractor beam
+          if (tractorBeam.active && tractorBeam.targetOrb) {
+            // Check if it's time to release
+            if (now > tractorBeam.releaseTime) {
+              tractorBeam.active = false;
+              tractorBeam.targetOrb.originalPosition = null;
+              tractorBeam.targetOrb = null;
+            } else {
+              // Drag the orb behind the UFO
+              const target = tractorBeam.targetOrb;
+              const followDistance = 80; // Distance behind UFO
+              
+              // Calculate position behind the UFO
+              const ufoDirection = node.audioParams.rocketDirectionAngle - Math.PI / 2;
+              const behindX = node.x - Math.cos(ufoDirection) * followDistance;
+              const behindY = node.y - Math.sin(ufoDirection) * followDistance;
+              
+              // Smoothly pull the orb toward that position
+              const dx = behindX - target.x;
+              const dy = behindY - target.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              
+              if (distance > 5) {
+                const pullSpeed = 3.0 * deltaTime * 60;
+                target.x += (dx / distance) * pullSpeed;
+                target.y += (dy / distance) * pullSpeed;
+              }
+            }
+          }
+        }
+        
+        // Handle shooting behavior
+        const shootInterval = (node.audioParams.ufoShootInterval || 2.0) * 1000;
+        if (now * 1000 - ufo.lastShotTime > shootInterval) {
+          // Find nearest orb to shoot at
+          let nearestOrb = null;
+          let nearestDistance = Infinity;
+          
+          nodes.forEach(otherNode => {
+            if (otherNode !== node && otherNode.type !== "pulsar_ufo" && 
+                otherNode.type !== QUEEN_MIND_TYPE && otherNode.isEnabled) {
+              const orbDx = otherNode.x - node.x;
+              const orbDy = otherNode.y - node.y;
+              const orbDistance = Math.sqrt(orbDx * orbDx + orbDy * orbDy);
+              
+              if (orbDistance < nearestDistance && orbDistance < 800) { // Max shooting range
+                nearestDistance = orbDistance;
+                nearestOrb = otherNode;
+              }
+            }
+          });
+          
+          if (nearestOrb) {
+            // Check if we should only shoot when hit is guaranteed
+            const accuracy = node.audioParams.ufoShootAccuracy || 0.8;
+            const onlyShootWhenHit = node.audioParams.ufoOnlyShootWhenHit || false;
+            const willHit = Math.random() < accuracy;
+            
+            // If "only shoot when hit" is enabled, don't shoot unless it's a guaranteed hit
+            if (onlyShootWhenHit && !willHit) {
+              return; // Skip this shot attempt
+            }
+            
+            // Proceed with the shot
+            ufo.currentTarget = nearestOrb;
+            ufo.lastShotTime = now * 1000;
+            
+            if (willHit) {
+              // Direct hit - trigger the target orb
+              triggerNodeEffect(nearestOrb);
+            } else {
+              // Miss - create visual effect but no audio trigger
+              // Store miss info for visual rendering
+              ufo.lastMissTarget = {
+                x: nearestOrb.x + (Math.random() - 0.5) * 100,
+                y: nearestOrb.y + (Math.random() - 0.5) * 100,
+                time: now
+              };
+            }
+            
+            // Store shot info for visual beam rendering
+            ufo.lastShot = {
+              targetX: nearestOrb.x,
+              targetY: nearestOrb.y,
+              time: now,
+              hit: willHit
+            };
+          }
+        }
+      }
+      
       if (
         node.isStartNode &&
         node.isEnabled &&
@@ -13770,7 +14113,7 @@ function drawNode(node) {
     borderColor = hslToRgba(nodeBaseHue, saturation * 0.8, lightness * 0.6, 0.9);
     accentColor = hslToRgba(nodeBaseHue, saturation * 0.9, lightness * 0.3, Math.min(0.95, baseAlpha));
     glowColor = borderColor;
-  } else if (node.type === "mind") {
+  } else if (node.type === "mind" || node.type === QUEEN_MIND_TYPE) {
     // Mind orbs respond to theme/scale changes like other orbs but with alien scary coloring
     const nodeBaseHue = (scaleBase.h + ((params?.scaleIndex || 0) % currentScale.notes.length) * HUE_STEP + 180) % 360; // Opposite side of color wheel for alien feel
     const lightness = scaleBase.l * (0.6 + node.size * 0.3); // Slightly darker for scary effect
@@ -16087,15 +16430,17 @@ function drawNode(node) {
     ctx.arc(px, py, r * 0.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-  } else if (node.type === "mind") {
-    // Draw Mind as a brain-like organic shape
+  } else if (node.type === "mind" || node.type === QUEEN_MIND_TYPE) {
+    // Draw Mind as a brain-like organic shape (Queens are bigger)
+    const sizeMultiplier = node.type === QUEEN_MIND_TYPE ? (node.audioParams?.queenSize || 1.8) : 1.0;
+    const effectiveRadius = r * sizeMultiplier;
     ctx.lineWidth = Math.max(0.8 / viewScale, baseLineWidth / viewScale);
     ctx.strokeStyle = borderColor;
     ctx.fillStyle = fillColor;
     
     // Draw main brain shape
     ctx.beginPath();
-    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.arc(node.x, node.y, effectiveRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     
@@ -16103,8 +16448,8 @@ function drawNode(node) {
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = Math.max(0.4 / viewScale, baseLineWidth * 0.5 / viewScale);
     ctx.beginPath();
-    ctx.moveTo(node.x, node.y - r);
-    ctx.lineTo(node.x, node.y + r);
+    ctx.moveTo(node.x, node.y - effectiveRadius);
+    ctx.lineTo(node.x, node.y + effectiveRadius);
     ctx.stroke();
     
     // Add neural dendrite-like extensions (Life generation points)
@@ -16113,10 +16458,10 @@ function drawNode(node) {
     ctx.lineWidth = Math.max(0.3 / viewScale, baseLineWidth * 0.3 / viewScale);
     for (let i = 0; i < 6; i++) {
       const angle = (Math.PI * 2 * i / 6) + Math.sin(time + i) * 0.2;
-      const startX = node.x + Math.cos(angle) * r * 0.7;
-      const startY = node.y + Math.sin(angle) * r * 0.7;
-      const endX = node.x + Math.cos(angle) * r * 1.3;
-      const endY = node.y + Math.sin(angle) * r * 1.3;
+      const startX = node.x + Math.cos(angle) * effectiveRadius * 0.7;
+      const startY = node.y + Math.sin(angle) * effectiveRadius * 0.7;
+      const endX = node.x + Math.cos(angle) * effectiveRadius * 1.3;
+      const endY = node.y + Math.sin(angle) * effectiveRadius * 1.3;
       
       ctx.beginPath();
       ctx.moveTo(startX, startY);
@@ -16126,8 +16471,113 @@ function drawNode(node) {
       // Add small neural nodes at the tips
       ctx.fillStyle = glowColor;
       ctx.beginPath();
-      ctx.arc(endX, endY, r * 0.15, 0, Math.PI * 2);
+      ctx.arc(endX, endY, effectiveRadius * 0.15, 0, Math.PI * 2);
       ctx.fill();
+    }
+    
+    // Add crown for Queen Minds
+    if (node.type === QUEEN_MIND_TYPE) {
+      ctx.fillStyle = '#FFD700'; // Gold crown
+      ctx.strokeStyle = '#B8860B'; // Dark gold outline
+      ctx.lineWidth = Math.max(0.5 / viewScale, baseLineWidth * 0.5 / viewScale);
+      
+      // Draw crown shape
+      const crownY = node.y - effectiveRadius * 1.4;
+      const crownWidth = effectiveRadius * 0.8;
+      const crownHeight = effectiveRadius * 0.3;
+      
+      ctx.beginPath();
+      // Crown base
+      ctx.moveTo(node.x - crownWidth/2, crownY + crownHeight);
+      ctx.lineTo(node.x + crownWidth/2, crownY + crownHeight);
+      
+      // Crown peaks (three peaks)
+      ctx.lineTo(node.x + crownWidth/3, crownY);
+      ctx.lineTo(node.x, crownY + crownHeight/2);
+      ctx.lineTo(node.x - crownWidth/3, crownY);
+      ctx.closePath();
+      
+      ctx.fill();
+      ctx.stroke();
+    }
+    
+    // Draw Queen Mind claws if enabled
+    if (node.type === QUEEN_MIND_TYPE && node.audioParams?.clawsEnabled && node.lifeSystem?.claws) {
+      ctx.save();
+      
+      node.lifeSystem.claws.forEach((claw, index) => {
+        // Update claw positions (this is also done in updateClaws, but we need current positions for drawing)
+        const time = Date.now() * 0.001;
+        const baseAngle = claw.angle + Math.sin(time * 0.5 + index) * 0.1;
+        const baseRadius = (node.audioParams.queenSize || 1.8) * 15;
+        claw.baseX = node.x + Math.cos(baseAngle) * baseRadius;
+        claw.baseY = node.y + Math.sin(baseAngle) * baseRadius;
+        
+        if (!claw.isAnimating) {
+          const tipAngle = baseAngle + Math.sin(time * 0.8 + index * 0.5) * 0.2;
+          const tipRadius = baseRadius + claw.baseLength + claw.tipLength;
+          claw.tipX = node.x + Math.cos(tipAngle) * tipRadius;
+          claw.tipY = node.y + Math.sin(tipAngle) * tipRadius;
+        }
+        
+        // Draw claw as two-segment limb
+        const clawIntensity = claw.isAnimating ? (0.5 + claw.pluckIntensity * 0.5) : 0.3;
+        const clawAlpha = Math.min(1.0, clawIntensity);
+        
+        // Claw color - darker, more sinister
+        const clawHue = (scaleBase.h + 180) % 360; // Opposite of theme color
+        ctx.strokeStyle = hslToRgba(clawHue, 60, 20, clawAlpha);
+        ctx.lineWidth = Math.max(2.0 / viewScale, (1.5 + clawIntensity) / viewScale);
+        ctx.lineCap = "round";
+        
+        // Calculate middle joint position
+        const midRatio = 0.6; // 60% along the claw
+        const midX = claw.baseX + (claw.tipX - claw.baseX) * midRatio;
+        const midY = claw.baseY + (claw.tipY - claw.baseY) * midRatio;
+        
+        // Add some organic bend to the joint
+        const bendOffset = 8;
+        const perpAngle = Math.atan2(claw.tipY - claw.baseY, claw.tipX - claw.baseX) + Math.PI / 2;
+        const bentMidX = midX + Math.cos(perpAngle) * bendOffset * (claw.isAnimating ? 0.5 : 1);
+        const bentMidY = midY + Math.sin(perpAngle) * bendOffset * (claw.isAnimating ? 0.5 : 1);
+        
+        // Draw base segment
+        ctx.beginPath();
+        ctx.moveTo(claw.baseX, claw.baseY);
+        ctx.lineTo(bentMidX, bentMidY);
+        ctx.stroke();
+        
+        // Draw tip segment
+        ctx.beginPath();
+        ctx.moveTo(bentMidX, bentMidY);
+        ctx.lineTo(claw.tipX, claw.tipY);
+        ctx.stroke();
+        
+        // Draw claw tip (sharp point)
+        if (claw.isAnimating) {
+          // Glowing tip during plucking
+          ctx.fillStyle = hslToRgba(clawHue, 80, 60, clawAlpha * 0.8);
+          ctx.shadowColor = hslToRgba(clawHue, 80, 60, 0.6);
+          ctx.shadowBlur = 4 / viewScale;
+        } else {
+          ctx.fillStyle = hslToRgba(clawHue, 40, 30, clawAlpha);
+          ctx.shadowBlur = 0;
+        }
+        
+        ctx.beginPath();
+        const tipSize = (2 + clawIntensity * 2) / viewScale;
+        ctx.arc(claw.tipX, claw.tipY, tipSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        // Draw joint
+        ctx.fillStyle = hslToRgba(clawHue, 30, 25, clawAlpha * 0.8);
+        ctx.beginPath();
+        ctx.arc(bentMidX, bentMidY, (1.5 / viewScale), 0, Math.PI * 2);
+        ctx.fill();
+      });
+      
+      ctx.restore();
     }
     
     // Reset fill style for next drawings
@@ -16567,6 +17017,159 @@ function drawNode(node) {
         ctx.lineWidth = Math.max(0.5 / viewScale, 2 / viewScale);
         ctx.stroke();
       }
+      
+      // Draw UFO laser beams and effects
+      if (node.ufoSystem && node.audioParams.ufoFlying) {
+        const ufo = node.ufoSystem;
+        
+        // Draw laser beam if recently shot
+        if (ufo.lastShot && (now - ufo.lastShot.time) < 0.3) {
+          const beamAge = (now - ufo.lastShot.time) / 0.3;
+          const beamAlpha = Math.max(0, 1 - beamAge);
+          
+          ctx.save();
+          ctx.globalAlpha = beamAlpha;
+          
+          // Laser beam color - red for hit, orange for miss
+          const beamColor = ufo.lastShot.hit ? 
+            `rgba(255, 100, 100, ${beamAlpha})` : 
+            `rgba(255, 200, 100, ${beamAlpha})`;
+          
+          ctx.strokeStyle = beamColor;
+          ctx.lineWidth = Math.max(2 / viewScale, 3 / viewScale);
+          ctx.beginPath();
+          ctx.moveTo(node.x, node.y);
+          ctx.lineTo(ufo.lastShot.targetX, ufo.lastShot.targetY);
+          ctx.stroke();
+          
+          // Add glow effect
+          ctx.shadowColor = beamColor;
+          ctx.shadowBlur = 10 / viewScale;
+          ctx.stroke();
+          
+          ctx.restore();
+        }
+        
+        // Draw tractor beam if active
+        if (ufo.tractorBeam && ufo.tractorBeam.active && ufo.tractorBeam.targetOrb) {
+          const target = ufo.tractorBeam.targetOrb;
+          const beamAge = (now - ufo.tractorBeam.grabTime);
+          const beamAlpha = Math.min(0.7, beamAge * 0.5); // Fade in over 1.4 seconds
+          
+          ctx.save();
+          ctx.globalAlpha = beamAlpha;
+          
+          // Tractor beam - blue/cyan color
+          ctx.strokeStyle = `rgba(0, 255, 255, ${beamAlpha})`;
+          ctx.lineWidth = Math.max(3 / viewScale, 5 / viewScale);
+          
+          // Main beam line
+          ctx.beginPath();
+          ctx.moveTo(node.x, node.y);
+          ctx.lineTo(target.x, target.y);
+          ctx.stroke();
+          
+          // Add animated "energy particles" along the beam
+          const distance = Math.sqrt((target.x - node.x) ** 2 + (target.y - node.y) ** 2);
+          const particleCount = Math.min(8, Math.floor(distance / 30));
+          
+          for (let i = 0; i < particleCount; i++) {
+            const progress = (i / particleCount) + ((now * 2) % 1); // Animated movement
+            if (progress > 1) continue;
+            
+            const px = node.x + (target.x - node.x) * progress;
+            const py = node.y + (target.y - node.y) * progress;
+            
+            ctx.beginPath();
+            ctx.arc(px, py, Math.max(1 / viewScale, 2 / viewScale), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(100, 255, 255, ${beamAlpha})`;
+            ctx.fill();
+          }
+          
+          // Glow effect around target orb
+          ctx.shadowColor = "rgba(0, 255, 255, 0.8)";
+          ctx.shadowBlur = 15 / viewScale;
+          ctx.strokeStyle = `rgba(0, 255, 255, ${beamAlpha * 0.5})`;
+          ctx.lineWidth = Math.max(2 / viewScale, 3 / viewScale);
+          ctx.beginPath();
+          ctx.arc(target.x, target.y, 25 / viewScale, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          ctx.restore();
+        }
+        
+        // Draw movement trail
+        if (ufo.isFlying) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(100, 200, 255, 0.3)";
+          ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, outerR * 1.2, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+        
+        // Draw patrol path visualization if selected
+        if (isSelectedAndOutlineNeeded) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(255, 255, 0, 0.3)";
+          ctx.lineWidth = Math.max(1 / viewScale, 1 / viewScale);
+          ctx.setLineDash([5, 5]);
+          
+          const radius = node.audioParams.ufoPatrolRadius || 300;
+          
+          if (node.audioParams.ufoPatrolMode === 'circle') {
+            ctx.beginPath();
+            ctx.arc(ufo.patrolCenter.x, ufo.patrolCenter.y, radius, 0, Math.PI * 2);
+            ctx.stroke();
+          } else if (node.audioParams.ufoPatrolMode === 'figure8') {
+            // Draw figure-8 path
+            ctx.beginPath();
+            for (let t = 0; t <= Math.PI * 2; t += 0.1) {
+              const x = ufo.patrolCenter.x + Math.cos(t) * radius;
+              const y = ufo.patrolCenter.y + Math.sin(t * 2) * (radius * 0.5);
+              if (t === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+          } else if (node.audioParams.ufoPatrolMode === 'square') {
+            // Draw square path
+            const r = radius * 0.7;
+            ctx.beginPath();
+            ctx.rect(ufo.patrolCenter.x - r, ufo.patrolCenter.y - r, r * 2, r * 2);
+            ctx.stroke();
+          } else if (node.audioParams.ufoPatrolMode === 'zigzag') {
+            // Draw zigzag path
+            ctx.beginPath();
+            for (let t = 0; t <= Math.PI * 2; t += 0.1) {
+              const x = ufo.patrolCenter.x + Math.cos(t) * radius;
+              const y = ufo.patrolCenter.y + Math.sin(t * 4) * (radius * 0.3);
+              if (t === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+          } else if (node.audioParams.ufoPatrolMode === 'spiral') {
+            // Draw spiral path
+            ctx.beginPath();
+            for (let t = 0; t <= Math.PI * 4; t += 0.2) {
+              const spiralRadius = radius * (0.3 + 0.7 * Math.sin(t * 0.2));
+              const x = ufo.patrolCenter.x + Math.cos(t) * spiralRadius;
+              const y = ufo.patrolCenter.y + Math.sin(t) * spiralRadius;
+              if (t === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+          } else if (node.audioParams.ufoPatrolMode === 'hunt') {
+            // Draw hunt range circle
+            ctx.beginPath();
+            ctx.arc(ufo.patrolCenter.x, ufo.patrolCenter.y, radius * 2, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+      }
     } else if (node.type === "pulsar_manual") {
       // Render Manual Pulsar as a pressable button
       const outerRadius = outerR;
@@ -16862,6 +17465,21 @@ function drawNode(node) {
     } else {
       secondLineText = `${dreamDepth}/${consciousnessSpan} Pattern`;
     }
+  } else if (node.type === QUEEN_MIND_TYPE) {
+    labelText = "👑 Queen Mind";
+    const hiveCount = node.lifeSystem ? node.lifeSystem.hiveMinds.length : 0;
+    if (hiveCount > 0) {
+      labelText += ` (${hiveCount} enslaved)`;
+    }
+    const veinCount = node.lifeSystem ? node.lifeSystem.veins.length : 0;
+    const dreamDepth = params.dreamDepth || 4;
+    const consciousnessSpan = params.consciousnessSpan || 16;
+    
+    if (veinCount > 0) {
+      secondLineText = `${dreamDepth}/${consciousnessSpan} → ${veinCount} Vein${veinCount === 1 ? '' : 's'}`;
+    } else {
+      secondLineText = `${dreamDepth}/${consciousnessSpan} Pattern`;
+    }
   } else if (node.type === ALIEN_ORB_TYPE) {
     labelText = getNoteNameFromScaleIndex(
       currentScale,
@@ -17106,10 +17724,15 @@ function drawTemporaryConnection() {
     let snapTarget = null;
     
     // Smart vein preview - show which orb will be connected
-    if (connectionTypeToAdd === "vein" && connectingNode.type === "mind") {
+    if (connectionTypeToAdd === "vein" && (connectingNode.type === "mind" || connectingNode.type === QUEEN_MIND_TYPE)) {
       const VEIN_SNAP_DISTANCE = 120; // pixels
-      const compatibleTypes = ["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, 
+      let compatibleTypes = ["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, 
                                FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE];
+      
+      // Queen Minds can also connect to regular Mind orbs
+      if (connectingNode.type === QUEEN_MIND_TYPE) {
+        compatibleTypes.push("mind");
+      }
       
       let closestOrb = null;
       let closestDistance = VEIN_SNAP_DISTANCE;
@@ -20285,10 +20908,15 @@ function handleMouseUp(event) {
         let targetNode = nodeUnderCursorOnUp;
         
         // Smart connection: if no direct node under cursor, find nearby compatible orb
-        if (!targetNode && connectingNode.type === "mind") {
+        if (!targetNode && (connectingNode.type === "mind" || connectingNode.type === QUEEN_MIND_TYPE)) {
           const VEIN_SNAP_DISTANCE = 120; // pixels
-          const compatibleTypes = ["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, 
+          let compatibleTypes = ["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, 
                                    FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE];
+          
+          // Queen Minds can also connect to regular Mind orbs
+          if (connectingNode.type === QUEEN_MIND_TYPE) {
+            compatibleTypes.push("mind");
+          }
           
           let closestOrb = null;
           let closestDistance = VEIN_SNAP_DISTANCE;
@@ -20328,6 +20956,32 @@ function handleMouseUp(event) {
             createParticles(targetNode.x, targetNode.y, 25);
             
             stateWasChanged = true;
+          } else if (connectingNode.type === QUEEN_MIND_TYPE && targetNode.type === "mind") {
+            // Queen Mind enslaves regular Mind
+            if (typeof connectingNode.addVein !== 'function') {
+              console.error('Queen Mind node missing addVein method - reinitializing...', connectingNode);
+              
+              // Ensure Queen Mind is properly initialized with createMindOrb
+              const audioNodes = createMindOrb(connectingNode);
+              
+              if (audioNodes) {
+                connectingNode.audioNodes = audioNodes;
+                updateNodeAudioParams(connectingNode);
+              }
+            }
+            
+            if (typeof connectingNode.addVein === 'function') {
+              const vein = connectingNode.addVein(targetNode);
+              
+              // Hive membership will be handled automatically by discoverHiveMinds based on vein connections
+              
+              // Enhanced visual feedback for enslavement
+              createParticles(targetNode.x, targetNode.y, 40, '#FFD700'); // Gold particles
+              
+              stateWasChanged = true;
+            } else {
+              console.error('Failed to initialize Queen Mind addVein method');
+            }
           } else if (targetNode.type === "mind" && 
                      (["sound", ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE,
                       RESONAUTER_TYPE, RADIO_ORB_TYPE].includes(connectingNode.type) ||
@@ -21841,6 +22495,11 @@ function resetSideToolbars() {
   removeNoteSelector();
   editPanelContent.innerHTML = "";
 }
+
+// Global function for closing all side panels (used by sideToolbar.js)
+window.closeAllSidePanels = function() {
+  resetSideToolbars();
+};
 
 function setActiveTool(toolName) {
     try { if (globalThis.DEBUG_PATCH_EFFECTS) console.log('[MIST-UI] setActiveTool', toolName); } catch {}
@@ -23882,7 +24541,7 @@ function populateEditPanel() {
 
                 fragment.appendChild(section);
 
-            } else if (node && node.type === 'mind') {
+            } else if (node && (node.type === 'mind' || node.type === QUEEN_MIND_TYPE)) {
                 createMindOrbParametersForEditPanel(selectedArray, fragment);
 
             } else if (node && node.type === TONNETZ_TYPE) {
@@ -25193,6 +25852,285 @@ function populateEditPanel() {
                             },
                         );
                         rocketSubSection.appendChild(gravitySliderContainer);
+                        
+                        // UFO-specific controls
+                        if (node.type === "pulsar_ufo") {
+                            const ufoSubSection = document.createElement("div");
+                            ufoSubSection.classList.add("panel-section");
+                            const ufoTitle = document.createElement("p");
+                            ufoTitle.innerHTML = "<strong>UFO Settings:</strong>";
+                            ufoSubSection.appendChild(ufoTitle);
+                            
+                            // UFO Flying toggle
+                            const flyingContainer = document.createElement("div");
+                            flyingContainer.classList.add("checkbox-container");
+                            const flyingLabel = document.createElement("label");
+                            flyingLabel.htmlFor = `edit-ufo-flying-${node.id}`;
+                            flyingLabel.textContent = "Enable Flying";
+                            const flyingCheckbox = document.createElement("input");
+                            flyingCheckbox.type = "checkbox";
+                            flyingCheckbox.id = `edit-ufo-flying-${node.id}`;
+                            flyingCheckbox.checked = node.audioParams.ufoFlying || false;
+                            flyingCheckbox.addEventListener("change", (e) => {
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoFlying = e.target.checked;
+                                    }
+                                });
+                                saveState();
+                            });
+                            flyingContainer.appendChild(flyingLabel);
+                            flyingContainer.appendChild(flyingCheckbox);
+                            ufoSubSection.appendChild(flyingContainer);
+                            
+                            // UFO Sync to Global toggle
+                            const ufoSyncContainer = document.createElement("div");
+                            ufoSyncContainer.classList.add("checkbox-container");
+                            const ufoSyncLabel = document.createElement("label");
+                            ufoSyncLabel.htmlFor = `edit-ufo-sync-${node.id}`;
+                            ufoSyncLabel.textContent = "Sync Speed to Global Tempo";
+                            const ufoSyncCheckbox = document.createElement("input");
+                            ufoSyncCheckbox.type = "checkbox";
+                            ufoSyncCheckbox.id = `edit-ufo-sync-${node.id}`;
+                            ufoSyncCheckbox.checked = node.audioParams.ufoSyncToGlobal || false;
+                            ufoSyncCheckbox.addEventListener("change", (e) => {
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoSyncToGlobal = e.target.checked;
+                                    }
+                                });
+                                saveState();
+                            });
+                            ufoSyncContainer.appendChild(ufoSyncLabel);
+                            ufoSyncContainer.appendChild(ufoSyncCheckbox);
+                            ufoSubSection.appendChild(ufoSyncContainer);
+                            
+                            // UFO Sync Subdivision dropdown
+                            const ufoSyncSubdivisionContainer = document.createElement("div");
+                            ufoSyncSubdivisionContainer.classList.add("dropdown-container");
+                            const ufoSyncSubdivisionLabel = document.createElement("label");
+                            ufoSyncSubdivisionLabel.htmlFor = `edit-ufo-sync-subdivision-${node.id}`;
+                            ufoSyncSubdivisionLabel.textContent = "Speed Subdivision:";
+                            const ufoSyncSubdivisionSelect = document.createElement("select");
+                            ufoSyncSubdivisionSelect.id = `edit-ufo-sync-subdivision-${node.id}`;
+                            
+                            // Add subdivision options
+                            if (subdivisionOptions && subdivisionOptions.length > 0) {
+                                subdivisionOptions.forEach((subdiv, index) => {
+                                    const option = document.createElement("option");
+                                    option.value = index.toString();
+                                    option.textContent = subdiv.label;
+                                    if (index === (node.audioParams.ufoSyncSubdivisionIndex ?? 2)) {
+                                        option.selected = true;
+                                    }
+                                    ufoSyncSubdivisionSelect.appendChild(option);
+                                });
+                            }
+                            
+                            ufoSyncSubdivisionSelect.addEventListener("change", (e) => {
+                                const newIndex = parseInt(e.target.value);
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoSyncSubdivisionIndex = newIndex;
+                                    }
+                                });
+                                saveState();
+                            });
+                            ufoSyncSubdivisionContainer.appendChild(ufoSyncSubdivisionLabel);
+                            ufoSyncSubdivisionContainer.appendChild(ufoSyncSubdivisionSelect);
+                            ufoSubSection.appendChild(ufoSyncSubdivisionContainer);
+                            
+                            // UFO Speed slider
+                            let currentUfoSpeedVal = parseFloat((node.audioParams.ufoSpeed || 5.0).toFixed(1));
+                            const ufoSpeedSliderContainer = createSlider(
+                                `edit-ufo-speed-${node.id}`, `UFO Speed (${currentUfoSpeedVal.toFixed(1)}):`, 0.1, 50.0, 0.1, currentUfoSpeedVal,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newSpeed = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoSpeed = newSpeed;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `UFO Speed (${newSpeed.toFixed(1)}):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(ufoSpeedSliderContainer);
+                            
+                            // Patrol Radius slider
+                            let currentPatrolRadiusVal = parseFloat((node.audioParams.ufoPatrolRadius || 300).toFixed(0));
+                            const patrolRadiusSliderContainer = createSlider(
+                                `edit-ufo-patrol-radius-${node.id}`, `Patrol Radius (${currentPatrolRadiusVal.toFixed(0)}):`, 50, 800, 10, currentPatrolRadiusVal,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newRadius = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoPatrolRadius = newRadius;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Patrol Radius (${newRadius.toFixed(0)}):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(patrolRadiusSliderContainer);
+                            
+                            // Patrol Mode dropdown
+                            const patrolModeContainer = document.createElement("div");
+                            patrolModeContainer.classList.add("dropdown-container");
+                            const patrolModeLabel = document.createElement("label");
+                            patrolModeLabel.htmlFor = `edit-ufo-patrol-mode-${node.id}`;
+                            patrolModeLabel.textContent = "Patrol Mode:";
+                            const patrolModeSelect = document.createElement("select");
+                            patrolModeSelect.id = `edit-ufo-patrol-mode-${node.id}`;
+                            const patrolModes = ['circle', 'figure8', 'square', 'zigzag', 'spiral', 'random', 'hunt'];
+                            patrolModes.forEach(mode => {
+                                const option = document.createElement("option");
+                                option.value = mode;
+                                option.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+                                if (mode === (node.audioParams.ufoPatrolMode || 'circle')) {
+                                    option.selected = true;
+                                }
+                                patrolModeSelect.appendChild(option);
+                            });
+                            patrolModeSelect.addEventListener("change", (e) => {
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoPatrolMode = e.target.value;
+                                    }
+                                });
+                                saveState();
+                            });
+                            patrolModeContainer.appendChild(patrolModeLabel);
+                            patrolModeContainer.appendChild(patrolModeSelect);
+                            ufoSubSection.appendChild(patrolModeContainer);
+                            
+                            // Shoot Accuracy slider
+                            let currentAccuracyVal = parseFloat((node.audioParams.ufoShootAccuracy || 0.8).toFixed(2));
+                            const accuracySliderContainer = createSlider(
+                                `edit-ufo-accuracy-${node.id}`, `Shoot Accuracy (${(currentAccuracyVal * 100).toFixed(0)}%):`, 0.0, 1.0, 0.01, currentAccuracyVal,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newAccuracy = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoShootAccuracy = newAccuracy;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Shoot Accuracy (${(newAccuracy * 100).toFixed(0)}%):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(accuracySliderContainer);
+                            
+                            // Shoot Interval slider
+                            let currentIntervalVal = parseFloat((node.audioParams.ufoShootInterval || 2.0).toFixed(1));
+                            const intervalSliderContainer = createSlider(
+                                `edit-ufo-interval-${node.id}`, `Shoot Interval (${currentIntervalVal.toFixed(1)}s):`, 0.5, 10.0, 0.1, currentIntervalVal,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newInterval = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoShootInterval = newInterval;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Shoot Interval (${newInterval.toFixed(1)}s):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(intervalSliderContainer);
+                            
+                            // Only Shoot When Hit toggle
+                            const onlyShootWhenHitContainer = document.createElement("div");
+                            onlyShootWhenHitContainer.classList.add("checkbox-container");
+                            const onlyShootWhenHitLabel = document.createElement("label");
+                            onlyShootWhenHitLabel.htmlFor = `edit-ufo-only-shoot-hit-${node.id}`;
+                            onlyShootWhenHitLabel.textContent = "Only Shoot When Hit Guaranteed";
+                            const onlyShootWhenHitCheckbox = document.createElement("input");
+                            onlyShootWhenHitCheckbox.type = "checkbox";
+                            onlyShootWhenHitCheckbox.id = `edit-ufo-only-shoot-hit-${node.id}`;
+                            onlyShootWhenHitCheckbox.checked = node.audioParams.ufoOnlyShootWhenHit || false;
+                            onlyShootWhenHitCheckbox.addEventListener("change", (e) => {
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoOnlyShootWhenHit = e.target.checked;
+                                    }
+                                });
+                                saveState();
+                            });
+                            onlyShootWhenHitContainer.appendChild(onlyShootWhenHitLabel);
+                            onlyShootWhenHitContainer.appendChild(onlyShootWhenHitCheckbox);
+                            ufoSubSection.appendChild(onlyShootWhenHitContainer);
+                            
+                            // Tractor Beam toggle
+                            const tractorBeamContainer = document.createElement("div");
+                            tractorBeamContainer.classList.add("checkbox-container");
+                            const tractorBeamLabel = document.createElement("label");
+                            tractorBeamLabel.htmlFor = `edit-ufo-tractor-beam-${node.id}`;
+                            tractorBeamLabel.textContent = "Enable Tractor Beam";
+                            const tractorBeamCheckbox = document.createElement("input");
+                            tractorBeamCheckbox.type = "checkbox";
+                            tractorBeamCheckbox.id = `edit-ufo-tractor-beam-${node.id}`;
+                            tractorBeamCheckbox.checked = node.audioParams.ufoTractorBeamEnabled || false;
+                            tractorBeamCheckbox.addEventListener("change", (e) => {
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoTractorBeamEnabled = e.target.checked;
+                                    }
+                                });
+                                saveState();
+                            });
+                            tractorBeamContainer.appendChild(tractorBeamLabel);
+                            tractorBeamContainer.appendChild(tractorBeamCheckbox);
+                            ufoSubSection.appendChild(tractorBeamContainer);
+                            
+                            // Tractor Beam Range slider
+                            let currentBeamRangeVal = parseFloat((node.audioParams.ufoTractorBeamRange || 200).toFixed(0));
+                            const beamRangeSliderContainer = createSlider(
+                                `edit-ufo-beam-range-${node.id}`, `Tractor Beam Range (${currentBeamRangeVal.toFixed(0)}):`, 50, 500, 10, currentBeamRangeVal,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newRange = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoTractorBeamRange = newRange;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Tractor Beam Range (${newRange.toFixed(0)}):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(beamRangeSliderContainer);
+                            
+                            // Tractor Beam Chance slider
+                            let currentBeamChanceVal = parseFloat((node.audioParams.ufoTractorBeamChance || 0.3).toFixed(2));
+                            const beamChanceSliderContainer = createSlider(
+                                `edit-ufo-beam-chance-${node.id}`, `Grab Chance (${(currentBeamChanceVal * 100).toFixed(0)}%):`, 0.0, 1.0, 0.01, currentBeamChanceVal,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newChance = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoTractorBeamChance = newChance;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Grab Chance (${(newChance * 100).toFixed(0)}%):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(beamChanceSliderContainer);
+                            
+                            rocketSubSection.appendChild(ufoSubSection);
+                        }
+                        
                         currentSection.appendChild(rocketSubSection);
                     }
 
@@ -26459,6 +27397,11 @@ function populateSymphioseMenu() {
       handler: () => setupAddTool(null, "mind", false),
     },
     {
+      icon: "👑",
+      label: "Queen Mind",
+      handler: () => setupAddTool(null, QUEEN_MIND_TYPE, false),
+    },
+    {
       icon: "🌿",
       label: "Vein Tool",
       handler: () => {
@@ -26973,7 +27916,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     mindSection.classList.add('panel-section');
     
     const node = findNodeById(selectedArray[0].id);
-    if (!node || node.type !== 'mind') return;
+    if (!node || (node.type !== 'mind' && node.type !== QUEEN_MIND_TYPE)) return;
     
     // Dream Depth (euclidean steps)
     const dreamDepthLabel = document.createElement('label');
@@ -26991,7 +27934,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     dreamDepthSlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.dreamDepth = parseInt(e.target.value);
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
@@ -27018,7 +27961,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     orbitSlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.consciousnessSpan = parseInt(e.target.value);
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
@@ -27046,7 +27989,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     velocitySlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.thoughtSpeed = parseFloat(e.target.value);
                 // Force restart with new parameters if running
                 if (n.stopLifeGeneration && n.startLifeGeneration && n.lifeSystem.isGenerating) {
@@ -27077,7 +28020,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     shiftSlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.memoryEcho = parseInt(e.target.value);
             }
         });
@@ -27104,7 +28047,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     essenceSlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.focusIntensity = parseFloat(e.target.value);
             }
         });
@@ -27130,7 +28073,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     fractalSlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.spellComplexity = parseInt(e.target.value);
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
@@ -27157,7 +28100,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     dreamSlider.addEventListener('input', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.imaginationSeed = parseInt(e.target.value);
                 if (n.updateSequencePatterns) n.updateSequencePatterns();
             }
@@ -27278,7 +28221,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
     aliveCheckbox.addEventListener('change', (e) => {
         selectedArray.forEach(elData => {
             const n = findNodeById(elData.id);
-            if (n && n.type === 'mind' && n.audioParams) {
+            if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                 n.audioParams.isAlive = e.target.checked;
                 
                 // Start/stop alive behavior
@@ -27316,7 +28259,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
         radiusSlider.addEventListener('input', (e) => {
             selectedArray.forEach(elData => {
                 const n = findNodeById(elData.id);
-                if (n && n.type === 'mind' && n.audioParams) {
+                if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                     n.audioParams.searchRadius = parseInt(e.target.value);
                 }
             });
@@ -27343,7 +28286,7 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
         maxVeinsSlider.addEventListener('input', (e) => {
             selectedArray.forEach(elData => {
                 const n = findNodeById(elData.id);
-                if (n && n.type === 'mind' && n.audioParams) {
+                if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
                     n.audioParams.maxFloatingVeins = parseInt(e.target.value);
                 }
             });
@@ -27387,6 +28330,254 @@ function createMindOrbParametersForEditPanel(selectedArray, fragment) {
         <small style="opacity: 0.7;">${isAlive ? 'Living mind actively seeks new connections' : 'Each vein pulses with its own celestial rhythm'}</small>
     `;
     mindSection.appendChild(veinStatus);
+    
+    // Add Queen Mind specific parameters
+    if (node.type === QUEEN_MIND_TYPE) {
+        // Hive Radius parameter
+        const hiveRadiusLabel = document.createElement('label');
+        hiveRadiusLabel.textContent = `Hive Radius: ${node.audioParams.hiveRadius || 500}px`;
+        hiveRadiusLabel.style.display = 'block';
+        hiveRadiusLabel.style.marginTop = '15px';
+        hiveRadiusLabel.style.marginBottom = '5px';
+        hiveRadiusLabel.style.fontWeight = 'bold';
+        hiveRadiusLabel.style.color = '#FFD700'; // Gold for Queen parameters
+        mindSection.appendChild(hiveRadiusLabel);
+        
+        const hiveRadiusSlider = document.createElement('input');
+        hiveRadiusSlider.type = 'range';
+        hiveRadiusSlider.min = '200';
+        hiveRadiusSlider.max = '1000';
+        hiveRadiusSlider.step = '50';
+        hiveRadiusSlider.value = node.audioParams.hiveRadius || 500;
+        hiveRadiusSlider.addEventListener('input', (e) => {
+            selectedArray.forEach(elData => {
+                const n = findNodeById(elData.id);
+                if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
+                    n.audioParams.hiveRadius = parseInt(e.target.value);
+                }
+            });
+            hiveRadiusLabel.textContent = `Hive Radius: ${e.target.value}px`;
+            saveState();
+        });
+        mindSection.appendChild(hiveRadiusSlider);
+        
+        // Command Intensity parameter
+        const commandIntensityLabel = document.createElement('label');
+        commandIntensityLabel.textContent = `Command Intensity: ${node.audioParams.commandIntensity || 1.5}`;
+        commandIntensityLabel.style.display = 'block';
+        commandIntensityLabel.style.marginTop = '10px';
+        commandIntensityLabel.style.marginBottom = '5px';
+        commandIntensityLabel.style.fontWeight = 'bold';
+        commandIntensityLabel.style.color = '#FFD700'; // Gold for Queen parameters
+        mindSection.appendChild(commandIntensityLabel);
+        
+        const commandIntensitySlider = document.createElement('input');
+        commandIntensitySlider.type = 'range';
+        commandIntensitySlider.min = '0.5';
+        commandIntensitySlider.max = '3.0';
+        commandIntensitySlider.step = '0.1';
+        commandIntensitySlider.value = node.audioParams.commandIntensity || 1.5;
+        commandIntensitySlider.addEventListener('input', (e) => {
+            selectedArray.forEach(elData => {
+                const n = findNodeById(elData.id);
+                if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams) {
+                    n.audioParams.commandIntensity = parseFloat(e.target.value);
+                }
+            });
+            commandIntensityLabel.textContent = `Command Intensity: ${e.target.value}`;
+            saveState();
+        });
+        mindSection.appendChild(commandIntensitySlider);
+        
+        // Hive Formation selector
+        const formationLabel = document.createElement('label');
+        formationLabel.textContent = 'Hive Formation:';
+        formationLabel.style.display = 'block';
+        formationLabel.style.marginTop = '10px';
+        formationLabel.style.marginBottom = '5px';
+        formationLabel.style.fontWeight = 'bold';
+        formationLabel.style.color = '#FFD700'; // Gold for Queen parameters
+        mindSection.appendChild(formationLabel);
+        
+        const formationSelect = document.createElement('select');
+        formationSelect.style.width = '100%';
+        formationSelect.style.marginBottom = '10px';
+        ['circle', 'line', 'swarm', 'spiral', 'grid', 'wedge', 'star', 'orbit', 'diamond'].forEach(formation => {
+            const option = document.createElement('option');
+            option.value = formation;
+            option.textContent = formation.charAt(0).toUpperCase() + formation.slice(1);
+            option.selected = (node.audioParams.hiveFormation || 'circle') === formation;
+            formationSelect.appendChild(option);
+        });
+        formationSelect.addEventListener('change', (e) => {
+            selectedArray.forEach(elData => {
+                const n = findNodeById(elData.id);
+                if (n && (n.type === 'mind' || n.type === QUEEN_MIND_TYPE) && n.audioParams && n.lifeSystem) {
+                    n.audioParams.hiveFormation = e.target.value;
+                    n.lifeSystem.currentFormation = e.target.value;
+                }
+            });
+            saveState();
+        });
+        mindSection.appendChild(formationSelect);
+        
+        // Queen Mind Claw System Controls
+        const clawSection = document.createElement('div');
+        clawSection.style.marginTop = '15px';
+        clawSection.style.padding = '10px';
+        clawSection.style.backgroundColor = 'rgba(139, 69, 19, 0.1)'; // Dark brown background
+        clawSection.style.borderRadius = '6px';
+        clawSection.style.border = '1px solid rgba(139, 69, 19, 0.3)';
+        
+        const clawTitle = document.createElement('h4');
+        clawTitle.textContent = '🦀 Queen Claw System';
+        clawTitle.style.margin = '0 0 10px 0';
+        clawTitle.style.color = '#8B4513';
+        clawTitle.style.fontSize = '14px';
+        clawSection.appendChild(clawTitle);
+        
+        // Claws enabled toggle
+        const clawEnabledLabel = document.createElement('label');
+        clawEnabledLabel.innerHTML = `
+            <input type="checkbox" ${node.audioParams.clawsEnabled ? 'checked' : ''} style="margin-right: 8px;">
+            Enable Claws (Guitar String Mode)
+        `;
+        clawEnabledLabel.style.display = 'block';
+        clawEnabledLabel.style.marginBottom = '10px';
+        clawEnabledLabel.style.fontSize = '12px';
+        clawEnabledLabel.style.color = '#8B4513';
+        clawEnabledLabel.addEventListener('change', (e) => {
+            selectedArray.forEach(elData => {
+                const n = findNodeById(elData.id);
+                if (n && n.type === QUEEN_MIND_TYPE && n.audioParams) {
+                    const wasEnabled = n.audioParams.clawsEnabled;
+                    n.audioParams.clawsEnabled = e.target.checked;
+                    
+                    if (e.target.checked && !wasEnabled && n.lifeSystem) {
+                        // Initialize claws when enabled
+                        if (n.initializeClaws) n.initializeClaws();
+                        
+                        // Wait for audio nodes to be ready, then create string oscillators
+                        setTimeout(() => {
+                            if (n.audioNodes && n.lifeSystem.veins) {
+                                n.lifeSystem.veins.forEach(vein => {
+                                    if (n.createStringOscillator && vein.targetNode) {
+                                        n.createStringOscillator(vein.id, vein);
+                                    }
+                                });
+                            }
+                        }, 100); // Small delay to ensure audio nodes are ready
+                    } else if (!e.target.checked && wasEnabled && n.lifeSystem) {
+                        // Clean up string oscillators when disabled
+                        n.lifeSystem.stringOscillators.forEach((stringData, veinId) => {
+                            try {
+                                stringData.oscillator.stop();
+                                stringData.oscillator.disconnect();
+                                stringData.filter.disconnect();
+                            } catch (err) {}
+                        });
+                        n.lifeSystem.stringOscillators.clear();
+                        n.lifeSystem.stringGains.forEach(gain => {
+                            try { gain.disconnect(); } catch (err) {}
+                        });
+                        n.lifeSystem.stringGains.clear();
+                    }
+                }
+            });
+            populateEditPanel(); // Refresh UI
+            saveState();
+        });
+        clawSection.appendChild(clawEnabledLabel);
+        
+        if (node.audioParams.clawsEnabled) {
+            // String Tension slider
+            const tensionLabel = document.createElement('label');
+            tensionLabel.textContent = `String Tension: ${(node.audioParams.stringTension || 0.6).toFixed(2)}`;
+            tensionLabel.style.display = 'block';
+            tensionLabel.style.marginBottom = '5px';
+            tensionLabel.style.fontSize = '12px';
+            tensionLabel.style.color = '#8B4513';
+            clawSection.appendChild(tensionLabel);
+            
+            const tensionSlider = document.createElement('input');
+            tensionSlider.type = 'range';
+            tensionSlider.min = '0';
+            tensionSlider.max = '1';
+            tensionSlider.step = '0.05';
+            tensionSlider.value = node.audioParams.stringTension || 0.6;
+            tensionSlider.style.width = '100%';
+            tensionSlider.style.marginBottom = '10px';
+            tensionSlider.addEventListener('input', (e) => {
+                selectedArray.forEach(elData => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === QUEEN_MIND_TYPE && n.audioParams) {
+                        n.audioParams.stringTension = parseFloat(e.target.value);
+                    }
+                });
+                tensionLabel.textContent = `String Tension: ${e.target.value}`;
+                saveState();
+            });
+            clawSection.appendChild(tensionSlider);
+            
+            // String Resonance slider
+            const resonanceLabel = document.createElement('label');
+            resonanceLabel.textContent = `String Resonance: ${(node.audioParams.stringResonance || 0.8).toFixed(2)}`;
+            resonanceLabel.style.display = 'block';
+            resonanceLabel.style.marginBottom = '5px';
+            resonanceLabel.style.fontSize = '12px';
+            resonanceLabel.style.color = '#8B4513';
+            clawSection.appendChild(resonanceLabel);
+            
+            const resonanceSlider = document.createElement('input');
+            resonanceSlider.type = 'range';
+            resonanceSlider.min = '0';
+            resonanceSlider.max = '1';
+            resonanceSlider.step = '0.05';
+            resonanceSlider.value = node.audioParams.stringResonance || 0.8;
+            resonanceSlider.style.width = '100%';
+            resonanceSlider.style.marginBottom = '10px';
+            resonanceSlider.addEventListener('input', (e) => {
+                selectedArray.forEach(elData => {
+                    const n = findNodeById(elData.id);
+                    if (n && n.type === QUEEN_MIND_TYPE && n.audioParams) {
+                        n.audioParams.stringResonance = parseFloat(e.target.value);
+                    }
+                });
+                resonanceLabel.textContent = `String Resonance: ${e.target.value}`;
+                saveState();
+            });
+            clawSection.appendChild(resonanceSlider);
+            
+            // Claw info
+            const clawInfo = document.createElement('div');
+            clawInfo.style.fontSize = '11px';
+            clawInfo.style.color = '#8B4513';
+            clawInfo.style.opacity = '0.8';
+            clawInfo.style.fontStyle = 'italic';
+            clawInfo.innerHTML = '🎸 Claws pluck vein strings in rhythm, creating guitar-like tones based on vein length and tension.';
+            clawSection.appendChild(clawInfo);
+        }
+        
+        mindSection.appendChild(clawSection);
+        
+        // Hive status display
+        const hiveStatus = document.createElement('div');
+        hiveStatus.style.marginTop = '10px';
+        hiveStatus.style.padding = '8px';
+        hiveStatus.style.backgroundColor = 'rgba(255, 215, 0, 0.1)'; // Light gold background
+        hiveStatus.style.borderRadius = '4px';
+        hiveStatus.style.fontSize = '12px';
+        hiveStatus.style.color = '#FFD700';
+        
+        const hiveCount = node.lifeSystem ? node.lifeSystem.hiveMinds.length : 0;
+        hiveStatus.innerHTML = `
+            <strong>👑 Queen Mind Status:</strong><br>
+            <strong>Hive Members:</strong> ${hiveCount}<br>
+            <strong>Formation:</strong> ${node.audioParams.hiveFormation || 'circle'}<br>
+            <small style="opacity: 0.7;">Queen coordinates ${hiveCount} subordinate Mind${hiveCount !== 1 ? 's' : ''}</small>
+        `;
+        mindSection.appendChild(hiveStatus);
+    }
     
     fragment.appendChild(mindSection);
 }
@@ -27786,7 +28977,13 @@ export function handleNewWorkspace(skipConfirm = false) {
     }
   }
 
-  nodes.forEach((node) => stopNodeAudio(node));
+  nodes.forEach((node) => {
+    stopNodeAudio(node);
+    // Clean up Queen Mind and Mind resources
+    if ((node.type === QUEEN_MIND_TYPE || node.type === "mind") && node.dispose) {
+      node.dispose();
+    }
+  });
   connections.forEach((conn) => stopConnectionAudio(conn));
   activePulses = [];
   nodes = [];
@@ -29382,6 +30579,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.audioParams.pitch = 440; // Not used for audio but for compatibility
     visualStyle = "mind_core";
     newNode.isStartNode = true; // Mind generates Life pulses
+  } else if (type === QUEEN_MIND_TYPE) {
+    newNode.audioParams = Object.assign({}, DEFAULT_QUEEN_MIND_PARAMS);
+    newNode.audioParams.scaleIndex = 0;
+    newNode.audioParams.pitch = 440; // Not used for audio but for compatibility
+    visualStyle = "queen_mind_core";
+    newNode.isStartNode = true; // Queen Mind generates Life pulses
     
     // Add rhythm variety and randomization for new Minds
     const variations = [
@@ -29619,6 +30822,42 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.audioParams.rocketSpeed = ROCKET_DEFAULT_SPEED;
     newNode.audioParams.rocketRange = ROCKET_DEFAULT_RANGE;
     newNode.audioParams.rocketGravity = ROCKET_DEFAULT_GRAVITY;
+    
+    // UFO-specific parameters
+    if (newNode.type === "pulsar_ufo") {
+      newNode.audioParams.ufoFlying = true;       // Enable flying mode
+      newNode.audioParams.ufoSpeed = 5.0;         // Flight speed
+      newNode.audioParams.ufoPatrolRadius = 300;  // Patrol area radius
+      newNode.audioParams.ufoShootAccuracy = 0.8; // Shooting accuracy (0.0-1.0)
+      newNode.audioParams.ufoShootInterval = 2.0; // Seconds between shots
+      newNode.audioParams.ufoOnlyShootWhenHit = false; // Only shoot when hit is guaranteed
+      newNode.audioParams.ufoPatrolMode = 'circle'; // 'circle', 'random', 'figure8', 'target'
+      newNode.audioParams.ufoSyncToGlobal = false; // Enable sync to global tempo
+      newNode.audioParams.ufoSyncSubdivisionIndex = 2; // Default to quarter note (1/4)
+      newNode.audioParams.ufoTractorBeamEnabled = true; // Enable tractor beam
+      newNode.audioParams.ufoTractorBeamRange = 200; // Tractor beam range
+      newNode.audioParams.ufoTractorBeamChance = 0.3; // 30% chance to grab nearby orbs
+      
+      // Initialize UFO flight system
+      newNode.ufoSystem = {
+        isFlying: false,
+        targetX: newNode.x,
+        targetY: newNode.y,
+        patrolCenter: { x: newNode.x, y: newNode.y },
+        lastShotTime: Date.now(),
+        currentTarget: null,
+        flightPath: [],
+        pathIndex: 0,
+        angle: 0, // Current flight angle for patterns
+        tractorBeam: {
+          active: false,
+          targetOrb: null,
+          grabTime: 0,
+          releaseTime: 0,
+          nextGrabCheck: 0
+        }
+      };
+    }
   }
   if (type === GRID_SEQUENCER_TYPE) {
     newNode.width = optionalDimensions
@@ -29884,6 +31123,16 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.triggerFromLife = function(intensity) {
       triggerNodeEffect(this, { intensity: intensity || 1.0, fromLife: true });
     };
+  }
+  
+  // Ensure Mind and Queen Mind nodes always have their methods properly initialized
+  if ((newNode.type === "mind" || newNode.type === QUEEN_MIND_TYPE) && typeof newNode.addVein !== 'function') {
+    console.warn('Mind node missing methods - reinitializing...', newNode);
+    const audioNodes = createMindOrb(newNode);
+    if (audioNodes) {
+      newNode.audioNodes = audioNodes;
+      updateNodeAudioParams(newNode);
+    }
   }
   
   identifyAndRouteAllGroups();
@@ -31202,7 +32451,7 @@ function drawVeins() {
   
   // Draw Vein connections from Mind nodes (both connected and floating)
   nodes.forEach(node => {
-    if (node.type === "mind" && node.lifeSystem) {
+    if ((node.type === "mind" || node.type === QUEEN_MIND_TYPE) && node.lifeSystem) {
       
       // Draw connected veins
       if (node.lifeSystem.veins && node.lifeSystem.veins.length > 0) {
