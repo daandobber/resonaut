@@ -1278,6 +1278,13 @@ function removeNodeFromParamGroups(nodeId) {
 
 let currentScaleKey = "major";
 let currentScale = scales[currentScaleKey];
+
+// Global UFO unison state
+let globalUFOUnison = {
+  currentNote: 0, // Current unison note (semitone offset from base)
+  targetNote: 0,
+  lastNoteChange: 0
+};
 let currentRootNote = 0;
 let globalTransposeOffset = 0;
 
@@ -12707,6 +12714,181 @@ function animationLoop() {
           if (movementAngle !== undefined) {
             node.audioParams.rocketDirectionAngle = movementAngle + Math.PI / 2;
           }
+        }
+        
+        // Handle UFO sound system with global unison
+        if (node.audioParams.ufoSoundEnabled && audioContext && isAudioReady) {
+          // Initialize sound system if not present
+          if (!ufo.sound || ufo.sound.oscillators.length === 0) {
+            if (!ufo.sound) {
+              ufo.sound = {
+                oscillators: [],
+                gainNodes: [],
+                filterNode: null,
+                masterGain: null,
+                currentNote: 0,
+                targetNote: 0,
+                lastNoteTime: 0,
+                lastSampleHold: 0,
+                currentFreq: 220,
+                targetFreq: 220,
+                bendAmount: 0,
+                lastSpeed: 0,
+                lastDirection: 0,
+                ufoIndex: Math.floor(Math.random() * 1000) // Unique index for this UFO
+              };
+            }
+          }
+          
+          // Create audio nodes if not present and UFO is flying
+          if (ufo.sound.oscillators.length === 0 && ufo.isFlying) {
+            try {
+              const voices = node.audioParams.ufoUnisonVoices || 3;
+              
+              // Create master gain and filter
+              ufo.sound.masterGain = audioContext.createGain();
+              ufo.sound.filterNode = audioContext.createBiquadFilter();
+              
+              ufo.sound.filterNode.type = 'lowpass';
+              ufo.sound.filterNode.frequency.setValueAtTime(800, audioContext.currentTime);
+              ufo.sound.filterNode.Q.setValueAtTime(2, audioContext.currentTime);
+              ufo.sound.masterGain.gain.setValueAtTime(0, audioContext.currentTime);
+              
+              ufo.sound.filterNode.connect(ufo.sound.masterGain);
+              ufo.sound.masterGain.connect(audioContext.destination);
+              
+              // Create unison voices
+              for (let i = 0; i < voices; i++) {
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                
+                osc.type = 'sawtooth';
+                gain.gain.setValueAtTime(1 / voices, audioContext.currentTime); // Equal volume per voice
+                
+                osc.connect(gain);
+                gain.connect(ufo.sound.filterNode);
+                osc.start();
+                
+                ufo.sound.oscillators.push(osc);
+                ufo.sound.gainNodes.push(gain);
+              }
+              
+            } catch (error) {
+              console.warn('Failed to create UFO unison sound:', error);
+            }
+          }
+          
+          // Global unison sample and hold system
+          if (ufo.isFlying && ufo.sound.oscillators.length > 0) {
+            const currentTime = audioContext.currentTime;
+            
+            // Calculate movement characteristics
+            const prevX = ufo.lastX || node.x;
+            const prevY = ufo.lastY || node.y;
+            const dx = node.x - prevX;
+            const dy = node.y - prevY;
+            const currentSpeed = Math.sqrt(dx * dx + dy * dy);
+            const currentDirection = Math.atan2(dy, dx);
+            
+            let directionChange = 0;
+            if (ufo.lastDirection !== undefined) {
+              let angleDiff = currentDirection - ufo.lastDirection;
+              while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+              while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+              directionChange = Math.abs(angleDiff);
+            }
+            
+            // Global sample and hold - all UFOs change note together
+            const speedChange = Math.abs(currentSpeed - (ufo.lastSpeed || 0));
+            const sampleHoldRate = node.audioParams.ufoSampleHoldRate || 0.8;
+            const shouldSample = (now - globalUFOUnison.lastNoteChange > sampleHoldRate) || 
+                                 (directionChange > 0.5) || (speedChange > 2);
+            
+            if (shouldSample) {
+              globalUFOUnison.lastNoteChange = now;
+              
+              // Get current project scale
+              const projectScale = currentScale;
+              if (projectScale && projectScale.notes) {
+                const scaleNotes = projectScale.notes;
+                const noteIndex = Math.floor(Math.random() * scaleNotes.length);
+                globalUFOUnison.targetNote = scaleNotes[noteIndex];
+              } else {
+                const simpleScale = [0, 2, 4, 7, 9];
+                const noteIndex = Math.floor(Math.random() * simpleScale.length);
+                globalUFOUnison.targetNote = simpleScale[noteIndex];
+              }
+            }
+            
+            // Convert base note to frequency
+            const noteToFrequency = (noteName) => {
+              const noteMap = {
+                'C': -9, 'C#': -8, 'Db': -8, 'D': -7, 'D#': -6, 'Eb': -6,
+                'E': -5, 'F': -4, 'F#': -3, 'Gb': -3, 'G': -2, 'G#': -1, 'Ab': -1,
+                'A': 0, 'A#': 1, 'Bb': 1, 'B': 2
+              };
+              
+              const match = noteName.match(/^([A-G][#b]?)(\d+)$/);
+              if (!match) return 220;
+              
+              const [, note, octave] = match;
+              const octaveOffset = (parseInt(octave) - 4) * 12;
+              const noteOffset = noteMap[note] || 0;
+              const totalOffset = octaveOffset + noteOffset;
+              
+              return 440 * Math.pow(2, totalOffset / 12);
+            };
+            
+            // Calculate base frequency and apply global note
+            const baseFreq = noteToFrequency(node.audioParams.ufoBaseNote || 'A3');
+            const targetFreq = baseFreq * Math.pow(2, globalUFOUnison.targetNote / 12);
+            
+            // Apply unison detuning and movement bends to each voice
+            const unisonAmount = node.audioParams.ufoUnisonAmount || 0.1;
+            const bendSensitivity = node.audioParams.ufoBendSensitivity || 1.0;
+            
+            // Movement-based bends
+            const speedBend = Math.min(currentSpeed * 0.01 * bendSensitivity, 0.15);
+            const cornerBend = directionChange * 0.05 * bendSensitivity;
+            const totalBend = speedBend + cornerBend;
+            const bendFactor = 1 + (Math.sin(now * 8) * totalBend);
+            
+            ufo.sound.oscillators.forEach((osc, i) => {
+              // Create unison spread
+              const voices = ufo.sound.oscillators.length;
+              const unisonSpread = voices > 1 ? (i / (voices - 1) - 0.5) * 2 : 0; // -1 to 1
+              const detuneAmount = unisonSpread * unisonAmount * 100; // Convert to cents
+              const detuneFactor = Math.pow(2, detuneAmount / 1200); // Convert cents to frequency ratio
+              
+              const finalFreq = targetFreq * bendFactor * detuneFactor;
+              osc.frequency.setTargetAtTime(finalFreq, currentTime, 0.05);
+            });
+            
+            // Dynamic filter and volume
+            const filterFreq = 400 + (currentSpeed * 20) + (directionChange * 200);
+            ufo.sound.filterNode.frequency.setTargetAtTime(
+              Math.min(filterFreq, 2000), 
+              currentTime, 
+              0.1
+            );
+            
+            const volume = (node.audioParams.ufoSoundVolume || 0.3) * 0.05; // Scale down for unison
+            const movementVolume = volume * (1 + currentSpeed * 0.01);
+            ufo.sound.masterGain.gain.setTargetAtTime(movementVolume, currentTime, 0.05);
+            
+            // Store previous values
+            ufo.lastX = node.x;
+            ufo.lastY = node.y;
+            ufo.lastSpeed = currentSpeed;
+            ufo.lastDirection = currentDirection;
+            
+          } else if (ufo.sound && ufo.sound.masterGain) {
+            // Fade out when not flying
+            ufo.sound.masterGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.3);
+          }
+        } else if (ufo.sound && ufo.sound.masterGain) {
+          // Fade out when sound disabled
+          ufo.sound.masterGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.3);
         }
         
         // Handle tractor beam behavior
@@ -26128,6 +26310,198 @@ function populateEditPanel() {
                             );
                             ufoSubSection.appendChild(beamChanceSliderContainer);
                             
+                            // UFO Sound toggle
+                            const ufoSoundContainer = document.createElement("div");
+                            ufoSoundContainer.classList.add("checkbox-container");
+                            const ufoSoundLabel = document.createElement("label");
+                            ufoSoundLabel.htmlFor = `edit-ufo-sound-${node.id}`;
+                            ufoSoundLabel.textContent = "Enable Flying Sound";
+                            const ufoSoundCheckbox = document.createElement("input");
+                            ufoSoundCheckbox.type = "checkbox";
+                            ufoSoundCheckbox.id = `edit-ufo-sound-${node.id}`;
+                            ufoSoundCheckbox.checked = node.audioParams.ufoSoundEnabled || false;
+                            ufoSoundCheckbox.addEventListener("change", (e) => {
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoSoundEnabled = e.target.checked;
+                                    }
+                                });
+                                saveState();
+                            });
+                            ufoSoundContainer.appendChild(ufoSoundLabel);
+                            ufoSoundContainer.appendChild(ufoSoundCheckbox);
+                            ufoSubSection.appendChild(ufoSoundContainer);
+                            
+                            // UFO Sound Volume slider
+                            let currentSoundVolumeVal = parseFloat((node.audioParams.ufoSoundVolume || 0.3).toFixed(2));
+                            const soundVolumeSliderContainer = createSlider(
+                                `edit-ufo-sound-volume-${node.id}`, `Sound Volume (${(currentSoundVolumeVal * 100).toFixed(0)}%):`, 0.0, 1.0, 0.01, currentSoundVolumeVal,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newVolume = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoSoundVolume = newVolume;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Sound Volume (${(newVolume * 100).toFixed(0)}%):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(soundVolumeSliderContainer);
+                            
+                            // UFO Sample Hold Rate slider
+                            let currentSampleHoldRate = parseFloat((node.audioParams.ufoSampleHoldRate || 0.8).toFixed(1));
+                            const sampleHoldSliderContainer = createSlider(
+                                `edit-ufo-sample-hold-${node.id}`, `Sample Hold Rate (${currentSampleHoldRate.toFixed(1)}s):`, 0.2, 3.0, 0.1, currentSampleHoldRate,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newRate = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoSampleHoldRate = newRate;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Sample Hold Rate (${newRate.toFixed(1)}s):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(sampleHoldSliderContainer);
+                            
+                            // UFO Bend Sensitivity slider
+                            let currentBendSensitivity = parseFloat((node.audioParams.ufoBendSensitivity || 1.0).toFixed(1));
+                            const bendSensitivitySliderContainer = createSlider(
+                                `edit-ufo-bend-sensitivity-${node.id}`, `Bend Sensitivity (${currentBendSensitivity.toFixed(1)}):`, 0.0, 3.0, 0.1, currentBendSensitivity,
+                                () => { saveState(); },
+                                (e_input) => {
+                                    const newSensitivity = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoBendSensitivity = newSensitivity;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Bend Sensitivity (${newSensitivity.toFixed(1)}):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(bendSensitivitySliderContainer);
+                            
+                            // UFO Base Note dropdown
+                            const ufoBaseNoteContainer = document.createElement("div");
+                            ufoBaseNoteContainer.classList.add("dropdown-container");
+                            const ufoBaseNoteLabel = document.createElement("label");
+                            ufoBaseNoteLabel.htmlFor = `edit-ufo-base-note-${node.id}`;
+                            ufoBaseNoteLabel.textContent = "Base Note:";
+                            const ufoBaseNoteSelect = document.createElement("select");
+                            ufoBaseNoteSelect.id = `edit-ufo-base-note-${node.id}`;
+                            
+                            // Create scale-filtered note options
+                            const noteOptions = [];
+                            const numNotes = currentScale.notes.length;
+                            const octavesToCover = 4;
+                            const startingScaleIndex = -numNotes;
+                            const endingScaleIndex = numNotes * octavesToCover;
+                            
+                            for (let i = startingScaleIndex; i < endingScaleIndex; i++) {
+                                const noteName = getNoteNameFromScaleIndex(
+                                    currentScale,
+                                    i,
+                                    NOTE_NAMES,
+                                    currentRootNote,
+                                    globalTransposeOffset,
+                                );
+                                if (noteName && noteName !== "?") {
+                                    noteOptions.push({
+                                        name: noteName,
+                                        scaleIndex: i
+                                    });
+                                }
+                            }
+                            
+                            noteOptions.forEach(noteOption => {
+                                const option = document.createElement("option");
+                                option.value = noteOption.name;
+                                option.textContent = noteOption.name;
+                                if (noteOption.name === (node.audioParams.ufoBaseNote || 'A3')) {
+                                    option.selected = true;
+                                }
+                                ufoBaseNoteSelect.appendChild(option);
+                            });
+                            
+                            ufoBaseNoteSelect.addEventListener("change", (e) => {
+                                selectedArray.forEach((elData) => {
+                                    const n = findNodeById(elData.id);
+                                    if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                        n.audioParams.ufoBaseNote = e.target.value;
+                                    }
+                                });
+                                saveState();
+                            });
+                            ufoBaseNoteContainer.appendChild(ufoBaseNoteLabel);
+                            ufoBaseNoteContainer.appendChild(ufoBaseNoteSelect);
+                            ufoSubSection.appendChild(ufoBaseNoteContainer);
+                            
+                            // UFO Unison Amount slider
+                            const ufoUnisonAmountContainer = createSlider(
+                                `edit-ufo-unison-amount-${node.id}`,
+                                `Unison Amount (${(node.audioParams.ufoUnisonAmount || 0.1).toFixed(2)}):`,
+                                node.audioParams.ufoUnisonAmount || 0.1,
+                                0.0,
+                                1.0,
+                                0.01,
+                                (e_input) => {
+                                    const newAmount = parseFloat(e_input.target.value);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoUnisonAmount = newAmount;
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Unison Amount (${newAmount.toFixed(2)}):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(ufoUnisonAmountContainer);
+                            
+                            // UFO Unison Voices slider
+                            const ufoUnisonVoicesContainer = createSlider(
+                                `edit-ufo-unison-voices-${node.id}`,
+                                `Unison Voices (${(node.audioParams.ufoUnisonVoices || 3)}):`,
+                                node.audioParams.ufoUnisonVoices || 3,
+                                1,
+                                8,
+                                1,
+                                (e_input) => {
+                                    const newVoices = parseInt(e_input.target.value, 10);
+                                    selectedArray.forEach((elData) => {
+                                        const n = findNodeById(elData.id);
+                                        if (n && n.type === "pulsar_ufo" && n.audioParams) {
+                                            n.audioParams.ufoUnisonVoices = newVoices;
+                                            // Reinitialize UFO sound system with new voice count
+                                            if (n.ufoSystem && n.ufoSystem.sound) {
+                                                // Clean up existing oscillators
+                                                n.ufoSystem.sound.oscillators.forEach(osc => {
+                                                    try {
+                                                        osc.stop();
+                                                        osc.disconnect();
+                                                    } catch (e) {}
+                                                });
+                                                n.ufoSystem.sound.gainNodes.forEach(gain => {
+                                                    try {
+                                                        gain.disconnect();
+                                                    } catch (e) {}
+                                                });
+                                                // Reset arrays for new voice count
+                                                n.ufoSystem.sound.oscillators = [];
+                                                n.ufoSystem.sound.gainNodes = [];
+                                            }
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Unison Voices (${newVoices}):`;
+                                },
+                            );
+                            ufoSubSection.appendChild(ufoUnisonVoicesContainer);
+                            
                             rocketSubSection.appendChild(ufoSubSection);
                         }
                         
@@ -30837,6 +31211,13 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
       newNode.audioParams.ufoTractorBeamEnabled = true; // Enable tractor beam
       newNode.audioParams.ufoTractorBeamRange = 200; // Tractor beam range
       newNode.audioParams.ufoTractorBeamChance = 0.3; // 30% chance to grab nearby orbs
+      newNode.audioParams.ufoSoundEnabled = true; // Enable UFO flying sound
+      newNode.audioParams.ufoSoundVolume = 0.3; // UFO sound volume
+      newNode.audioParams.ufoBaseNote = 'A3'; // Base note
+      newNode.audioParams.ufoSampleHoldRate = 0.8; // Sample and hold timing
+      newNode.audioParams.ufoBendSensitivity = 1.0; // Pitch bend sensitivity
+      newNode.audioParams.ufoUnisonAmount = 0.1; // Unison detuning amount (0-1)
+      newNode.audioParams.ufoUnisonVoices = 3; // Number of unison voices per UFO
       
       // Initialize UFO flight system
       newNode.ufoSystem = {
@@ -30855,6 +31236,22 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
           grabTime: 0,
           releaseTime: 0,
           nextGrabCheck: 0
+        },
+        sound: {
+          oscillators: [], // Array of unison oscillators
+          gainNodes: [], // Array of gain nodes for each oscillator
+          filterNode: null,
+          masterGain: null,
+          currentNote: 0,
+          targetNote: 0,
+          lastNoteTime: 0,
+          lastSampleHold: 0,
+          currentFreq: 220,
+          targetFreq: 220,
+          bendAmount: 0,
+          lastSpeed: 0,
+          lastDirection: 0,
+          ufoIndex: 0 // Unique index for this UFO
         }
       };
     }
