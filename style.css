@@ -416,6 +416,13 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
   align-items: center;
 }
 
+.canvas-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
 #canvasSwitcher button {
   background: var(--button-bg, #304070);
   color: var(--text-color, #ddeeff);
@@ -426,9 +433,104 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
   font-size: 0.8em;
 }
 
-#canvasSwitcher button.active {
+.canvas-number-btn.active {
   background: var(--button-active, #5060a0);
   color: #fff;
+}
+
+.canvas-audio-btn {
+  padding: 1px 4px !important;
+  font-size: 0.7em !important;
+  min-width: 20px;
+  background: var(--button-bg, #304070) !important;
+}
+
+.canvas-audio-btn.muted {
+  background: rgba(80, 80, 80, 0.6) !important;
+  opacity: 0.6;
+}
+
+.canvas-type-indicator {
+  font-size: 0.6em;
+  color: var(--text-color, #ddeeff);
+  opacity: 0.7;
+}
+
+#staffPlayBtn {
+  margin-left: 8px;
+  padding: 4px 8px !important;
+  background: var(--button-bg, #304070) !important;
+  border: 1px solid var(--button-hover, #405088) !important;
+  border-radius: 4px;
+  font-size: 1em;
+  cursor: pointer;
+}
+
+#staffPlayBtn:hover {
+  background: var(--button-hover, #405088) !important;
+}
+
+/* Musical Staff Interface */
+.musical-staff-container {
+  display: none;
+  position: fixed;
+  top: calc(var(--app-menu-bar-height) + var(--header-height));
+  left: 0;
+  width: 100%;
+  height: calc(100vh - var(--app-menu-bar-height) - var(--header-height));
+  background: var(--panel-bg);
+  z-index: 5;
+}
+
+.musical-staff-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  background: var(--button-bg);
+  border-bottom: 1px solid var(--button-hover);
+}
+
+.musical-staff-toolbar button {
+  padding: 8px 12px;
+  background: var(--button-bg);
+  color: var(--text-color);
+  border: 1px solid var(--button-hover);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.2em;
+}
+
+.musical-staff-toolbar button:hover {
+  background: var(--button-hover);
+}
+
+.musical-staff-canvas {
+  display: block;
+  width: 100%;
+  height: calc(100% - 80px); /* Account for toolbar and scrollbar */
+  background: var(--flat-bg-color);
+  cursor: crosshair;
+}
+
+.musical-staff-scrollbar {
+  height: 20px;
+  background: var(--button-bg);
+  position: relative;
+  border-top: 1px solid var(--button-hover);
+}
+
+.musical-staff-scroll-thumb {
+  height: 100%;
+  background: var(--button-hover);
+  border-radius: 4px;
+  cursor: grab;
+  position: absolute;
+  min-width: 20px;
+}
+
+.musical-staff-scroll-thumb:active {
+  cursor: grabbing;
+  background: var(--button-active);
 }
 #mainCanvas {
   position: fixed;

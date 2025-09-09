@@ -98,7 +98,7 @@ if (typeof document === 'undefined' || !document.getElementById) {
 import { rgbaToHex, hexToRgba, hexToRgbForGradient, hslToRgba, rgbaToHsl } from "./utils/colorUtils.js";
 import { startMeteorShower, updateAndDrawMeteorShowers, createCollisionImpactVisual, METEOR_SHOWER_DEFAULT_MAX_RADIUS, METEOR_SHOWER_DEFAULT_GROWTH_RATE, MAX_METEOR_SHOWER_GENERATIONS, PAIR_INTERACTION_COOLDOWN_SECONDS, COLLISION_SPAWN_COOLDOWN_SECONDS } from './utils/meteor.js';
 import { startRecording, stopRecording } from "./recordingUtils.js";
-import { canvases, switchTo, canvasStates, getCurrentIndex as getCurrentCanvasIndex } from './canvasManager.js';
+import { canvases, switchTo, canvasStates, getCurrentIndex as getCurrentCanvasIndex, getCurrentCanvasType } from './canvasManager.js';
 import { base64ToArrayBuffer } from './utils/audioBufferUtils.js';
 import {
   patchState,
@@ -18175,6 +18175,7 @@ function draw() {
 
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
     ctx.translate(viewOffsetX, viewOffsetY);
     ctx.scale(viewScale, viewScale);
 
@@ -18188,6 +18189,13 @@ function draw() {
         currentScale,
         rgbaToHsl
     );
+    
+    // Draw canvas type-specific background AFTER the starfield background
+    const currentCanvasType = getCurrentCanvasType();
+    if (currentCanvasType) {
+        currentCanvasType.drawBackground(ctx, canvas);
+    }
+    
     drawGrid();
     updateAndDrawParticles(localDeltaTime, now);
 
@@ -20670,6 +20678,19 @@ function handleMouseMove(event) {
               }
             }
           }
+          
+          // Apply canvas type adjustments (e.g., snap to staff lines)
+          const currentCanvasType = getCurrentCanvasType();
+          if (currentCanvasType) {
+            const adjustedPosition = currentCanvasType.adjustNodePlacement(n.type, targetX, targetY);
+            targetX = adjustedPosition.x;
+            targetY = adjustedPosition.y;
+            
+            // Also update node properties based on new position
+            const canvasProperties = currentCanvasType.getNodeProperties(n.type, targetX, targetY);
+            Object.assign(n.audioParams, canvasProperties);
+          }
+          
           n.x = targetX;
           n.y = targetY;
         }
@@ -30206,6 +30227,28 @@ function drawResonatorShape(ctx, cx, cy, radius, geometry, material, brightness,
 
 function togglePlayPause() {
   userHasInteracted = true;
+  
+  // Check if we're on a musical staff canvas
+  const currentCanvasType = getCurrentCanvasType();
+  if (currentCanvasType && currentCanvasType.type === 'musical_staff') {
+    // Get the staff interface and control it
+    const staffInterface = window.canvasManager?.staffInterfaces?.[window.canvasManager.currentIndex];
+    if (staffInterface) {
+      staffInterface.togglePlayback();
+      if (appMenuPlayPauseBtn) {
+        appMenuPlayPauseBtn.textContent = staffInterface.isPlaying ? "Pause ⏸" : "Play ▶";
+      }
+      
+      // Also update the canvas switcher play button if it exists
+      const staffPlayBtn = document.getElementById('staffPlayBtn');
+      if (staffPlayBtn) {
+        staffPlayBtn.innerHTML = staffInterface.isPlaying ? '⏸️' : '▶️';
+      }
+    }
+    
+    return;
+  }
+  
   const startPlayback = () => {
     isPlaying = true;
     onPlaybackStarted();
@@ -30398,6 +30441,21 @@ function applyOrbitoneTimingFromPhase(node) {
 function addNode(x, y, type, subtype = null, optionalDimensions = null) {
 
   const requestedSubtype = subtype;
+
+  // Check canvas type restrictions
+  const currentCanvasType = getCurrentCanvasType();
+  if (currentCanvasType) {
+    // Check if this node type is allowed on this canvas
+    if (!currentCanvasType.canPlaceNode(type, x, y)) {
+      console.log(`Node type "${type}" is not allowed on this canvas type.`);
+      return null;
+    }
+    
+    // Adjust placement based on canvas type logic (e.g., snap to staff lines)
+    const adjustedPosition = currentCanvasType.adjustNodePlacement(type, x, y);
+    x = adjustedPosition.x;
+    y = adjustedPosition.y;
+  }
 
   const isStartNodeType = isPulsarType(type);
   let nodeTypeVisual = type;
@@ -31546,6 +31604,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
   } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === GALACTIC_BLOOM_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === MOTHER_SHIPP_TYPE || newNode.type === "global_key_setter") {
     newNode.audioNodes = null;
+  }
+
+  // Apply canvas-specific properties to the node
+  if (currentCanvasType) {
+    const canvasProperties = currentCanvasType.getNodeProperties(type, x, y);
+    Object.assign(newNode.audioParams, canvasProperties);
   }
 
   nodes.push(newNode);
