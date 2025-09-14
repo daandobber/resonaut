@@ -1,7 +1,7 @@
 const safeGetById = (id) =>
   typeof document !== 'undefined' && typeof document.getElementById === 'function'
     ? document.getElementById(id)
-    : { addEventListener: () => {}, classList: { add() {}, remove() {}, contains() { return false; } }, style: {} };
+    : { addEventListener: () => {}, classList: { add() {}, remove() {}, contains() { return false; }, toggle() {} }, style: {} };
 const safeQueryAll = (sel) =>
   typeof document !== 'undefined' && typeof document.querySelectorAll === 'function'
     ? document.querySelectorAll(sel)
