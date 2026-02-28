@@ -20,7 +20,7 @@ function getCrankRadarHandleGripPos(n) {
 function getConnectionPoint(node, useHandle) {
   if (
     typeof useHandle === 'number' &&
-    (node.type === 'grid_sequencer' || node.type === 'pulsar_grid' || node.type === 'circle_fifths' || node.type === 'galactic_bloom' || node.type === 'mother_shipp')
+    (node.type === 'grid_sequencer' || node.type === 'pulsar_grid' || node.type === 'circle_fifths' || node.type === 'galactic_bloom')
   ) {
     // Grid and Pulsar grid are rectangular; Circle-of-fifths is circular.
     if (node.type === 'circle_fifths' || node.type === 'galactic_bloom') {
@@ -30,27 +30,6 @@ function getConnectionPoint(node, useHandle) {
         return { x: node.x - offset, y: node.y };
       }
       return { x: node.x + offset, y: node.y };
-    }
-    if (node.type === 'mother_shipp') {
-      // Left input (-1) and 8 turret outputs (0..7) at barrel tips
-      const offset = 12;
-      if (useHandle < 0) return { x: node.x - offset, y: node.y };
-      const w = node.width || 520;
-      const h = node.height || 340;
-      const a = Math.max(40, (w * 0.42));
-      const b = Math.max(30, (h * 0.36));
-      const gunIdx = Math.max(0, Math.min(7, Math.floor(useHandle)));
-      const gy = (idx) => node.y + (-1.5 + idx) * (b * 0.18);
-      if (gunIdx < 4) {
-        const gx = node.x - a * 0.85;
-        const tipX = gx + a * 0.55;
-        return { x: tipX, y: gy(gunIdx) };
-      } else {
-        const j = gunIdx - 4;
-        const gx = node.x + a * 0.30;
-        const tipX = gx + a * 0.55;
-        return { x: tipX, y: gy(j) };
-      }
     }
     const rectX = node.x - node.width / 2;
     const rectY = node.y - node.height / 2;

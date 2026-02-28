@@ -1650,17 +1650,205 @@ margin-top: 6px;
   margin-top: 2px;
   color: var(--text-color);
 }
-#performance-panel { top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.95); width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-#performance-panel:not(.hidden) { transform: translate(-50%, -50%) scale(1); }
-.open-performance-btn { margin-top: 10px; padding: 6px 10px; cursor: pointer; background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); border-radius: 4px; }
+/* ── Performance Drawer ─────────────────────────────────────────────────────── */
+.perf-drawer {
+  position: fixed;
+  top: var(--app-menu-bar-height, 32px);
+  right: 0;
+  bottom: 0;
+  width: 390px;
+  max-width: 95vw;
+  background: rgba(10, 10, 18, 0.97);
+  border-left: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+  box-shadow: -6px 0 32px rgba(0,0,0,0.7);
+  transform: translateX(100%);
+  opacity: 0;
+  visibility: hidden;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s,
+              visibility 0s 0.3s;
+  overflow: hidden;
+}
+.perf-drawer:not(.hidden) {
+  transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s, 0s, 0s;
+}
+.perf-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.03);
+}
+.perf-drawer-header h3 {
+  margin: 0;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-color);
+  opacity: 0.7;
+}
+.perf-drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 1.4em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.5;
+  padding: 0 4px;
+  transition: opacity 0.2s;
+}
+.perf-drawer-close:hover { opacity: 1; }
+
+.perf-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+/* ── Pedal / Stompbox blocks ─────────────────────────────────────────────── */
+.performance-panel { display: contents; }
+
+.performance-block {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 15px 16px;
+  border-radius: 11px;
+  border: 1.5px solid rgba(255,255,255,0.09);
+  border-top-width: 3px;
+  /* Screw corners via radial-gradient background */
+  background:
+    radial-gradient(circle at 9px 9px,       #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    radial-gradient(circle at calc(100% - 9px) 9px, #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    radial-gradient(circle at 9px calc(100% - 9px), #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    linear-gradient(155deg, #181828 0%, #0c0c18 100%);
+  box-shadow:
+    0 6px 22px rgba(0,0,0,0.65),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* Color-coded top stripe + LED per slot */
+.performance-block:nth-child(1) { border-top-color: #3a9fff; }
+.performance-block:nth-child(2) { border-top-color: #ff8c3a; }
+.performance-block:nth-child(3) { border-top-color: #33ddb0; }
+.performance-block:nth-child(4) { border-top-color: #b03aff; }
+
+.performance-block h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 11px;
+  font-size: 0.68em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2.5px;
+  color: var(--text-color, #cce);
+}
+/* LED dot before title */
+.performance-block h4::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3a9fff;
+  box-shadow: 0 0 7px #3a9fff;
+}
+.performance-block:nth-child(1) h4::before { background: #3a9fff; box-shadow: 0 0 7px #3a9fff; }
+.performance-block:nth-child(2) h4::before { background: #ff8c3a; box-shadow: 0 0 7px #ff8c3a; }
+.performance-block:nth-child(3) h4::before { background: #33ddb0; box-shadow: 0 0 7px #33ddb0; }
+.performance-block:nth-child(4) h4::before { background: #b03aff; box-shadow: 0 0 7px #b03aff; }
+
+/* Labels & controls inside pedal blocks */
+.performance-block .mixer-control-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 0.78em;
+}
+.performance-block .mixer-control-item label {
+  flex: 0 0 68px;
+  font-size: 0.78em;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.performance-block .mixer-control-item input[type="range"] {
+  flex: 1;
+  margin: 0;
+  height: 3px;
+  accent-color: var(--start-node-color, #aaddff);
+}
+.performance-block .mixer-control-item span {
+  flex: 0 0 36px;
+  text-align: right;
+  font-size: 0.76em;
+  opacity: 0.55;
+}
+.performance-block .mixer-control-item input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--start-node-color, #aaddff); }
+
+/* MRFA: horizontal fader strip */
+.mrfa-bars {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+  height: 110px;
+  margin-top: 6px;
+}
+.mrfa-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  gap: 5px;
+}
+.mrfa-bar input[type="range"] {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 18px;
+  flex: 1;
+  margin: 0;
+  accent-color: #ff8c3a;
+  cursor: pointer;
+}
+.mrfa-bar span {
+  font-size: 0.6em;
+  opacity: 0.45;
+  text-align: center;
+}
+
+.open-performance-btn {
+  margin-top: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  background-color: var(--button-bg);
+  color: var(--text-color);
+  border: 1px solid var(--button-hover);
+  border-radius: 4px;
+}
 .open-performance-btn:hover { background-color: var(--button-hover); }
-.performance-panel { display: flex; flex-direction: row; align-items: flex-start; justify-content: center; gap: 20px; width: 100%; flex-wrap: wrap; }
-.mrfa-panel { display: flex; flex-direction: column; align-items: center; }
-.mrfa-bars { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
-.mrfa-bar { display: flex; align-items: center; gap: 8px; }
-.mrfa-bar span { font-size: 0.8em; }
-.performance-block { flex: 1; min-width: 260px; margin: 0 10px 20px; padding: 16px; background: var(--panel-bg, #101020); border: 2px solid var(--button-hover, #405088); border-radius: 12px; }
-.performance-block h4 { text-align: center; color: var(--text-color, #ddeeff); margin-bottom: 10px; font-size: 1.1em; text-transform: uppercase; letter-spacing: 1px; }
 
 
 
@@ -1670,93 +1858,100 @@ margin-top: 6px;
 
 
 
-/* DJ EQ Styles */
+/* DJ EQ — stompbox style matching .performance-block */
 .dj-eq-section {
-  background: var(--panel-bg, #101020);
-  border: 2px solid var(--button-hover, #405088);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
+  position: relative;
+  flex: none;
+  padding: 14px 15px 16px;
+  border-radius: 11px;
+  border: 1.5px solid rgba(255,255,255,0.09);
+  border-top-width: 3px;
+  border-top-color: #ffd03a;
+  background:
+    radial-gradient(circle at 9px 9px,                           #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    radial-gradient(circle at calc(100% - 9px) 9px,              #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    radial-gradient(circle at 9px calc(100% - 9px),              #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
+    linear-gradient(155deg, #181828 0%, #0c0c18 100%);
+  box-shadow:
+    0 6px 22px rgba(0,0,0,0.65),
+    inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
 .dj-eq-section h4 {
-  text-align: center;
-  color: var(--text-color, #ddeeff);
-  margin-bottom: 15px;
-  font-size: 1.2em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.68em;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 2.5px;
+  color: var(--text-color, #cce);
+}
+
+.dj-eq-section h4::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffd03a;
+  box-shadow: 0 0 7px #ffd03a;
 }
 
 .dj-eq-controls {
   display: flex;
   justify-content: space-around;
-  gap: 20px;
+  gap: 10px;
+  height: 90px;
+  margin-top: 6px;
 }
 
 .dj-eq-band {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 5px;
   flex: 1;
 }
 
 .dj-eq-band label {
-  font-weight: bold;
-  font-size: 0.9em;
-  color: var(--text-color, #ddeeff);
-  margin-bottom: 10px;
+  font-size: 0.62em;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
+  color: var(--text-color, #ddeeff);
+  opacity: 0.6;
 }
 
 .dj-dial-container {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  position: relative;
+  gap: 4px;
+  width: 100%;
 }
 
+/* Vertical fader — same technique as .mrfa-bar */
 .dj-dial {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #1a1a2e 0%, #16213e 50%, #0f1419 100%);
-  border: 4px solid var(--button-hover, #405088);
-  box-shadow: 
-    0 0 15px rgba(0, 100, 255, 0.3),
-    inset 0 0 10px rgba(0, 0, 0, 0.5);
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: slider-vertical;
+  width: 22px;
+  flex: 1;
+  margin: 0;
+  accent-color: #ffd03a;
   cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 8px;
-}
-
-.dj-dial:hover {
-  box-shadow: 
-    0 0 20px rgba(0, 150, 255, 0.5),
-    inset 0 0 12px rgba(0, 0, 0, 0.6);
-  border-color: #5080aa;
-}
-
-.dj-dial:focus {
-  outline: none;
-  box-shadow: 
-    0 0 25px rgba(0, 200, 255, 0.7),
-    inset 0 0 15px rgba(0, 0, 0, 0.7);
 }
 
 .dj-dial-value {
-  font-size: 0.8em;
+  font-size: 0.62em;
   color: var(--text-color, #ddeeff);
-  font-weight: bold;
+  opacity: 0.55;
   text-align: center;
-  min-width: 40px;
-  background: var(--flat-bg-color, #181828);
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--button-hover, #405088);
 }
 
 
