@@ -1656,14 +1656,14 @@ margin-top: 6px;
   top: var(--app-menu-bar-height, 32px);
   right: 0;
   bottom: 0;
-  width: 390px;
+  width: 420px;
   max-width: 95vw;
-  background: rgba(10, 10, 18, 0.97);
+  background: rgba(8, 8, 16, 0.98);
   border-left: 1px solid rgba(255,255,255,0.08);
   display: flex;
   flex-direction: column;
   z-index: 200;
-  box-shadow: -6px 0 32px rgba(0,0,0,0.7);
+  box-shadow: -8px 0 40px rgba(0,0,0,0.8);
   transform: translateX(100%);
   opacity: 0;
   visibility: hidden;
@@ -1713,7 +1713,7 @@ margin-top: 6px;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1721,77 +1721,87 @@ margin-top: 6px;
   scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
-/* ── Pedal / Stompbox blocks ─────────────────────────────────────────────── */
-.performance-panel { display: contents; }
-
-.performance-block {
-  position: relative;
-  flex: none;
-  min-width: 0;
-  margin: 0;
-  padding: 14px 15px 16px;
-  border-radius: 11px;
-  border: 1.5px solid rgba(255,255,255,0.09);
-  border-top-width: 3px;
-  /* Screw corners via radial-gradient background */
-  background:
-    radial-gradient(circle at 9px 9px,       #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    radial-gradient(circle at calc(100% - 9px) 9px, #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    radial-gradient(circle at 9px calc(100% - 9px), #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    linear-gradient(155deg, #181828 0%, #0c0c18 100%);
-  box-shadow:
-    0 6px 22px rgba(0,0,0,0.65),
-    inset 0 1px 0 rgba(255,255,255,0.06);
+/* ── Pedal-board grid ────────────────────────────────────────────────────────── */
+.performance-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
-/* Color-coded top stripe + LED per slot */
+/* ── Guitar-pedal stompbox blocks ───────────────────────────────────────────── */
+.performance-block {
+  position: relative;
+  padding: 10px 11px 12px;
+  border-radius: 10px;
+  /* Diagonal brushed-metal texture + screw corners */
+  background:
+    radial-gradient(circle at 8px 8px,        #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    radial-gradient(circle at calc(100% - 8px) 8px, #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    radial-gradient(circle at 8px calc(100% - 8px), #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    radial-gradient(circle at calc(100% - 8px) calc(100% - 8px), #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    repeating-linear-gradient(
+      100deg,
+      transparent 0px, transparent 2px,
+      rgba(255,255,255,0.013) 2px, rgba(255,255,255,0.013) 3px
+    ),
+    linear-gradient(170deg, #1e1e30 0%, #101020 100%);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  border-top: 5px solid #3a9fff;
+  box-shadow:
+    0 6px 20px rgba(0,0,0,0.75),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* Full-width blocks spanning both grid columns */
+#scaleKeySeqBlock { grid-column: 1 / -1; }
+
+/* Color-coded top stripe per pedal */
 .performance-block:nth-child(1) { border-top-color: #3a9fff; }
 .performance-block:nth-child(2) { border-top-color: #ff8c3a; }
 .performance-block:nth-child(3) { border-top-color: #33ddb0; }
 .performance-block:nth-child(4) { border-top-color: #b03aff; }
+.performance-block:nth-child(5) { border-top-color: #ff3a7a; }
 
+/* Pedal title plate */
 .performance-block h4 {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 11px;
-  font-size: 0.68em;
-  font-weight: 700;
+  gap: 7px;
+  margin: 0 0 9px;
+  font-size: 0.62em;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 2.5px;
+  letter-spacing: 3px;
   color: var(--text-color, #cce);
 }
-/* LED dot before title */
 .performance-block h4::before {
   content: '';
   display: inline-block;
   flex-shrink: 0;
-  width: 7px;
-  height: 7px;
+  width: 6px; height: 6px;
   border-radius: 50%;
-  background: #3a9fff;
-  box-shadow: 0 0 7px #3a9fff;
+  background: #3a9fff; box-shadow: 0 0 6px #3a9fff;
 }
-.performance-block:nth-child(1) h4::before { background: #3a9fff; box-shadow: 0 0 7px #3a9fff; }
-.performance-block:nth-child(2) h4::before { background: #ff8c3a; box-shadow: 0 0 7px #ff8c3a; }
-.performance-block:nth-child(3) h4::before { background: #33ddb0; box-shadow: 0 0 7px #33ddb0; }
-.performance-block:nth-child(4) h4::before { background: #b03aff; box-shadow: 0 0 7px #b03aff; }
+.performance-block:nth-child(1) h4::before { background: #3a9fff; box-shadow: 0 0 6px #3a9fff; }
+.performance-block:nth-child(2) h4::before { background: #ff8c3a; box-shadow: 0 0 6px #ff8c3a; }
+.performance-block:nth-child(3) h4::before { background: #33ddb0; box-shadow: 0 0 6px #33ddb0; }
+.performance-block:nth-child(4) h4::before { background: #b03aff; box-shadow: 0 0 6px #b03aff; }
+.performance-block:nth-child(5) h4::before { background: #ff3a7a; box-shadow: 0 0 6px #ff3a7a; }
 
-/* Labels & controls inside pedal blocks */
+/* Slider rows inside pedals */
 .performance-block .mixer-control-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 7px;
-  font-size: 0.78em;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 0.72em;
 }
 .performance-block .mixer-control-item label {
-  flex: 0 0 68px;
-  font-size: 0.78em;
-  opacity: 0.6;
+  flex: 0 0 54px;
+  font-size: 0.74em;
+  opacity: 0.5;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
 }
 .performance-block .mixer-control-item input[type="range"] {
   flex: 1;
@@ -1800,21 +1810,82 @@ margin-top: 6px;
   accent-color: var(--start-node-color, #aaddff);
 }
 .performance-block .mixer-control-item span {
-  flex: 0 0 36px;
+  flex: 0 0 30px;
   text-align: right;
-  font-size: 0.76em;
-  opacity: 0.55;
+  font-size: 0.68em;
+  opacity: 0.45;
 }
-.performance-block .mixer-control-item input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--start-node-color, #aaddff); }
+.performance-block .mixer-control-item input[type="checkbox"] {
+  width: 13px; height: 13px;
+  accent-color: var(--start-node-color, #aaddff);
+}
+.performance-block .mixer-control-item select {
+  flex: 1;
+  font-size: 0.9em;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-color);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
 
-/* MRFA: horizontal fader strip */
+/* ── Stomp-switch (enabled toggle) ──────────────────────────────────────────── */
+.perf-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 2px 0 9px;
+}
+.stomp-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, #5c5c78, #1a1a2c);
+  border: 2.5px solid rgba(255,255,255,0.2);
+  box-shadow:
+    0 5px 12px rgba(0,0,0,0.8),
+    inset 0 1px 3px rgba(255,255,255,0.18),
+    inset 0 -2px 4px rgba(0,0,0,0.5);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.07s, box-shadow 0.1s;
+  flex-shrink: 0;
+}
+/* Inner rim */
+.stomp-switch::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #4a4a62, #131320);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+/* LED dot */
+.stomp-switch::after {
+  content: '';
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  box-shadow: none;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.stomp-switch:checked::after {
+  background: #ff3333;
+  box-shadow: 0 0 8px #ff4444, 0 0 3px #ff8888;
+}
+.stomp-switch:active { transform: scale(0.9); }
+
+/* ── MRFA vertical fader strip ───────────────────────────────────────────────── */
 .mrfa-bars {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
-  gap: 8px;
-  height: 110px;
-  margin-top: 6px;
+  gap: 5px;
+  height: 85px;
+  margin-top: 4px;
 }
 .mrfa-bar {
   flex: 1;
@@ -1822,22 +1893,61 @@ margin-top: 6px;
   flex-direction: column;
   align-items: center;
   height: 100%;
-  gap: 5px;
+  gap: 3px;
 }
 .mrfa-bar input[type="range"] {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 18px;
+  width: 15px;
   flex: 1;
   margin: 0;
   accent-color: #ff8c3a;
   cursor: pointer;
 }
 .mrfa-bar span {
-  font-size: 0.6em;
-  opacity: 0.45;
+  font-size: 0.55em;
+  opacity: 0.4;
   text-align: center;
 }
+
+/* ── Compact knob grid inside pedals ────────────────────────────────────────── */
+.perf-knob-grid {
+  display: grid;
+  gap: 8px 6px;
+  margin-top: 6px;
+}
+.perf-knob-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.perf-knob-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.perf-knob-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.perf-knob-canvas {
+  cursor: ns-resize;
+  display: block;
+  border-radius: 50%;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.perf-knob-label {
+  font-size: 0.54em;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  opacity: 0.5;
+  text-align: center;
+  line-height: 1.1;
+}
+.perf-knob-value {
+  font-size: 0.5em;
+  opacity: 0.38;
+  text-align: center;
+  min-height: 1em;
+}
+.perf-knob-input { display: none; }
 
 .open-performance-btn {
   margin-top: 10px;
@@ -1855,102 +1965,105 @@ margin-top: 6px;
 
 
 
-
-
-
-/* DJ EQ — stompbox style matching .performance-block */
+/* ── DJ EQ — wide pedal spanning full grid width ────────────────────────────── */
 .dj-eq-section {
+  grid-column: 1 / -1;
   position: relative;
-  flex: none;
-  padding: 14px 15px 16px;
-  border-radius: 11px;
-  border: 1.5px solid rgba(255,255,255,0.09);
-  border-top-width: 3px;
-  border-top-color: #ffd03a;
+  padding: 10px 14px 14px;
+  border-radius: 10px;
   background:
-    radial-gradient(circle at 9px 9px,                           #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    radial-gradient(circle at calc(100% - 9px) 9px,              #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    radial-gradient(circle at 9px calc(100% - 9px),              #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), #2e2e3e 3px, #1e1e2c 3.5px, transparent 4.5px),
-    linear-gradient(155deg, #181828 0%, #0c0c18 100%);
+    radial-gradient(circle at 8px 8px,        #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    radial-gradient(circle at calc(100% - 8px) 8px, #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    radial-gradient(circle at 8px calc(100% - 8px), #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    radial-gradient(circle at calc(100% - 8px) calc(100% - 8px), #3a3a50 3px, #272738 3.5px, transparent 5.5px),
+    repeating-linear-gradient(
+      100deg,
+      transparent 0px, transparent 2px,
+      rgba(255,255,255,0.013) 2px, rgba(255,255,255,0.013) 3px
+    ),
+    linear-gradient(170deg, #1e1e30 0%, #101020 100%);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  border-top: 5px solid #ffd03a;
   box-shadow:
-    0 6px 22px rgba(0,0,0,0.65),
-    inset 0 1px 0 rgba(255,255,255,0.06);
+    0 6px 20px rgba(0,0,0,0.75),
+    inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
 .dj-eq-section h4 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   margin: 0 0 10px;
-  font-size: 0.68em;
-  font-weight: 700;
+  font-size: 0.62em;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 2.5px;
+  letter-spacing: 3px;
   color: var(--text-color, #cce);
 }
-
 .dj-eq-section h4::before {
   content: '';
   display: inline-block;
   flex-shrink: 0;
-  width: 7px;
-  height: 7px;
+  width: 6px; height: 6px;
   border-radius: 50%;
   background: #ffd03a;
   box-shadow: 0 0 7px #ffd03a;
 }
 
-.dj-eq-controls {
+/* Inner row: bypass toggle left, three knobs right */
+.dj-eq-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.dj-eq-bypass {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.58em;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  opacity: 0.55;
+}
+.dj-eq-bypass input[type="checkbox"] {
+  width: 13px; height: 13px;
+  accent-color: #ffd03a;
+}
+.dj-eq-knobs {
+  flex: 1;
   display: flex;
   justify-content: space-around;
-  gap: 10px;
-  height: 90px;
-  margin-top: 6px;
+  align-items: flex-start;
+  gap: 8px;
 }
-
 .dj-eq-band {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  flex: 1;
 }
-
 .dj-eq-band label {
   font-size: 0.62em;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--text-color, #ddeeff);
-  opacity: 0.6;
+  opacity: 0.65;
 }
-
-.dj-dial-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
+.dj-knob-canvas {
+  cursor: ns-resize;
+  display: block;
+  border-radius: 50%;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
-
-/* Vertical fader — same technique as .mrfa-bar */
-.dj-dial {
-  writing-mode: vertical-lr;
-  direction: rtl;
-  -webkit-appearance: slider-vertical;
-  width: 22px;
-  flex: 1;
-  margin: 0;
-  accent-color: #ffd03a;
-  cursor: pointer;
-}
-
+.dj-knob-input { display: none; }
 .dj-dial-value {
-  font-size: 0.62em;
+  font-size: 0.6em;
   color: var(--text-color, #ddeeff);
-  opacity: 0.55;
+  opacity: 0.5;
   text-align: center;
 }
 

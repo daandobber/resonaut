@@ -9,7 +9,8 @@
       "Bash(npm run lint)",
       "Bash(npm run:*)",
       "Bash(npm test)",
-      "Bash(npm install)"
+      "Bash(npm install)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

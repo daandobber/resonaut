@@ -357,6 +357,22 @@ const {
   perfReverbDecayValue,
   perfReverbDampSlider,
   perfReverbDampValue,
+  microcosmToggle,
+  microcosmMode,
+  microcosmMixSlider,
+  microcosmMixValue,
+  microcosmRepeatsSlider,
+  microcosmRepeatsValue,
+  microcosmTimeSlider,
+  microcosmTimeValue,
+  microcosmActivitySlider,
+  microcosmActivityValue,
+  microcosmLoopLevelSlider,
+  microcosmLoopLevelValue,
+  microcosmFilterSlider,
+  microcosmFilterValue,
+  microcosmSpaceSlider,
+  microcosmSpaceValue,
   // Performance: Scale/Key Sequencer
   scaleKeySeqEnabled,
   scaleKeySeqDefaultBarsInput,
@@ -704,6 +720,25 @@ let perfReverbLFOs = [], perfReverbLFOGains = [];
 let perfReverbSize = 1.0;
 let perfResoEnabled = false, perfReverbEnabled = false;
 let mrfaEnabled = false;
+let microcosmEnabled = false;
+let microcosmInput, microcosmDryGain, microcosmWetChainGain, microcosmMix;
+let microcosmFilter, microcosmWetGain, microcosmSpaceSend, microcosmLoopLevelNode;
+let microcosmDelays = [], microcosmFeedbacks = [], microcosmLFOs = [], microcosmLFOGains = [];
+const MICROCOSM_NUM_DELAYS = 8;
+// Basis delay-tijden (worden geschaald door Time parameter)
+const MICROCOSM_BASE_DELAYS  = [0.011, 0.019, 0.031, 0.043, 0.061, 0.083, 0.107, 0.137];
+// LFO rates en depths op activity=0.5 (worden geschaald)
+const MICROCOSM_LFO_RATES    = [0.3,   0.5,   0.7,   0.9,   1.2,   1.6,   2.1,   2.8  ];
+const MICROCOSM_LFO_DEPTHS   = [0.005, 0.004, 0.004, 0.003, 0.004, 0.003, 0.003, 0.002];
+const MICROCOSM_FEEDBACK_DEFAULT = 0.78;
+const MICROCOSM_MIX_DEFAULT  = 0.75;
+const MICROCOSM_MODES = {
+  'micro-loop': { time: 0.12, repeats: 0.82, loopLevel: 0.7,  activity: 0.4, filter: 6000, space: 0.25 },
+  'granular':   { time: 0.38, repeats: 0.76, loopLevel: 0.65, activity: 0.85, filter: 7500, space: 0.5  },
+  'shimmer':    { time: 0.5,  repeats: 0.86, loopLevel: 0.75, activity: 0.9,  filter: 9000, space: 0.65 },
+  'stutter':    { time: 0.04, repeats: 0.91, loopLevel: 0.85, activity: 1.0,  filter: 4500, space: 0.2  },
+  'bloom':      { time: 0.75, repeats: 0.68, loopLevel: 0.55, activity: 0.3,  filter: 3500, space: 0.8  },
+};
 window.isRecording = false;
 let originalMasterGainDestination = null;
 // DJ EQ and post-mix bus
@@ -1320,6 +1355,9 @@ let wandHoveredNodeId = null;
 let wandBeamEnd = null;
 let wandBeamTimer = 0;
 const WAND_BEAM_DURATION = 0.3;
+let wandIsDrawing = false;
+let wandLastNotePos = null;
+const WAND_STRUM_MIN_DIST = 28;
 const MAX_HISTORY_SIZE = 50;
 let historyStack = [];
 let historyIndex = -1;
@@ -2228,9 +2266,9 @@ export async function setupAudio() {
       const fb = audioContext.createGain();
       fb.gain.value = PERF_REVERB_DECAY;
       const lfo = audioContext.createOscillator();
-      lfo.frequency.value = 0.1 + Math.random() * 0.2;
+      lfo.frequency.value = 0.15 + Math.random() * 0.45;
       const lfoGain = audioContext.createGain();
-      lfoGain.gain.value = 0.002;
+      lfoGain.gain.value = 0.004;
       lfo.connect(lfoGain);
       lfoGain.connect(d.delayTime);
       lfo.start();
@@ -2248,6 +2286,76 @@ export async function setupAudio() {
     perfReverbWetGain.connect(reverbReturnAnalyser);
     perfResoGain.connect(perfReverbInput);
     mrfaOutput.connect(perfReverbInput);
+
+    // ── Microcosm ── granulaire shimmer + reverb + reso als één effect ──
+    microcosmInput = audioContext.createGain();
+    microcosmInput.gain.value = 0; // gated via toggle
+
+    // Loop level bepaalt hoeveel signaal de delay-lussen ingaat
+    microcosmLoopLevelNode = audioContext.createGain();
+    microcosmLoopLevelNode.gain.value = 0.85;
+
+    // Som van alle delay-outputs — gain bewust hoger dan 1/N, feedback compenseert de rest
+    microcosmMix = audioContext.createGain();
+    microcosmMix.gain.value = 0.42;
+
+    // Lowpass filter (Filter param)
+    microcosmFilter = audioContext.createBiquadFilter();
+    microcosmFilter.type = 'lowpass';
+    microcosmFilter.frequency.value = 5000;
+    microcosmFilter.Q.value = 0.8;
+
+    // Mix-gain (Mix param) — de enige wet/dry knop
+    microcosmWetChainGain = audioContext.createGain();
+    microcosmWetChainGain.gain.value = MICROCOSM_MIX_DEFAULT;
+
+    // Master output gate
+    microcosmWetGain = audioContext.createGain();
+    microcosmWetGain.gain.value = 0;
+
+    // Space send — naar perfReverb voor diepte
+    microcosmSpaceSend = audioContext.createGain();
+    microcosmSpaceSend.gain.value = 0.7;
+
+    MICROCOSM_BASE_DELAYS.forEach((dt, i) => {
+        const d = audioContext.createDelay(1.5);
+        d.delayTime.value = dt;
+        const fb = audioContext.createGain();
+        fb.gain.value = MICROCOSM_FEEDBACK_DEFAULT;
+        const lfo = audioContext.createOscillator();
+        lfo.type = i % 3 === 0 ? 'triangle' : 'sine';
+        lfo.frequency.value = MICROCOSM_LFO_RATES[i];
+        const lfoGain = audioContext.createGain();
+        lfoGain.gain.value = MICROCOSM_LFO_DEPTHS[i];
+        lfo.connect(lfoGain);
+        lfoGain.connect(d.delayTime);
+        lfo.start();
+        microcosmLoopLevelNode.connect(d);
+        d.connect(fb);
+        fb.connect(d);
+        d.connect(microcosmMix);
+        microcosmDelays.push(d);
+        microcosmFeedbacks.push(fb);
+        microcosmLFOs.push(lfo);
+        microcosmLFOGains.push(lfoGain);
+    });
+
+    // Signaalrouting microcosm
+    microcosmInput.connect(microcosmLoopLevelNode);
+    microcosmMix.connect(microcosmFilter);
+    microcosmFilter.connect(microcosmWetChainGain);
+    microcosmWetChainGain.connect(microcosmWetGain);
+    microcosmWetGain.connect(postMasterBus);
+
+    // Space: microcosm voedt perfReverb direct
+    microcosmWetGain.connect(microcosmSpaceSend);
+    if (perfReverbInput) microcosmSpaceSend.connect(perfReverbInput);
+
+    // Koppeling: microcosm voedt ook de resonator → resonator → reverb
+    // (perfResoInput ontvangt al van mrfaOutput, hier voegen we microcosm toe)
+    if (perfResoInput) microcosmWetGain.connect(perfResoInput);
+
+    mrfaOutput.connect(microcosmInput);
 
     try {
         const irToLoad = currentIRUrl || (typeof impulseResponses !== 'undefined' && impulseResponses.length > 0 ? impulseResponses[0].url : REVERB_IR_URL);
@@ -3552,6 +3660,41 @@ function initializeGlobalEffectSliders() {
         djEqLow.addEventListener("change", saveState);
     }
 
+    // Init rotary canvas knobs for DJ EQ
+    const djHiCanvas  = document.getElementById('djEqHiKnob');
+    const djMidCanvas = document.getElementById('djEqMidKnob');
+    const djLowCanvas = document.getElementById('djEqLowKnob');
+    if (djHiCanvas  && djEqHi)  initPedalKnob(djHiCanvas,  djEqHi,  '#ffd03a');
+    if (djMidCanvas && djEqMid) initPedalKnob(djMidCanvas, djEqMid, '#ffd03a');
+    if (djLowCanvas && djEqLow) initPedalKnob(djLowCanvas, djEqLow, '#ffd03a');
+
+    // Init compact pedal knobs — Resonator (#33ddb0)
+    const resoColor = '#33ddb0';
+    [['resoLevelKnob', perfResoSlider], ['resoDelayKnob', perfResoDelaySlider],
+     ['resoFbKnob', perfResoFeedbackSlider], ['resoFreqKnob', perfResoFreqSlider],
+     ['resoQKnob', perfResoQSlider]].forEach(([id, input]) => {
+        const c = document.getElementById(id);
+        if (c && input) initPedalKnob(c, input, resoColor);
+    });
+
+    // Init compact pedal knobs — Reverb (#b03aff)
+    const revColor = '#b03aff';
+    [['reverbWetKnob', perfReverbSlider], ['reverbSizeKnob', perfReverbSizeSlider],
+     ['reverbDecayKnob', perfReverbDecaySlider], ['reverbDampKnob', perfReverbDampSlider]].forEach(([id, input]) => {
+        const c = document.getElementById(id);
+        if (c && input) initPedalKnob(c, input, revColor);
+    });
+
+    // Init compact pedal knobs — Microcosm (#ff3a7a)
+    const mcColor = '#ff3a7a';
+    [['mcMixKnob', microcosmMixSlider], ['mcRepeatsKnob', microcosmRepeatsSlider],
+     ['mcTimeKnob', microcosmTimeSlider], ['mcActKnob', microcosmActivitySlider],
+     ['mcLoopKnob', microcosmLoopLevelSlider], ['mcFilterKnob', microcosmFilterSlider],
+     ['mcSpaceKnob', microcosmSpaceSlider]].forEach(([id, input]) => {
+        const c = document.getElementById(id);
+        if (c && input) initPedalKnob(c, input, mcColor);
+    });
+
     // Bypass toggle
     if (djEqBypassToggle && djEqActiveGain && djEqBypassGain) {
         djEqBypassToggle.checked = djEqBypassed;
@@ -3624,6 +3767,73 @@ function initializeGlobalEffectSliders() {
         });
     }
 
+    // Helper: pas alle microcosm audio nodes aan op basis van de huidige sliders
+    function applyMicrocosmParams() {
+        if (!audioContext || !microcosmInput) return;
+        const now = audioContext.currentTime;
+        const mix      = parseFloat(microcosmMixSlider?.value      ?? MICROCOSM_MIX_DEFAULT);
+        const repeats  = parseFloat(microcosmRepeatsSlider?.value  ?? MICROCOSM_FEEDBACK_DEFAULT);
+        const time     = parseFloat(microcosmTimeSlider?.value     ?? 0.35);
+        const activity = parseFloat(microcosmActivitySlider?.value ?? 0.6);
+        const loopLvl  = parseFloat(microcosmLoopLevelSlider?.value ?? 0.65);
+        const filterF  = parseFloat(microcosmFilterSlider?.value   ?? 5000);
+        const space    = parseFloat(microcosmSpaceSlider?.value    ?? 0.4);
+
+        if (microcosmWetChainGain) microcosmWetChainGain.gain.setTargetAtTime(mix, now, 0.05);
+        if (microcosmLoopLevelNode) microcosmLoopLevelNode.gain.setTargetAtTime(loopLvl, now, 0.05);
+        microcosmFeedbacks.forEach(fb => fb.gain.setTargetAtTime(repeats, now, 0.05));
+        microcosmDelays.forEach((d, i) => d.delayTime.setTargetAtTime(MICROCOSM_BASE_DELAYS[i] * time * 8, now, 0.08));
+        microcosmLFOGains.forEach((lg, i) => lg.gain.setTargetAtTime(MICROCOSM_LFO_DEPTHS[i] * activity * 2, now, 0.05));
+        microcosmLFOs.forEach((lfo, i) => lfo.frequency.setTargetAtTime(MICROCOSM_LFO_RATES[i] * (0.5 + activity), now, 0.05));
+        if (microcosmFilter) microcosmFilter.frequency.setTargetAtTime(filterF, now, 0.05);
+        if (microcosmSpaceSend) microcosmSpaceSend.gain.setTargetAtTime(space, now, 0.05);
+    }
+
+    function applyMicrocosmMode(modeName) {
+        const p = MICROCOSM_MODES[modeName];
+        if (!p) return;
+        if (microcosmTimeSlider)     { microcosmTimeSlider.value      = p.time;      if (microcosmTimeValue)      microcosmTimeValue.textContent      = p.time.toFixed(2); }
+        if (microcosmRepeatsSlider)  { microcosmRepeatsSlider.value   = p.repeats;   if (microcosmRepeatsValue)   microcosmRepeatsValue.textContent   = p.repeats.toFixed(2); }
+        if (microcosmActivitySlider) { microcosmActivitySlider.value  = p.activity;  if (microcosmActivityValue)  microcosmActivityValue.textContent  = p.activity.toFixed(2); }
+        if (microcosmLoopLevelSlider){ microcosmLoopLevelSlider.value = p.loopLevel; if (microcosmLoopLevelValue) microcosmLoopLevelValue.textContent = p.loopLevel.toFixed(2); }
+        if (microcosmFilterSlider)   { microcosmFilterSlider.value    = p.filter;    if (microcosmFilterValue)    microcosmFilterValue.textContent    = `${p.filter}Hz`; }
+        if (microcosmSpaceSlider)    { microcosmSpaceSlider.value     = p.space;     if (microcosmSpaceValue)     microcosmSpaceValue.textContent     = p.space.toFixed(2); }
+        applyMicrocosmParams();
+    }
+
+    // Microcosm toggle
+    if (microcosmToggle && microcosmWetGain) {
+        microcosmToggle.checked = microcosmEnabled;
+        microcosmToggle.addEventListener('change', (e) => {
+            microcosmEnabled = e.target.checked;
+            const now = audioContext.currentTime;
+            microcosmInput.gain.setTargetAtTime(microcosmEnabled ? 1.0 : 0.0, now, 0.05);
+            microcosmWetGain.gain.setTargetAtTime(microcosmEnabled ? 1.0 : 0.0, now, 0.05);
+            saveState();
+        });
+    }
+    if (microcosmMode) {
+        microcosmMode.addEventListener('change', (e) => { applyMicrocosmMode(e.target.value); saveState(); });
+    }
+    const microcosmSliderDefs = [
+        [microcosmMixSlider,       microcosmMixValue,       (v) => microcosmWetChainGain?.gain.setTargetAtTime(v, audioContext.currentTime, 0.05)],
+        [microcosmRepeatsSlider,   microcosmRepeatsValue,   (v) => microcosmFeedbacks.forEach(fb => fb.gain.setTargetAtTime(v, audioContext.currentTime, 0.05))],
+        [microcosmTimeSlider,      microcosmTimeValue,      (v) => microcosmDelays.forEach((d,i) => d.delayTime.setTargetAtTime(MICROCOSM_BASE_DELAYS[i] * v * 8, audioContext.currentTime, 0.08))],
+        [microcosmActivitySlider,  microcosmActivityValue,  (v) => { microcosmLFOGains.forEach((lg,i) => lg.gain.setTargetAtTime(MICROCOSM_LFO_DEPTHS[i]*v*2, audioContext.currentTime, 0.05)); microcosmLFOs.forEach((lfo,i) => lfo.frequency.setTargetAtTime(MICROCOSM_LFO_RATES[i]*(0.5+v), audioContext.currentTime, 0.05)); }],
+        [microcosmLoopLevelSlider, microcosmLoopLevelValue, (v) => microcosmLoopLevelNode?.gain.setTargetAtTime(v, audioContext.currentTime, 0.05)],
+        [microcosmFilterSlider,    microcosmFilterValue,    (v) => microcosmFilter?.frequency.setTargetAtTime(v, audioContext.currentTime, 0.05), (v) => `${Math.round(v)}Hz`],
+        [microcosmSpaceSlider,     microcosmSpaceValue,     (v) => microcosmSpaceSend?.gain.setTargetAtTime(v, audioContext.currentTime, 0.05)],
+    ];
+    microcosmSliderDefs.forEach(([slider, valueEl, fn, fmt]) => {
+        if (!slider) return;
+        const display = () => { if (valueEl) valueEl.textContent = fmt ? fmt(parseFloat(slider.value)) : parseFloat(slider.value).toFixed(2); };
+        display();
+        slider.addEventListener('input', (e) => { fn(parseFloat(e.target.value)); display(); });
+        slider.addEventListener('change', saveState);
+    });
+    // Apply initial mode params
+    applyMicrocosmParams();
+
     // Initialize Scale/Key Sequencer UI
     try { initializeScaleKeySequencerUI(); } catch (e) { /* ignore */ }
 }
@@ -3631,6 +3841,109 @@ function initializeGlobalEffectSliders() {
 function updateMRFADirectGain() {
     if (!mrfaDirectGain) return;
     mrfaDirectGain.gain.setTargetAtTime(1.0, audioContext.currentTime, 0.01);
+}
+
+// ── Rotary pedal knob ────────────────────────────────────────────────────────
+function initPedalKnob(canvas, input, color = '#ffd03a') {
+    const SIZE = canvas.width;
+    const kCtx = canvas.getContext('2d');
+    const cx = SIZE / 2, cy = SIZE / 2;
+    const R = SIZE / 2 - 2;
+    const START = 3 * Math.PI / 4;   // 7:30 o'clock = min value
+    const SWEEP = 1.5 * Math.PI;     // 270° total
+
+    function norm() {
+        const mn = parseFloat(input.min), mx = parseFloat(input.max);
+        return (parseFloat(input.value) - mn) / (mx - mn);
+    }
+    function draw() {
+        const t = norm();
+        const va = START + t * SWEEP;
+        kCtx.clearRect(0, 0, SIZE, SIZE);
+
+        // Track arc (full range, dim)
+        kCtx.beginPath();
+        kCtx.arc(cx, cy, R - 6, START, START + SWEEP, false);
+        kCtx.strokeStyle = 'rgba(255,255,255,0.1)';
+        kCtx.lineWidth = 3;
+        kCtx.stroke();
+
+        // Value arc (colored)
+        if (t > 0.001) {
+            kCtx.beginPath();
+            kCtx.arc(cx, cy, R - 6, START, va, false);
+            kCtx.strokeStyle = color;
+            kCtx.lineWidth = 3;
+            kCtx.stroke();
+        }
+
+        // Knob body
+        const g = kCtx.createRadialGradient(cx - R * 0.22, cy - R * 0.22, 0, cx, cy, R - 8);
+        g.addColorStop(0, '#525268');
+        g.addColorStop(0.65, '#2c2c40');
+        g.addColorStop(1, '#14141e');
+        kCtx.beginPath();
+        kCtx.arc(cx, cy, R - 8, 0, Math.PI * 2);
+        kCtx.fillStyle = g;
+        kCtx.fill();
+
+        // Rim highlight
+        kCtx.beginPath();
+        kCtx.arc(cx, cy, R - 8, 0, Math.PI * 2);
+        kCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+        kCtx.lineWidth = 1.5;
+        kCtx.stroke();
+
+        // Indicator dot
+        const ir = R - 14;
+        kCtx.beginPath();
+        kCtx.arc(cx + ir * Math.cos(va), cy + ir * Math.sin(va), 3.5, 0, Math.PI * 2);
+        kCtx.fillStyle = '#ffffff';
+        kCtx.fill();
+    }
+
+    let dragging = false, startY = 0, startVal = 0;
+    const onMove = (cy) => {
+        if (!dragging) return;
+        const range = parseFloat(input.max) - parseFloat(input.min);
+        const nv = Math.max(parseFloat(input.min),
+            Math.min(parseFloat(input.max), startVal + (startY - cy) * (range / 180)));
+        input.value = nv;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        draw();
+    };
+
+    canvas.addEventListener('mousedown', (e) => {
+        dragging = true; startY = e.clientY; startVal = parseFloat(input.value);
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => onMove(e.clientY));
+    document.addEventListener('mouseup', () => {
+        if (dragging) { dragging = false; input.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    canvas.addEventListener('touchstart', (e) => {
+        dragging = true; startY = e.touches[0].clientY; startVal = parseFloat(input.value);
+        e.preventDefault();
+    }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => {
+        onMove(e.touches[0].clientY); e.preventDefault();
+    }, { passive: false });
+    canvas.addEventListener('touchend', () => {
+        if (dragging) { dragging = false; input.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const range = parseFloat(input.max) - parseFloat(input.min);
+        const nv = Math.max(parseFloat(input.min),
+            Math.min(parseFloat(input.max), parseFloat(input.value) - e.deltaY * (range / 1000)));
+        input.value = nv;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        draw();
+    }, { passive: false });
+
+    input.addEventListener('input', draw);
+    draw();
+    return draw;
 }
 
 // ----------------------
@@ -3727,31 +4040,30 @@ function renderScaleKeySeqBlocksUI() {
     progress.className = 'scale-key-seq-progress';
     wrap.appendChild(progress);
 
-    // Remove button (top-right)
+    // Remove button (top-right, visible on hover)
     const rem = document.createElement('button');
     rem.className = 'scale-key-seq-remove'; rem.textContent='×'; rem.title='Remove block';
     rem.addEventListener('click', ()=>{ scaleKeySeqState.blocks.splice(idx,1); if (scaleKeySeqState.currentIdx >= scaleKeySeqState.blocks.length) scaleKeySeqState.currentIdx = 0; renderScaleKeySeqBlocksUI(); saveState(); rescheduleScaleKeySequencer(); });
     wrap.appendChild(rem);
 
-    // Top row: Root + Bars
-    const controlsTop = document.createElement('div');
-    controlsTop.className = 'scale-key-seq-controlsTop';
+    // Root note select (compact chip)
     const selRoot = document.createElement('select');
+    selRoot.className = 'seq-chip-root';
     noteNames.forEach((nn,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=nn; if((((blk.root%12)+12)%12)===i) o.selected=true; selRoot.appendChild(o); });
     selRoot.addEventListener('change', (e)=>{ blk.root = parseInt(e.target.value,10)||0; saveState(); });
-    const barsInput = document.createElement('input'); barsInput.type='number'; barsInput.min='1'; barsInput.max='64'; barsInput.step='1'; barsInput.value=String(bars); barsInput.title='Bars';
-    barsInput.addEventListener('change',(e)=>{ const v=Math.max(1,Math.min(64,parseInt(e.target.value,10)||bars)); blk.bars=v; barsInput.value=String(v); saveState(); rescheduleScaleKeySequencer(); });
-    controlsTop.appendChild(selRoot); controlsTop.appendChild(barsInput);
-    wrap.appendChild(controlsTop);
+    wrap.appendChild(selRoot);
 
-    // Bottom row: Scale
-    const scaleRow = document.createElement('div');
-    scaleRow.className = 'scale-key-seq-scaleRow';
+    // Scale select (compact chip)
     const selScale = document.createElement('select');
+    selScale.className = 'seq-chip-scale';
     scaleKeys.forEach(k => { const o = document.createElement('option'); o.value=k; o.textContent=scales[k]?.name||k; if (blk.scaleKey===k) o.selected=true; selScale.appendChild(o); });
     selScale.addEventListener('change', (e)=>{ blk.scaleKey = e.target.value; saveState(); });
-    scaleRow.appendChild(selScale);
-    wrap.appendChild(scaleRow);
+    wrap.appendChild(selScale);
+
+    // Bars input (compact chip)
+    const barsInput = document.createElement('input'); barsInput.type='number'; barsInput.min='1'; barsInput.max='64'; barsInput.step='1'; barsInput.value=String(bars); barsInput.title='Bars'; barsInput.className='seq-chip-bars';
+    barsInput.addEventListener('change',(e)=>{ const v=Math.max(1,Math.min(64,parseInt(e.target.value,10)||bars)); blk.bars=v; barsInput.value=String(v); saveState(); rescheduleScaleKeySequencer(); });
+    wrap.appendChild(barsInput);
 
     scaleKeySeqBlocks.appendChild(wrap);
   });
@@ -8558,6 +8870,85 @@ function createParticles(x, y, count) {
   }
 }
 
+function spawnWandTrailParticles(x, y) {
+  const colors = [
+    'rgba(200, 200, 255, 0.9)',
+    'rgba(255, 200, 255, 0.9)',
+    'rgba(160, 210, 255, 0.9)',
+    'rgba(255, 255, 200, 0.9)',
+    'rgba(210, 160, 255, 0.9)',
+    'rgba(255, 255, 255, 0.9)',
+  ];
+  const count = 6 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.15 + Math.random() * 0.9;
+    const life = 0.5 + Math.random() * 0.9;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    activeParticles.push({
+      id: particleIdCounter++,
+      x: x + (Math.random() - 0.5) * 10 / viewScale,
+      y: y + (Math.random() - 0.5) * 10 / viewScale,
+      vx: Math.cos(angle) * speed / viewScale,
+      vy: Math.sin(angle) * speed / viewScale,
+      life,
+      maxLife: life,
+      radius: (0.5 + Math.random() * 2.5) / viewScale,
+      color,
+    });
+  }
+}
+
+function playWandNote(screenY, screenX) {
+  if (!audioContext || !masterGain || !currentScale) return;
+  const scaleLen = currentScale.notes.length;
+  const totalNotes = scaleLen * 2;
+  const tY = 1 - Math.max(0, Math.min(1, screenY / canvas.height));
+  const scaleIndex = Math.round(tY * totalNotes);
+  const freq = getFrequency(currentScale, scaleIndex, 0, currentRootNote, globalTransposeOffset);
+  if (!freq || isNaN(freq)) return;
+
+  // X-as: links = donker/gedempt, rechts = helder/open
+  const tX = Math.max(0, Math.min(1, (screenX ?? canvas.width / 2) / canvas.width));
+  const filterFreq = 180 + tX * tX * 7000; // kwadratisch voor meer nuance
+
+  const now = audioContext.currentTime;
+  const dur = 0.9;
+
+  // Twee licht-verstimde oscillatoren voor dromerig koor-effect
+  const osc1 = audioContext.createOscillator();
+  const osc2 = audioContext.createOscillator();
+  osc1.type = 'triangle';
+  osc2.type = 'sine';
+  osc1.frequency.value = freq;
+  osc2.frequency.value = freq * 1.004; // lichte detune
+
+  // Laagdoorlaatfilter (X-as)
+  const filter = audioContext.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = filterFreq;
+  filter.Q.value = 1.4;
+
+  // Zachte envelope - expliciete lineaire ramps zodat gain écht 0 bereikt (geen klik)
+  const gainNode = audioContext.createGain();
+  gainNode.gain.setValueAtTime(0, now);
+  gainNode.gain.linearRampToValueAtTime(0.07, now + 0.05);
+  gainNode.gain.linearRampToValueAtTime(0.04, now + 0.2);
+  gainNode.gain.linearRampToValueAtTime(0, now + dur);
+
+  osc1.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gainNode);
+  // Naar masterGain → gaat automatisch door alle actieve performance effecten
+  gainNode.connect(masterGain);
+
+  osc1.start(now);
+  osc2.start(now);
+  // Stop nádat gain 0 bereikt heeft, zodat er geen klik is
+  osc1.stop(now + dur + 0.02);
+  osc2.stop(now + dur + 0.02);
+}
+
 function createWindParticles(count) {
   const windColor =
     getComputedStyle(document.body || document.documentElement)
@@ -9662,6 +10053,15 @@ export function saveState() {
       performanceReverbSize: perfReverbSize,
       performanceReverbDamp: perfReverbLowPass?.frequency.value ?? DEFAULT_REVERB_DAMP_FREQ,
       performanceReverbEnabled: perfReverbEnabled,
+      microcosmEnabled: microcosmEnabled,
+      microcosmMode: microcosmMode?.value ?? 'shimmer',
+      microcosmMix: parseFloat(microcosmMixSlider?.value ?? MICROCOSM_MIX_DEFAULT),
+      microcosmRepeats: parseFloat(microcosmRepeatsSlider?.value ?? MICROCOSM_FEEDBACK_DEFAULT),
+      microcosmTime: parseFloat(microcosmTimeSlider?.value ?? 0.35),
+      microcosmActivity: parseFloat(microcosmActivitySlider?.value ?? 0.6),
+      microcosmLoopLevel: parseFloat(microcosmLoopLevelSlider?.value ?? 0.65),
+      microcosmFilterFreq: parseFloat(microcosmFilterSlider?.value ?? 5000),
+      microcosmSpace: parseFloat(microcosmSpaceSlider?.value ?? 0.4),
       // Performance: Scale/Key Sequencer
       scaleKeySequencer: {
           enabled: !!scaleKeySeqState.enabled,
@@ -9838,6 +10238,17 @@ async function loadState(stateToLoad) {
     if (perfReverbWetGain) perfReverbWetGain.gain.value = (stateToLoad.performanceReverbEnabled ?? false) ? (stateToLoad.performanceReverbLevel ?? PERF_REVERB_WET) : 0.0;
     if (perfReverbInput) perfReverbInput.gain.value = (stateToLoad.performanceReverbEnabled ?? false) ? 1.0 : 0.0;
     perfReverbEnabled = stateToLoad.performanceReverbEnabled ?? false;
+    microcosmEnabled = stateToLoad.microcosmEnabled ?? false;
+    if (microcosmInput) microcosmInput.gain.value = microcosmEnabled ? 1.0 : 0.0;
+    if (microcosmWetGain) microcosmWetGain.gain.value = microcosmEnabled ? 1.0 : 0.0;
+    if (microcosmMode && stateToLoad.microcosmMode) microcosmMode.value = stateToLoad.microcosmMode;
+    if (microcosmMixSlider && stateToLoad.microcosmMix !== undefined) { microcosmMixSlider.value = stateToLoad.microcosmMix; if (microcosmWetChainGain) microcosmWetChainGain.gain.value = stateToLoad.microcosmMix; }
+    if (microcosmRepeatsSlider && stateToLoad.microcosmRepeats !== undefined) { microcosmRepeatsSlider.value = stateToLoad.microcosmRepeats; microcosmFeedbacks.forEach(fb => fb.gain.value = stateToLoad.microcosmRepeats); }
+    if (microcosmTimeSlider && stateToLoad.microcosmTime !== undefined) { microcosmTimeSlider.value = stateToLoad.microcosmTime; microcosmDelays.forEach((d,i) => d.delayTime.value = MICROCOSM_BASE_DELAYS[i] * stateToLoad.microcosmTime * 8); }
+    if (microcosmActivitySlider && stateToLoad.microcosmActivity !== undefined) { microcosmActivitySlider.value = stateToLoad.microcosmActivity; const a = stateToLoad.microcosmActivity; microcosmLFOGains.forEach((lg,i) => lg.gain.value = MICROCOSM_LFO_DEPTHS[i]*a*2); microcosmLFOs.forEach((lfo,i) => lfo.frequency.value = MICROCOSM_LFO_RATES[i]*(0.5+a)); }
+    if (microcosmLoopLevelSlider && stateToLoad.microcosmLoopLevel !== undefined) { microcosmLoopLevelSlider.value = stateToLoad.microcosmLoopLevel; if (microcosmLoopLevelNode) microcosmLoopLevelNode.gain.value = stateToLoad.microcosmLoopLevel; }
+    if (microcosmFilterSlider && stateToLoad.microcosmFilterFreq !== undefined) { microcosmFilterSlider.value = stateToLoad.microcosmFilterFreq; if (microcosmFilter) microcosmFilter.frequency.value = stateToLoad.microcosmFilterFreq; }
+    if (microcosmSpaceSlider && stateToLoad.microcosmSpace !== undefined) { microcosmSpaceSlider.value = stateToLoad.microcosmSpace; if (microcosmSpaceSend) microcosmSpaceSend.gain.value = stateToLoad.microcosmSpace; }
     if (perfReverbFeedbackGains.length && stateToLoad.performanceReverbDecay !== undefined) {
         perfReverbFeedbackGains.forEach(g => g.gain.value = stateToLoad.performanceReverbDecay);
     }
@@ -9853,17 +10264,17 @@ async function loadState(stateToLoad) {
     // Restore DJ EQ state
     if (djEqHiNode && stateToLoad.djEqHiGain !== undefined) {
         djEqHiNode.gain.value = stateToLoad.djEqHiGain;
-        if (djEqHi) djEqHi.value = djEqHiNode.gain.value;
+        if (djEqHi) { djEqHi.value = djEqHiNode.gain.value; djEqHi.dispatchEvent(new Event('input')); }
         if (djEqHiValue) djEqHiValue.textContent = `${djEqHiNode.gain.value.toFixed(1)}dB`;
     }
     if (djEqMidNode && stateToLoad.djEqMidGain !== undefined) {
         djEqMidNode.gain.value = stateToLoad.djEqMidGain;
-        if (djEqMid) djEqMid.value = djEqMidNode.gain.value;
+        if (djEqMid) { djEqMid.value = djEqMidNode.gain.value; djEqMid.dispatchEvent(new Event('input')); }
         if (djEqMidValue) djEqMidValue.textContent = `${djEqMidNode.gain.value.toFixed(1)}dB`;
     }
     if (djEqLowNode && stateToLoad.djEqLowGain !== undefined) {
         djEqLowNode.gain.value = stateToLoad.djEqLowGain;
-        if (djEqLow) djEqLow.value = djEqLowNode.gain.value;
+        if (djEqLow) { djEqLow.value = djEqLowNode.gain.value; djEqLow.dispatchEvent(new Event('input')); }
         if (djEqLowValue) djEqLowValue.textContent = `${djEqLowNode.gain.value.toFixed(1)}dB`;
     }
     if (stateToLoad.djEqBypassed !== undefined && djEqActiveGain && djEqBypassGain) {
@@ -9878,6 +10289,13 @@ async function loadState(stateToLoad) {
     if (mrfaDryGain) mrfaDryGain.gain.value = mrfaEnabled ? 0.0 : 1.0;
     if (mrfaDirectGain) mrfaDirectGain.gain.value = 1.0;
     updateMRFADirectGain();
+    // Refresh all pedal knob canvases after state load
+    [perfResoSlider, perfResoDelaySlider, perfResoFeedbackSlider, perfResoFreqSlider, perfResoQSlider,
+     perfReverbSlider, perfReverbSizeSlider, perfReverbDecaySlider, perfReverbDampSlider,
+     microcosmMixSlider, microcosmRepeatsSlider, microcosmTimeSlider, microcosmActivitySlider,
+     microcosmLoopLevelSlider, microcosmFilterSlider, microcosmSpaceSlider].forEach(inp => {
+        if (inp) inp.dispatchEvent(new Event('input'));
+    });
     // Restore Scale/Key Sequencer
     if (stateToLoad.scaleKeySequencer) {
         try {
@@ -18065,17 +18483,17 @@ function draw() {
         const tipY = mousePos.y;
         const baseX = tipX - len;
         const baseY = tipY + len;
-        ctx.strokeStyle = "rgba(220,220,220,0.8)";
+        ctx.strokeStyle = wandIsDrawing ? "rgba(200,180,255,0.9)" : "rgba(220,220,220,0.8)";
         ctx.lineWidth = 2 / viewScale;
         ctx.beginPath();
         ctx.moveTo(baseX, baseY);
         ctx.lineTo(tipX, tipY);
         ctx.stroke();
-        const pulseR = 4 / viewScale;
+        const pulseR = (wandIsDrawing ? 6 : 4) / viewScale;
         const glow = 0.7 + 0.3 * Math.sin(performance.now() / 100);
         ctx.beginPath();
         ctx.arc(tipX, tipY, pulseR, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 150, ${glow})`;
+        ctx.fillStyle = wandIsDrawing ? `rgba(220, 180, 255, ${glow})` : `rgba(255, 255, 150, ${glow})`;
         ctx.fill();
         if (wandBeamTimer > 0 && wandBeamEnd) {
             ctx.strokeStyle = `rgba(255, 200, 250, ${wandBeamTimer / WAND_BEAM_DURATION})`;
@@ -19415,16 +19833,10 @@ function handleMouseDown(event) {
 
   if (currentTool === "wand" && event.button === 0) {
     updateMousePos(event);
-    const newNode = addNode(mousePos.x, mousePos.y, PORTAL_NEBULA_TYPE);
-    if (newNode) {
-      wandBeamEnd = { x: mousePos.x, y: mousePos.y };
-      wandBeamTimer = WAND_BEAM_DURATION;
-      currentGlobalPulseId++;
-      propagateTrigger(newNode, 0, currentGlobalPulseId, -1, Infinity, {
-        type: "trigger",
-        data: { intensity: 1.0 },
-      });
-    }
+    wandIsDrawing = true;
+    wandLastNotePos = { x: mousePos.x, y: mousePos.y };
+    spawnWandTrailParticles(mousePos.x, mousePos.y);
+    playWandNote(screenMousePos.y, screenMousePos.x);
     return;
   }
 
@@ -20083,6 +20495,17 @@ function handleMouseMove(event) {
   const effectiveGlobalSnap = isSnapEnabled && !event.shiftKey;
 
   if (currentTool === "wand") {
+    if (wandIsDrawing) {
+      spawnWandTrailParticles(mousePos.x, mousePos.y);
+      const dx = mousePos.x - wandLastNotePos.x;
+      const dy = mousePos.y - wandLastNotePos.y;
+      if (Math.sqrt(dx * dx + dy * dy) >= WAND_STRUM_MIN_DIST / viewScale) {
+        playWandNote(screenMousePos.y, screenMousePos.x);
+        wandLastNotePos = { x: mousePos.x, y: mousePos.y };
+      }
+      canvas.style.cursor = "crosshair";
+      return;
+    }
     const n = findNodeAt(mousePos.x, mousePos.y);
     const nowTime = audioContext
       ? audioContext.currentTime
@@ -20709,6 +21132,12 @@ function handleMouseMove(event) {
 
 function handleMouseUp(event) {
   if (event.button === 2) return;
+
+  if (currentTool === "wand" && wandIsDrawing) {
+    wandIsDrawing = false;
+    wandLastNotePos = null;
+    return;
+  }
 
   if (!isAudioReady) return;
   const targetIsPanelControl =
