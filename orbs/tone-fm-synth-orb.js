@@ -170,20 +170,27 @@ export function createToneFmSynthOrb(node) {
     
     let isActive = false;
     let currentFreq = null;
-    
+
+    const voiceMasterGain = new Tone.Gain(1);
+
     return {
       operators: voiceOperators,
+      voiceMasterGain,
       isActive: () => isActive,
       getCurrentFreq: () => currentFreq,
       triggerStart: (time, frequency, velocity = 1) => {
         currentFreq = frequency;
         isActive = true;
-        
+
+        // Restore master gain in case this voice was killed
+        voiceMasterGain.gain.cancelScheduledValues(time);
+        voiceMasterGain.gain.setValueAtTime(1, time);
+
         voiceOp1.osc.frequency.setValueAtTime(frequency, time);
         voiceOp2.osc.frequency.setValueAtTime(frequency * (p.modulatorRatio ?? 1), time);
         voiceOp3.osc.frequency.setValueAtTime(frequency * (p.modulator2Ratio ?? 1), time);
         voiceOp4.osc.frequency.setValueAtTime(frequency * (p.modulator3Ratio ?? 1), time);
-        
+
         voiceOp1.env.triggerAttack(time, velocity);
         voiceOp2.env.triggerAttack(time);
         voiceOp3.env.triggerAttack(time);
@@ -192,12 +199,18 @@ export function createToneFmSynthOrb(node) {
       triggerStop: (time) => {
         isActive = false;
         currentFreq = null;
-        
+
         voiceOp1.env.triggerRelease(time);
         voiceOp2.env.triggerRelease(time);
         voiceOp3.env.triggerRelease(time);
         voiceOp4.env.triggerRelease(time);
-      }
+      },
+      kill: (time) => {
+        isActive = false;
+        currentFreq = null;
+        voiceMasterGain.gain.cancelScheduledValues(time);
+        voiceMasterGain.gain.setTargetAtTime(0, time, 0.003);
+      },
     };
   }
 
@@ -211,6 +224,9 @@ export function createToneFmSynthOrb(node) {
   // Shared filter and effects chain
   const filter = new Tone.Filter(p.filterCutoff ?? 20000, p.filterType ?? 'lowpass');
   filter.Q.value = p.filterResonance ?? 1;
+
+  // Connect each voice's master gain to the shared filter (done here because filter didn't exist during createVoice)
+  voices.forEach(voice => voice.voiceMasterGain.connect(filter));
 
   const gainNode = new Tone.Gain(1);
   filter.connect(gainNode);
@@ -273,7 +289,7 @@ export function createToneFmSynthOrb(node) {
         operators[source].modGain.connect(operators[target].osc.frequency);
       });
       alg.carriers.forEach(idx => {
-        operators[idx].outGain.connect(filter);
+        operators[idx].outGain.connect(voice.voiceMasterGain);
       });
     });
     
@@ -555,6 +571,11 @@ export function createToneFmSynthOrb(node) {
     // Manual parameter sync trigger for UI updates
     syncParameters: () => {
       broadcastAllParameters();
+    },
+
+    // Immediately silence all voices (3ms fade to avoid click) before retriggering
+    killAllVoices: (time) => {
+      voices.forEach(voice => voice.kill(time));
     },
   };
 }

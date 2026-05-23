@@ -3895,8 +3895,8 @@ function initPedalKnob(canvas, input, color = '#ffd03a') {
         kCtx.lineWidth = 1.5;
         kCtx.stroke();
 
-        // Indicator dot
-        const ir = R - 14;
+        // Indicator dot – relative radius so small canvas sizes still show it
+        const ir = Math.max(Math.round(R * 0.27), R - 14);
         kCtx.beginPath();
         kCtx.arc(cx + ir * Math.cos(va), cy + ir * Math.sin(va), 3.5, 0, Math.PI * 2);
         kCtx.fillStyle = '#ffffff';
@@ -4748,17 +4748,19 @@ export function updateNodeAudioParams(node) {
         console.log('[ToneFM] Failed to set modulator3 waveform:', e);
       }
     }
-    if (modulatorOsc1 && params.modulatorRatio !== undefined && oscillator1 && oscillator1.frequency) {
-      const base = oscillator1.frequency.value;
-      modulatorOsc1.frequency.setTargetAtTime(base * params.modulatorRatio, now, generalUpdateTimeConstant);
-    }
-    if (modulatorOsc2 && params.modulator2Ratio !== undefined && oscillator1 && oscillator1.frequency) {
-      const base = oscillator1.frequency.value;
-      modulatorOsc2.frequency.setTargetAtTime(base * params.modulator2Ratio, now, generalUpdateTimeConstant);
-    }
-    if (modulatorOsc3 && params.modulator3Ratio !== undefined && oscillator1 && oscillator1.frequency) {
-      const base = oscillator1.frequency.value;
-      modulatorOsc3.frequency.setTargetAtTime(base * params.modulator3Ratio, now, generalUpdateTimeConstant);
+    if (params.engine !== 'tonefm') {
+      if (modulatorOsc1 && params.modulatorRatio !== undefined && oscillator1 && oscillator1.frequency) {
+        const base = oscillator1.frequency.value;
+        modulatorOsc1.frequency.setTargetAtTime(base * params.modulatorRatio, now, generalUpdateTimeConstant);
+      }
+      if (modulatorOsc2 && params.modulator2Ratio !== undefined && oscillator1 && oscillator1.frequency) {
+        const base = oscillator1.frequency.value;
+        modulatorOsc2.frequency.setTargetAtTime(base * params.modulator2Ratio, now, generalUpdateTimeConstant);
+      }
+      if (modulatorOsc3 && params.modulator3Ratio !== undefined && oscillator1 && oscillator1.frequency) {
+        const base = oscillator1.frequency.value;
+        modulatorOsc3.frequency.setTargetAtTime(base * params.modulator3Ratio, now, generalUpdateTimeConstant);
+      }
     }
 
     // Check for Tone FM synth parameters
@@ -5025,33 +5027,34 @@ export function updateNodeAudioParams(node) {
         params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
 
       if (oscillator1 && !isNaN(mainNoteFreq) && mainNoteFreq > 0) {
-        if (node.audioParams && node.audioParams.engine === 'pulse') {
-          // For pulse, main osc tracks base pitch directly
-          oscillator1.frequency.setTargetAtTime(
-            mainNoteFreq,
-            now,
-            pitchUpdateTimeConstant,
-          );
-        } else {
-          const osc1Freq = mainNoteFreq * Math.pow(2, params.osc1Octave || 0);
-          oscillator1.frequency.setTargetAtTime(
-            osc1Freq,
-            now,
-            pitchUpdateTimeConstant,
-          );
+        if (node.audioParams && node.audioParams.engine !== 'tonefm') {
+          if (node.audioParams && node.audioParams.engine === 'pulse') {
+            oscillator1.frequency.setTargetAtTime(
+              mainNoteFreq,
+              now,
+              pitchUpdateTimeConstant,
+            );
+          } else {
+            const osc1Freq = mainNoteFreq * Math.pow(2, params.osc1Octave || 0);
+            oscillator1.frequency.setTargetAtTime(
+              osc1Freq,
+              now,
+              pitchUpdateTimeConstant,
+            );
+          }
+          if (modulatorOsc1 && params.carrierWaveform) {
+            const modRatio = params.modulatorRatio || 1.0;
+            modulatorOsc1.frequency.setTargetAtTime(
+              mainNoteFreq * modRatio,
+              now,
+              pitchUpdateTimeConstant,
+            );
+          }
         }
         if (osc1Gain) {
           const mix = params.orbitonesEnabled ? 1.0 - orbitoneBaseMixLevel : 1.0;
           const lvl = (params.osc1Level ?? 1.0) * mix;
           osc1Gain.gain.setTargetAtTime(lvl, now, generalUpdateTimeConstant);
-        }
-        if (modulatorOsc1 && params.carrierWaveform) {
-          const modRatio = params.modulatorRatio || 1.0;
-          modulatorOsc1.frequency.setTargetAtTime(
-            mainNoteFreq * modRatio,
-            now,
-            pitchUpdateTimeConstant,
-          );
         }
         if (
           oscillator2 &&
@@ -5917,6 +5920,12 @@ export function triggerNodeEffect(
       const dec = params.carrierEnvDecay ?? 0.3;
       const sus = params.carrierEnvSustain ?? 0;
       const rel = params.carrierEnvRelease ?? 0.3;
+
+      // Immediately mute all releasing voices before the new note,
+      // so old-pitch tails don't overlap and create a false glide.
+      if (audioNodes.killAllVoices) {
+        try { audioNodes.killAllVoices(now); } catch {}
+      }
 
       // Prefer explicit frequency to ensure proper polyphony from sequencers
       if (audioNodes.triggerStart) {

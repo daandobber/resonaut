@@ -138,14 +138,12 @@ export function updateFmDroneParams(audioNodes) {
   const ctx = globalThis.audioContext;
   const now = ctx.currentTime;
   const baseFreq = p.pitch ?? p.baseFreq ?? 110;
-  audioNodes.carriers.forEach((osc) =>
-    osc.frequency.setTargetAtTime(baseFreq, now, 0.1)
-  );
-  audioNodes.modOsc.frequency.setTargetAtTime(
-    baseFreq * (p.harmonicity ?? 1.5),
-    now,
-    0.1
-  );
+  audioNodes.carriers.forEach((osc) => {
+    osc.frequency.cancelScheduledValues(now);
+    osc.frequency.setValueAtTime(baseFreq, now);
+  });
+  audioNodes.modOsc.frequency.cancelScheduledValues(now);
+  audioNodes.modOsc.frequency.setValueAtTime(baseFreq * (p.harmonicity ?? 1.5), now);
   audioNodes.modGain.gain.setTargetAtTime(p.modulationIndex ?? 10, now, 0.1);
   audioNodes.lfo.frequency.setTargetAtTime(p.lfoRate ?? 0.05, now, 0.1);
   audioNodes.lfoGain.gain.setTargetAtTime(p.lfoDepth ?? 200, now, 0.1);

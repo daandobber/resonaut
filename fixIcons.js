@@ -40,12 +40,12 @@ const LABELS = {
 // SVG inner content for each button. All 24x24 viewBox.
 const ICONS = {
 
-  // — Transport controls —
+  // — Transport controls — (Lucide-style)
   'app-menu-play-pause-btn':
-    '<polygon points="5,3 19,12 5,21" fill="currentColor"/>',
+    '<polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/>',
 
   'app-menu-stop-btn':
-    '<rect x="5" y="5" width="14" height="14" rx="1.5" fill="currentColor"/>',
+    '<rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/>',
 
   'app-menu-record-btn':
     '<circle cx="12" cy="12" r="7" fill="currentColor"/>'
@@ -56,94 +56,123 @@ const ICONS = {
     + '<line x1="12" y1="8" x2="16.5" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
     + '<circle cx="16.5" cy="17" r="1.8" fill="currentColor"/>',
 
+  // Lucide: Cassette tape
   'app-menu-toggle-tape-looper-btn':
-    '<rect x="3" y="6" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'
-    + '<circle cx="8.5" cy="13" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>'
-    + '<circle cx="15.5" cy="13" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>'
-    + '<path d="M11 13h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M8 6V4h8v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    '<rect x="2" y="6" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'
+    + '<circle cx="8" cy="13" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+    + '<circle cx="16" cy="13" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>'
+    + '<path d="M6 6V4h12v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+    + '<path d="M10.5 13h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
 
+  // Lucide: BarChart2
   'app-menu-performance-btn':
-    '<rect x="3"  y="13" width="4" height="8"  rx="1" fill="currentColor"/>'
-    + '<rect x="10" y="5"  width="4" height="16" rx="1" fill="currentColor"/>'
-    + '<rect x="17" y="9"  width="4" height="12" rx="1" fill="currentColor"/>'
-    + '<circle cx="5"  cy="11" r="2" fill="currentColor"/>'
-    + '<circle cx="12" cy="3"  r="2" fill="currentColor"/>'
-    + '<circle cx="19" cy="7"  r="2" fill="currentColor"/>',
+    '<line x1="18" x2="18" y1="20" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="12" x2="12" y1="20" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="6" x2="6" y1="20" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: CircleHelp
   'app-menu-help-btn':
     '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>'
-    + '<path d="M9.5 9.5a3 3 0 0 1 5.2 2c0 1.5-1.5 2.2-2.2 2.8-.4.4-.5.8-.5 1.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<circle cx="12" cy="17.5" r="1.2" fill="currentColor"/>',
+    + '<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="12" x2="12.01" y1="17" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
-  // — Right toolbar menus —
+  // — Right toolbar menus — (Lucide icons)
+
+  // Lucide: Wrench
   'toolsMenuBtn':
-    '<path d="M14.7 3.3a5 5 0 0 0-6.4 6.4L3 15a2.1 2.1 0 0 0 3 3l5.3-5.3A5 5 0 0 0 17.7 6.3l-2.1 2.1-1.7-.5-.5-1.7 2.1-2.1-.8-.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+    '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
 
+  // Lucide: Music
   'instrumentsMenuBtn':
-    '<path d="M9 18a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" fill="none" stroke="currentColor" stroke-width="2"/>'
-    + '<path d="M9 12V4l9-2v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+    '<path d="M9 18V5l12-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/>'
+    + '<circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="2"/>',
 
+  // Lucide: Link2
   'connectionsMenuBtn':
-    '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07L11.75 5.19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    '<path d="M9 17H7A5 5 0 0 1 7 7h2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M15 7h2a5 5 0 1 1 0 10h-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="8" x2="16" y1="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: Sparkles (mind/intelligence)
   'symphioseMenuBtn':
-    '<path d="M9 17a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" fill="none" stroke="currentColor" stroke-width="2"/>'
-    + '<path d="M15 14a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" fill="none" stroke="currentColor" stroke-width="2"/>'
-    + '<path d="M9 12V6l6-1.5V10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+    '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
+    + '<path d="M20 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M22 5h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: CloudFog
   'mistMenuBtn':
-    '<path d="M20 15.5A4.5 4.5 0 0 0 17.5 7H17A8 8 0 1 0 4 14.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M6 21h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<path d="M8 19h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M12 19h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M5 23h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: Waves (drone/ambient sound)
   'dronesMenuBtn':
-    '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" fill="none" stroke="currentColor" stroke-width="2"/>'
-    + '<circle cx="12" cy="12" r="2" fill="currentColor"/>',
+    '<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: Move (4-directional arrows)
   'motionMenuBtn':
-    '<path d="M12 2v20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M7 7l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-    + '<path d="M7 17l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+    '<polyline points="5 9 2 12 5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<polyline points="9 5 12 2 15 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<polyline points="15 19 12 22 9 19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<polyline points="19 9 22 12 19 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<line x1="2" x2="22" y1="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="12" x2="12" y1="2" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
-  // — Editing tools —
+  // — Editing tools — (Lucide icons)
+
+  // Lucide: Paintbrush
   'brushBtn':
-    '<path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 1 1 4.03 4.03L13.1 15.96" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M13.1 15.96C11.5 17.5 10 18.5 8.5 18.5 8.5 20 9.5 21 11 21c0 0-2 1-5 0 0-3 1-4.5 2.5-5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+    '<path d="M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<path d="M9 8c-2 3-4 3.5-7 4l8 10c2-1 6-5 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<path d="M14.5 17.5 4.5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: MousePointer2
   'editBtn':
-    '<path d="M4.5 20.5L3 3l17.5 11.5-7.5 1.5-8.5 4.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-    + '<path d="M13 14.5l2.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    '<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="currentColor"/>',
 
+  // Lucide: Wand2
   'wandBtn':
-    '<path d="M3 21l8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M12.5 3l8.5 8.5L12 20 3.5 11.5 12.5 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
-    + '<line x1="20" y1="2" x2="21" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<line x1="22" y1="6" x2="19" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="m14 7 3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M5 6v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M19 14v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M10 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M7 8H3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M21 16h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M11 3H9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: Trash2
   'deleteBtn':
     '<path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-    + '<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<line x1="10" y1="11" x2="10" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<line x1="14" y1="11" x2="14" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    + '<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="10" x2="10" y1="11" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="14" x2="14" y1="11" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: Menu
   'hamburgerBtn':
-    '<line x1="3" y1="6"  x2="21" y2="6"  stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>'
-    + '<line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>'
-    + '<line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>',
+    '<line x1="4" x2="20" y1="6" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="4" x2="20" y1="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<line x1="4" x2="20" y1="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
   // — Sequencer / add buttons —
-  'addPulsarBtn':
-    '<polygon points="12,2 14.9,8.2 21.7,9.3 16.8,14.1 18,21 12,17.8 6,21 7.2,14.1 2.3,9.3 9.1,8.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
 
+  // Lucide: Star
+  'addPulsarBtn':
+    '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+
+  // Lucide: Grid3x3 (4 filled squares → step sequencer)
   'addGridSequencerBtn':
     '<rect x="3"  y="3"  width="7" height="7" rx="1" fill="currentColor"/>'
     + '<rect x="14" y="3"  width="7" height="7" rx="1" fill="currentColor"/>'
     + '<rect x="3"  y="14" width="7" height="7" rx="1" fill="currentColor"/>'
-    + '<rect x="14" y="14" width="7" height="7" rx="1" fill="currentColor" opacity="0.45"/>',
+    + '<rect x="14" y="14" width="7" height="7" rx="1" fill="currentColor" opacity="0.4"/>',
 
+  // Timeline grid (kept custom — clearly represents a timeline)
   'addTimelineGridBtn':
     '<rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'
     + '<line x1="3"  y1="9"  x2="21" y2="9"  stroke="currentColor" stroke-width="1.5"/>'
@@ -153,24 +182,21 @@ const ICONS = {
     + '<rect x="5" y="5" width="3" height="3" rx="0.5" fill="currentColor"/>'
     + '<rect x="16" y="5" width="3" height="3" rx="0.5" fill="currentColor" opacity="0.5"/>',
 
+  // Radar (kept custom — perfect representation)
   'addRadarBtn':
     '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>'
     + '<circle cx="12" cy="12" r="6"  fill="none" stroke="currentColor" stroke-width="2"/>'
     + '<circle cx="12" cy="12" r="2"  fill="currentColor"/>'
     + '<line x1="12" y1="12" x2="19.5" y2="6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
+  // Lucide: Zap (meteor/energy burst)
   'addMeteorShowerBtn':
-    '<path d="M2 22 L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-    + '<path d="M22 2 L14 6 L18 10 Z" fill="currentColor"/>'
-    + '<line x1="6"  y1="18" x2="4"  y2="20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
-    + '<line x1="10" y1="14" x2="8"  y2="16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
-    + '<line x1="14" y1="10" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
 
-  // Circle of Fifths — concentric circles with 6 outer dots (the 12 key positions)
+  // Circle of Fifths (kept custom — specific music theory concept)
   'addCircleFifthsBtn':
     '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/>'
     + '<circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>'
-    + '<circle cx="12" cy="12" r="1.5" fill="currentColor"/>'
     + '<circle cx="12"  cy="2.5"  r="1.5" fill="currentColor"/>'
     + '<circle cx="20.7" cy="7"   r="1.5" fill="currentColor"/>'
     + '<circle cx="20.7" cy="17"  r="1.5" fill="currentColor"/>'
@@ -178,10 +204,9 @@ const ICONS = {
     + '<circle cx="3.3"  cy="17"  r="1.5" fill="currentColor"/>'
     + '<circle cx="3.3"  cy="7"   r="1.5" fill="currentColor"/>',
 
-  // Tonnetz — three interlocked triangles / hexagonal lattice
+  // Tonnetz (kept custom — specific music theory concept)
   'addTonnetzBtn':
     '<path d="M12 3 L20 17 H4 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
-    + '<path d="M4 17 L12 3 L20 17" fill="none" stroke="currentColor" stroke-width="0"/>'
     + '<line x1="12" y1="3"  x2="12" y2="17" stroke="currentColor" stroke-width="1.5"/>'
     + '<line x1="4"  y1="17" x2="20" y2="17" stroke="currentColor" stroke-width="1.5"/>'
     + '<line x1="8"  y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="1.5"/>'
@@ -191,7 +216,7 @@ const ICONS = {
     + '<circle cx="8"  cy="10" r="1.4" fill="currentColor"/>'
     + '<circle cx="16" cy="10" r="1.4" fill="currentColor"/>',
 
-  // Galactic Bloom — Euclidean radial sequencer: center + ring + 6 satellites
+  // Galactic Bloom (kept custom — specific sequencer concept)
   'addGalacticBloomBtn':
     '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/>'
     + '<circle cx="12" cy="12" r="2.5" fill="currentColor"/>'
