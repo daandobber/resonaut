@@ -1065,6 +1065,7 @@ let soundEngineToAdd = null;
 let currentSubmenuType = null;
 let noteIndexToAdd = -1;
 let connectionTypeToAdd = "standard";
+let connectorSnapEnabled = true;
 let noteSelectContainer = null;
 let isDragging = false;
 let isConnecting = false;
@@ -18145,7 +18146,8 @@ function drawTemporaryConnection() {
     let endX = mousePos.x;
     let endY = mousePos.y;
     let snapTarget = null;
-    
+    let snapIndicatorColor = "rgba(255, 200, 255, 0.8)";
+
     // Smart vein preview - show which orb will be connected
     if (connectionTypeToAdd === "vein" && (connectingNode.type === "mind" || connectingNode.type === QUEEN_MIND_TYPE)) {
       const VEIN_SNAP_DISTANCE = 120; // pixels
@@ -18187,7 +18189,28 @@ function drawTemporaryConnection() {
         ctx.lineWidth = Math.max(0.7, lineWidth);
       }
     }
-    
+
+    // Connector auto-snap preview
+    if (connectorSnapEnabled && currentTool !== "vein") {
+      const CONNECTOR_SNAP_DISTANCE = 120;
+      let closestNode = null;
+      let closestDist = CONNECTOR_SNAP_DISTANCE;
+      nodes.forEach(node => {
+        if (node === connectingNode) return;
+        if (["nebula", PORTAL_NEBULA_TYPE, TIMELINE_GRID_TYPE, SPACERADAR_TYPE, CRANK_RADAR_TYPE].includes(node.type)) return;
+        const dist = Math.sqrt(Math.pow(node.x - mousePos.x, 2) + Math.pow(node.y - mousePos.y, 2));
+        if (dist < closestDist) { closestNode = node; closestDist = dist; }
+      });
+      if (closestNode) {
+        snapTarget = closestNode;
+        snapIndicatorColor = "rgba(150, 220, 255, 0.9)";
+        endX = closestNode.x;
+        endY = closestNode.y;
+        ctx.strokeStyle = "rgba(150, 220, 255, 1.0)";
+        ctx.lineWidth = Math.max(0.7, 2.5 / viewScale);
+      }
+    }
+
     ctx.beginPath();
     ctx.moveTo(startPos.x, startPos.y);
     ctx.lineTo(endX, endY);
@@ -18196,7 +18219,7 @@ function drawTemporaryConnection() {
     // Draw snap target indicator
     if (snapTarget) {
       ctx.save();
-      ctx.strokeStyle = "rgba(255, 200, 255, 0.8)";
+      ctx.strokeStyle = snapIndicatorColor;
       ctx.lineWidth = Math.max(1, 2 / viewScale);
       ctx.setLineDash([]);
       
@@ -21435,8 +21458,30 @@ function handleMouseUp(event) {
             stateWasChanged = true;
           }
         }
-      } else if (
+      }
+
+      // Connector auto-snap: find nearest node if snap is enabled and nothing directly under cursor
+      let isSnapConnected = false;
+      if (connectorSnapEnabled && connectingNode && !nodeUnderCursorOnUp && currentTool !== "vein") {
+        const CONNECTOR_SNAP_DISTANCE = 120;
+        let closestNode = null;
+        let closestDist = CONNECTOR_SNAP_DISTANCE;
+        nodes.forEach(node => {
+          if (node === connectingNode) return;
+          if (["nebula", PORTAL_NEBULA_TYPE, TIMELINE_GRID_TYPE, SPACERADAR_TYPE, CRANK_RADAR_TYPE].includes(node.type)) return;
+          const dist = Math.sqrt(Math.pow(node.x - mousePos.x, 2) + Math.pow(node.y - mousePos.y, 2));
+          if (dist < closestDist) { closestNode = node; closestDist = dist; }
+        });
+        if (closestNode) {
+          nodeUnderCursorOnUp = closestNode;
+          isSnapConnected = true;
+          createParticles(closestNode.x, closestNode.y, 15);
+        }
+      }
+
+      if (
           connectingNode &&
+          currentTool !== "vein" &&
           nodeUnderCursorOnUp &&
           nodeUnderCursorOnUp !== connectingNode &&
           (!["nebula", PORTAL_NEBULA_TYPE, TIMELINE_GRID_TYPE, SPACERADAR_TYPE, CRANK_RADAR_TYPE].includes(
@@ -21460,17 +21505,20 @@ function handleMouseUp(event) {
                 : GRID_PULSAR_DEFAULT_ROWS);
             const cols = nodeUnderCursorOnUp.cols || (isGridSeq ? GRID_SEQUENCER_DEFAULT_COLS : GRID_PULSAR_DEFAULT_COLS);
             const advanceOnPulse = !!(nodeUnderCursorOnUp.audioParams && nodeUnderCursorOnUp.audioParams.advanceOnPulse);
-            
+
             // Check if mouse is in bottom area for column connections (Grid Sequencer only)
             const bottomConnectorArea = rectY + nodeUnderCursorOnUp.height + 15; // 15px tolerance
             const isInBottomArea = isGridSeq && mousePos.y >= rectY + nodeUnderCursorOnUp.height && mousePos.y <= bottomConnectorArea;
-            
+
             // If target is a Grid Sequencer in pulse-advance mode, always connect to the single left input
             if (isGridSeq && advanceOnPulse) {
               connectToGridHandle = -1; // special left input
             } else if (nodeUnderCursorOnUp.type === CIRCLE_FIFTHS_TYPE || nodeUnderCursorOnUp.type === GALACTIC_BLOOM_TYPE) {
               // Only allow left input (-1). No outputs from circle.
               connectToGridHandle = -1;
+            } else if (isSnapConnected) {
+              // Auto-snapped: use default first row handle
+              connectToGridHandle = 0;
             } else if (isInBottomArea) {
               // Connect to column handle (bottom connectors)
               const border = isGridSeq ? GRID_SEQUENCER_DRAG_BORDER : 0;
@@ -31875,6 +31923,13 @@ if (pianoRollModeSelect) {
     pianoRollMode = e.target.value || 'hex';
     drawPianoRoll();
     saveState();
+  });
+}
+
+const connectorSnapToggle = document.getElementById("connectorSnapToggle");
+if (connectorSnapToggle) {
+  connectorSnapToggle.addEventListener("change", (e) => {
+    connectorSnapEnabled = e.target.checked;
   });
 }
 

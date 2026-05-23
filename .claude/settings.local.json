@@ -10,7 +10,9 @@
       "Bash(npm run:*)",
       "Bash(npm test)",
       "Bash(npm install)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "PowerShell(Select-String -Path 'C:\\\\Users\\\\eloo\\\\Documents\\\\codes\\\\resonaut\\\\main.js' -Pattern 'wasConnectingNodes' | Select-Object -First 10 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(Select-String -Path 'C:\\\\Users\\\\eloo\\\\Documents\\\\codes\\\\resonaut\\\\main.js' -Pattern 'nodeUnderCursorOnUp' | Select-Object -First 10 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })"
     ],
     "deny": [],
     "ask": []
