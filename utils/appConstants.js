@@ -17,6 +17,11 @@ export const MIST_PAN_LFO_DEPTH = 0.6;
 export const MIST_DELAY_LFO_RATE = 0.07;
 export const MIST_DELAY_LFO_DEPTH = 0.02;
 export const MIST_LOW_PASS_FREQ = 1500;
+export const FOG_SEND_LEVEL = 1.0;
+export const FOG_WET_LEVEL = 0.8;
+export const FOG_MAX_COVERAGE = 3;
+export const FOG_LOW_PASS_FREQ_MIN = 300;
+export const FOG_LOW_PASS_FREQ_MAX = 18000;
 export const MIST_MAX_COVERAGE = 3;
 export const CRUSH_SEND_LEVEL = 1.0;
 export const MRFA_BAND_FREQS = [90, 180, 360, 720, 1440, 2880, 5760, 11520];
@@ -86,7 +91,8 @@ export const STRING_VIOLIN_DEFAULTS = {
   filterFreqFactor: 2.5,
   filterQ: 1.5,
   vibratoRate: 4,
-  vibratoDepth: 20,
+  vibratoDepth: 5,
+  glide: 0,
   volume: 0.4,
   scaleIndex: 0,
   pitch: 0,

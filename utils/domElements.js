@@ -100,6 +100,8 @@ export const mistBtn = safeGetById("mistBtn");
 export const mistLayer = safeGetById("mistLayer");
 export const crushBtn = safeGetById("crushBtn");
 export const crushLayer = safeGetById("crushLayer");
+export const fogBtn = safeGetById("fogBtn");
+export const fogLayer = safeGetById("fogLayer");
 export const mrfaToggle = safeGetById("mrfaToggle");
 export const mrfaBandSliders = [
   safeGetById("mrfaBand1"),

@@ -58,11 +58,10 @@ export function createAnalogOrb(node) {
   audioNodes.filter.Q.value = p.filterResonance;
   audioNodes.filter.connect(audioNodes.ampEnvControl);
 
-  audioNodes.ampEnvControl.gain.value = 1.0;
+  audioNodes.ampEnvControl.gain.value = 0.0;
   audioNodes.ampEnvControl.connect(audioNodes.mainGain);
 
-
-  audioNodes.mainGain.gain.value = 0.0;
+  audioNodes.mainGain.gain.value = p.volume ?? 1.0;
   audioNodes.reverbSendGain.gain.value = p.reverbSend;
   audioNodes.delaySendGain.gain.value = p.delaySend;
   audioNodes.mainGain.connect(audioNodes.reverbSendGain);
@@ -146,7 +145,7 @@ export function createAnalogOrb(node) {
     oscillator2: audioNodes.osc2,
     osc2Gain: audioNodes.osc2Gain,
     lowPassFilter: audioNodes.filter,
-    ampEnvControl: audioNodes.ampEnvControl,
+    envelopeGate: audioNodes.ampEnvControl,
     gainNode: audioNodes.mainGain,
     reverbSendGain: audioNodes.reverbSendGain,
     delaySendGain: audioNodes.delaySendGain,

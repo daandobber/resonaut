@@ -103,10 +103,13 @@ import {
   patchState,
   createCrushPatch,
   createMistPatch,
+  createFogPatch,
   updateCrushPatchPositions,
   updateMistPatchPositions,
+  updateFogPatchPositions,
   updateCrushWetness,
   updateMistWetness,
+  updateFogWetness,
   erasePatchesAt,
   initPatchEffects,
 } from './patchEffects.js';
@@ -190,6 +193,8 @@ import {
   PRORB_TYPE,
   PORTAL_NEBULA_TYPE,
   PORTAL_NEBULA_DEFAULTS,
+  FOG_LOW_PASS_FREQ_MAX,
+  FOG_LOW_PASS_FREQ_MIN,
 } from './utils/appConstants.js';
 import { formatTime } from "./utils/timeUtils.js";
 const {
@@ -271,6 +276,8 @@ const {
   mistLayer,
   crushBtn,
   crushLayer,
+  fogBtn,
+  fogLayer,
   hamburgerBtn,
   hamburgerMenuPanel,
   editPanelContent,
@@ -710,6 +717,7 @@ let mistEffectInput, mistDelay, mistFeedback, mistFilter, mistLowpass, mistPanne
 let mistPanLFO, mistPanLFOGain, mistWetGain;
 let mistDelayLFO, mistDelayLFOGain;
 let crushEffectInput, crushWetGain, crushCombDelay, crushCombFeedback, crushBitCrusher;
+let fogEffectInput, fogLowpass, fogWetGain;
 let mrfaInput, mrfaOutput, mrfaWetGain, mrfaDryGain, mrfaDirectGain;
 let mrfaFilters = [], mrfaGains = [];
 let perfResoInput, perfResoDelay, perfResoFeedback, perfResoFilter, perfResoGain;
@@ -721,6 +729,7 @@ let perfReverbSize = 1.0;
 let perfResoEnabled = false, perfReverbEnabled = false;
 let mrfaEnabled = false;
 let microcosmEnabled = false;
+let sidechainAmount = 0.0;
 let microcosmInput, microcosmDryGain, microcosmWetChainGain, microcosmMix;
 let microcosmFilter, microcosmWetGain, microcosmSpaceSend, microcosmLoopLevelNode;
 let microcosmDelays = [], microcosmFeedbacks = [], microcosmLFOs = [], microcosmLFOGains = [];
@@ -897,6 +906,7 @@ async function startApplication() {
       try { ensureAllNodesEffectSendsConnected(); } catch {}
       updateMistWetness();
       updateCrushWetness();
+      updateFogWetness();
       drawPianoRoll();
       setActiveTool("edit");
       resetSideToolbars();
@@ -1020,6 +1030,8 @@ initPatchEffects({
   getMistFilter: () => mistFilter,
   getMistLowpass: () => mistLowpass,
   getMistWetGain: () => mistWetGain,
+  getFogLowpass: () => fogLowpass,
+  getFogWetGain: () => fogWetGain,
   getScreenCoords,
   getWorldCoords,
   saveState,
@@ -1109,6 +1121,7 @@ let dragStartPos = {
 let pendingGridToggle = null;
 let brushNodeType = "sound";
 let brushWaveform = "fmBell";
+let brushSoundEngine = null;
 let brushStartWithPulse = true;
 let brushNoteSequence = [];
 let brushNoteSequenceIndex = 0;
@@ -2071,7 +2084,38 @@ export async function setupAudio() {
     mrfaOutput.connect(mrfaDirectGain);
     // Route MRFA direct path through postMasterBus -> DJ EQ -> masterAnalyser
     mrfaDirectGain.connect(postMasterBus);
-    masterAnalyser.connect(originalMasterGainDestination);
+    // Master Kaoss Pad — parallel dry/wet insert between analyser and destination
+    window.kaosPadDryGain = audioContext.createGain();
+    window.kaosPadDryGain.gain.value = 1.0;
+    window.kaosPadWetGain = audioContext.createGain();
+    window.kaosPadWetGain.gain.value = 0.0;
+    window.kaosPadHpFilter = audioContext.createBiquadFilter();
+    window.kaosPadHpFilter.type = 'highpass';
+    window.kaosPadHpFilter.frequency.value = 20;
+    window.kaosPadHpFilter.Q.value = 1;
+    window.kaosPadLpFilter = audioContext.createBiquadFilter();
+    window.kaosPadLpFilter.type = 'lowpass';
+    window.kaosPadLpFilter.frequency.value = 20000;
+    window.kaosPadLpFilter.Q.value = 2;
+    window.kaosPadDelay = audioContext.createDelay(1.0);
+    window.kaosPadDelay.delayTime.value = 0.001;
+    window.kaosPadDelayFb = audioContext.createGain();
+    window.kaosPadDelayFb.gain.value = 0;
+    window.kaosPadDelay.connect(window.kaosPadDelayFb);
+    window.kaosPadDelayFb.connect(window.kaosPadDelay);
+    window.kaosPadDistortion = audioContext.createWaveShaper();
+    window.kaosPadDistortion.oversample = '4x';
+    (function() { const c = new Float32Array(512); for (let i=0;i<512;i++) c[i]=i/256-1; window.kaosPadDistortion.curve=c; })();
+    // Dry path: straight through
+    masterAnalyser.connect(window.kaosPadDryGain);
+    window.kaosPadDryGain.connect(originalMasterGainDestination);
+    // Wet path: through effect chain
+    masterAnalyser.connect(window.kaosPadHpFilter);
+    window.kaosPadHpFilter.connect(window.kaosPadLpFilter);
+    window.kaosPadLpFilter.connect(window.kaosPadDelay);
+    window.kaosPadDelay.connect(window.kaosPadDistortion);
+    window.kaosPadDistortion.connect(window.kaosPadWetGain);
+    window.kaosPadWetGain.connect(originalMasterGainDestination);
 
     for (let i = 0; i < NUM_TAPE_TRACKS; i++) {
       const gain = audioContext.createGain();
@@ -2208,6 +2252,18 @@ export async function setupAudio() {
     crushCombDelay.connect(crushWetGain);
     crushWetGain.connect(masterGain);
     try { globalThis.crushEffectInput = crushEffectInput; } catch {}
+
+    fogEffectInput = audioContext.createGain();
+    fogLowpass = audioContext.createBiquadFilter();
+    fogLowpass.type = 'lowpass';
+    fogLowpass.frequency.value = FOG_LOW_PASS_FREQ_MAX;
+    fogLowpass.Q.value = 0.5;
+    fogWetGain = audioContext.createGain();
+    fogWetGain.gain.value = 1.0;
+    fogEffectInput.connect(fogLowpass);
+    fogLowpass.connect(fogWetGain);
+    fogWetGain.connect(masterGain);
+    try { globalThis.fogEffectInput = fogEffectInput; } catch {}
 
     mrfaFilters = [];
     mrfaGains = [];
@@ -2872,6 +2928,12 @@ export function createAudioNodesForNode(node) {
               audioNodes.mainGain.connect(audioNodes.crushSendGain);
               audioNodes.crushSendGain.connect(crushEffectInput);
           }
+          if (fogEffectInput) {
+              audioNodes.fogSendGain = audioContext.createGain();
+              audioNodes.fogSendGain.gain.value = 0;
+              audioNodes.mainGain.connect(audioNodes.fogSendGain);
+              audioNodes.fogSendGain.connect(fogEffectInput);
+          }
 
           try { audioNodes.osc1.start(now); } catch(e){}
           try { audioNodes.osc2.start(now); } catch(e){}
@@ -2915,11 +2977,16 @@ export function createAudioNodesForNode(node) {
                         orbitone.gainNode.connect(orbitone.crushSendGain);
                         orbitone.crushSendGain.connect(globalThis.crushEffectInput);
                     }
-                    
+                    if (globalThis.fogEffectInput) {
+                        orbitone.fogSendGain = new Tone.Gain(0);
+                        orbitone.gainNode.connect(orbitone.fogSendGain);
+                        orbitone.fogSendGain.connect(globalThis.fogEffectInput);
+                    }
+
                     audioNodes.orbitoneSynths.push(orbitone);
                 });
             }
-            
+
             return audioNodes;
     } else if (node.audioParams && node.audioParams.engine === 'tonepluck') {
             const audioNodes = createTonePluckSynthOrb(node);
@@ -2953,6 +3020,11 @@ export function createAudioNodesForNode(node) {
                         orbitone.crushSendGain = new Tone.Gain(0);
                         orbitone.gainNode.connect(orbitone.crushSendGain);
                         orbitone.crushSendGain.connect(globalThis.crushEffectInput);
+                    }
+                    if (globalThis.fogEffectInput) {
+                        orbitone.fogSendGain = new Tone.Gain(0);
+                        orbitone.gainNode.connect(orbitone.fogSendGain);
+                        orbitone.fogSendGain.connect(globalThis.fogEffectInput);
                     }
 
                     audioNodes.orbitoneSynths.push(orbitone);
@@ -2997,16 +3069,20 @@ export function createAudioNodesForNode(node) {
             // Use native GainNodes for sends to fit the rest of the mixer plumbing
             const mistSendGain = audioContext.createGain();
             const crushSendGain = audioContext.createGain();
+            const fogSendGain = audioContext.createGain();
             try { aura.out.connect(mistSendGain); } catch {}
             try { aura.out.connect(crushSendGain); } catch {}
+            try { aura.out.connect(fogSendGain); } catch {}
             try { if (globalThis.mistEffectInput) mistSendGain.connect(globalThis.mistEffectInput); } catch {}
             try { if (globalThis.crushEffectInput) crushSendGain.connect(globalThis.crushEffectInput); } catch {}
+            try { if (globalThis.fogEffectInput) fogSendGain.connect(globalThis.fogEffectInput); } catch {}
 
             const audioNodes = {
               gainNode: aura.out,
               aura,
               mistSendGain,
               crushSendGain,
+              fogSendGain,
               setCarrierFrequency: (freq) => {
                 try { if (aura.setBaseFrequency) aura.setBaseFrequency(freq); } catch {}
               },
@@ -3053,6 +3129,12 @@ export function createAudioNodesForNode(node) {
               audioNodes.crushSendGain.gain.value = 0;
               audioNodes.mainGain.connect(audioNodes.crushSendGain);
               audioNodes.crushSendGain.connect(crushEffectInput);
+            }
+            if (fogEffectInput) {
+              audioNodes.fogSendGain = audioContext.createGain();
+              audioNodes.fogSendGain.gain.value = 0;
+              audioNodes.mainGain.connect(audioNodes.fogSendGain);
+              audioNodes.fogSendGain.connect(fogEffectInput);
             }
             // default route to master; grouping may re-route later
             audioNodes.mainGain.connect(masterGain);
@@ -3112,6 +3194,12 @@ export function createAudioNodesForNode(node) {
                         oSynth.mix.connect(oSynth.crushSendGain);
                         oSynth.crushSendGain.connect(crushEffectInput);
                     }
+                    if (fogEffectInput) {
+                        oSynth.fogSendGain = audioContext.createGain();
+                        oSynth.fogSendGain.gain.value = 0;
+                        oSynth.mix.connect(oSynth.fogSendGain);
+                        oSynth.fogSendGain.connect(fogEffectInput);
+                    }
                     audioNodes.orbitoneSynths.push(oSynth);
                 });
             }
@@ -3126,6 +3214,12 @@ export function createAudioNodesForNode(node) {
                 audioNodes.crushSendGain.gain.value = 0;
                 audioNodes.mix.connect(audioNodes.crushSendGain);
                 audioNodes.crushSendGain.connect(crushEffectInput);
+            }
+            if (fogEffectInput) {
+                audioNodes.fogSendGain = audioContext.createGain();
+                audioNodes.fogSendGain.gain.value = 0;
+                audioNodes.mix.connect(audioNodes.fogSendGain);
+                audioNodes.fogSendGain.connect(fogEffectInput);
             }
             return audioNodes;
         } else if (node.type === ALIEN_DRONE_TYPE) {
@@ -3183,6 +3277,12 @@ export function createAudioNodesForNode(node) {
                         oSynth.mix.connect(oSynth.crushSendGain);
                         oSynth.crushSendGain.connect(crushEffectInput);
                     }
+                    if (fogEffectInput) {
+                        oSynth.fogSendGain = audioContext.createGain();
+                        oSynth.fogSendGain.gain.value = 0;
+                        oSynth.mix.connect(oSynth.fogSendGain);
+                        oSynth.fogSendGain.connect(fogEffectInput);
+                    }
                     audioNodes.orbitoneSynths.push(oSynth);
                 });
             }
@@ -3199,6 +3299,12 @@ export function createAudioNodesForNode(node) {
                 audioNodes.crushSendGain.gain.value = 0;
                 audioNodes.mix.connect(audioNodes.crushSendGain);
                 audioNodes.crushSendGain.connect(crushEffectInput);
+            }
+            if (fogEffectInput) {
+                audioNodes.fogSendGain = audioContext.createGain();
+                audioNodes.fogSendGain.gain.value = 0;
+                audioNodes.mix.connect(audioNodes.fogSendGain);
+                audioNodes.fogSendGain.connect(fogEffectInput);
             }
             return audioNodes;
         } else if (node.type === ARVO_DRONE_TYPE) {
@@ -3319,6 +3425,12 @@ export function createAudioNodesForNode(node) {
                 audioNodes.gainNode.connect(audioNodes.mistSendGain);
                 audioNodes.mistSendGain.connect(mistEffectInput);
             }
+            if (fogEffectInput) {
+                audioNodes.fogSendGain = audioContext.createGain();
+                audioNodes.fogSendGain.gain.value = 0;
+                audioNodes.gainNode.connect(audioNodes.fogSendGain);
+                audioNodes.fogSendGain.connect(fogEffectInput);
+            }
             return audioNodes;
         } else if (node.type === PORTAL_NEBULA_TYPE) {
             const audioNodes = {};
@@ -3412,6 +3524,12 @@ export function createAudioNodesForNode(node) {
                 audioNodes.mainGain.connect(audioNodes.mistSendGain);
                 audioNodes.mistSendGain.connect(mistEffectInput);
             }
+            if (fogEffectInput) {
+                audioNodes.fogSendGain = audioContext.createGain();
+                audioNodes.fogSendGain.gain.value = 0;
+                audioNodes.mainGain.connect(audioNodes.fogSendGain);
+                audioNodes.fogSendGain.connect(fogEffectInput);
+            }
             return audioNodes;
         } else if (isDrumType(node.type)) {
             const audioNodes = {};
@@ -3442,6 +3560,12 @@ export function createAudioNodesForNode(node) {
                 audioNodes.crushSendGain.gain.value = 0;
                 audioNodes.mainGain.connect(audioNodes.crushSendGain);
                 audioNodes.crushSendGain.connect(crushEffectInput);
+            }
+            if (fogEffectInput) {
+                audioNodes.fogSendGain = audioContext.createGain();
+                audioNodes.fogSendGain.gain.value = 0;
+                audioNodes.mainGain.connect(audioNodes.fogSendGain);
+                audioNodes.fogSendGain.connect(fogEffectInput);
             }
             audioNodes.mainGain.connect(masterGain);
             return audioNodes;
@@ -3768,6 +3892,35 @@ function initializeGlobalEffectSliders() {
         });
     }
 
+    // Kick Sidechain block (created once)
+    if (!document.getElementById('kickSidechainBlock')) {
+        const perfContent = document.getElementById('performance-panel-content');
+        if (perfContent) {
+            const block = document.createElement('div');
+            block.className = 'performance-block';
+            block.id = 'kickSidechainBlock';
+            block.innerHTML = `
+                <h4>Kick Sidechain</h4>
+                <div class="perf-knob-grid cols-1" style="margin-top:6px;">
+                    <div class="perf-knob-cell">
+                        <input type="range" id="kickSidechainSlider" class="perf-knob-input" min="0" max="1" step="0.01" value="0">
+                        <span class="perf-knob-label">Duck</span>
+                        <span id="kickSidechainValue" class="perf-knob-value">0%</span>
+                    </div>
+                </div>`;
+            perfContent.appendChild(block);
+            const slider = document.getElementById('kickSidechainSlider');
+            const valueEl = document.getElementById('kickSidechainValue');
+            slider.value = sidechainAmount;
+            valueEl.textContent = Math.round(sidechainAmount * 100) + '%';
+            slider.addEventListener('input', (e) => {
+                sidechainAmount = parseFloat(e.target.value);
+                valueEl.textContent = Math.round(sidechainAmount * 100) + '%';
+            });
+            slider.addEventListener('change', saveState);
+        }
+    }
+
     // Helper: pas alle microcosm audio nodes aan op basis van de huidige sliders
     function applyMicrocosmParams() {
         if (!audioContext || !microcosmInput) return;
@@ -3962,6 +4115,33 @@ let scaleKeySeqState = {
   currentEndTime: 0,
 };
 let scaleKeySeqUIInitialized = false;
+
+let scaleColorTransitionEnabled = (() => {
+  try { return localStorage.getItem('scaleColorTransition') !== 'false'; } catch { return true; }
+})();
+let _scaleTransitionTimer = null;
+
+function getScaleTransitionMs() {
+  const bpm = (typeof globalBPM === 'number' && globalBPM > 0) ? globalBPM : 120;
+  return Math.max(80, Math.min(2000, Math.round(60000 / bpm)));
+}
+
+function applyScaleColorTransition() {
+  if (!scaleColorTransitionEnabled) return;
+  const dur = getScaleTransitionMs();
+  const t = ['--bg-gradient-stop-1','--bg-gradient-stop-2','--panel-bg','--button-bg',
+    '--button-hover','--button-active','--text-color','--grid-color',
+    '--start-node-color','--start-node-border',
+    '--timeline-grid-default-scanline-color','--timeline-grid-default-border-color'
+  ].map(p => `${p} ${dur}ms ease-in-out`).join(',');
+  document.body.style.transition = t;
+  document.documentElement.style.transition = t;
+  clearTimeout(_scaleTransitionTimer);
+  _scaleTransitionTimer = setTimeout(() => {
+    document.body.style.transition = '';
+    document.documentElement.style.transition = '';
+  }, dur + 100);
+}
 
 function getSecondsPerBeatForSeq() {
   const bpm = (typeof globalBPM === 'number' && globalBPM > 0) ? globalBPM : 120;
@@ -5002,7 +5182,7 @@ export function updateNodeAudioParams(node) {
           generalUpdateTimeConstant,
         );
       }
-      if (node.audioNodes && node.audioNodes.gainNode && params.volume !== undefined) {
+      if (node.audioNodes && node.audioNodes.gainNode && params.volume !== undefined && node.audioParams?.engine !== 'pulse') {
         try { node.audioNodes.gainNode.gain.setTargetAtTime(params.volume, now, generalUpdateTimeConstant); } catch {}
       }
       if (volLfoGain) {
@@ -5464,7 +5644,9 @@ export function updateNodeAudioParams(node) {
       return;
     const now = audioContext.currentTime;
     const params = connection.audioParams;
-    const timeConstantForPitch = 0.05;
+    const glideAmount = params?.glide ?? STRING_VIOLIN_DEFAULTS.glide;
+    const useGlide = glideAmount > 0;
+    const timeConstantForPitch = useGlide ? glideAmount : 0.05;
     // Ensure we have a valid base pitch
     const requestedPitch = (params && typeof params.pitch === 'number') ? params.pitch : 440;
     const sanitizedPitch = sanitizeFrequency(requestedPitch);
@@ -5490,16 +5672,29 @@ export function updateNodeAudioParams(node) {
           : (i % 2 === 1 ? 1 : -1) *
             Math.ceil(i / 2) *
             (params.detune ?? STRING_VIOLIN_DEFAULTS.detune);
-      osc.frequency.setTargetAtTime(freq, now, timeConstantForPitch);
-      osc.detune.setTargetAtTime(detuneAmount, now, timeConstantForPitch);
+      if (useGlide) {
+        osc.frequency.setTargetAtTime(freq, now, timeConstantForPitch);
+        osc.detune.setTargetAtTime(detuneAmount, now, timeConstantForPitch);
+      } else {
+        osc.frequency.setValueAtTime(freq, now);
+        osc.detune.setValueAtTime(detuneAmount, now);
+      }
     });
 
-    filterNode.frequency.setTargetAtTime(
-      sanitizedPitch *
-        (params.filterFreqFactor ?? STRING_VIOLIN_DEFAULTS.filterFreqFactor),
-      now,
-      timeConstantForPitch,
-    );
+    if (useGlide) {
+      filterNode.frequency.setTargetAtTime(
+        sanitizedPitch *
+          (params.filterFreqFactor ?? STRING_VIOLIN_DEFAULTS.filterFreqFactor),
+        now,
+        timeConstantForPitch,
+      );
+    } else {
+      filterNode.frequency.setValueAtTime(
+        sanitizedPitch *
+          (params.filterFreqFactor ?? STRING_VIOLIN_DEFAULTS.filterFreqFactor),
+        now,
+      );
+    }
     filterNode.Q.setTargetAtTime(
       params.filterQ ?? STRING_VIOLIN_DEFAULTS.filterQ,
       now,
@@ -6196,13 +6391,14 @@ export function triggerNodeEffect(
         });
       }
 
-      gainNode.gain.cancelScheduledValues(now);
-      gainNode.gain.setValueAtTime(0, now);
-      gainNode.gain.linearRampToValueAtTime(peak, now + atk);
-      gainNode.gain.setTargetAtTime(peak * sus, now + atk, dec / 4);
+      const envGate = node.audioNodes.envelopeGate || gainNode;
+      envGate.gain.cancelScheduledValues(now);
+      envGate.gain.setValueAtTime(0, now);
+      envGate.gain.linearRampToValueAtTime(peak, now + atk);
+      envGate.gain.setTargetAtTime(peak * sus, now + atk, dec / 4);
 
       const noteDur = atk + dec + 0.3;
-      gainNode.gain.setTargetAtTime(0.0, now + noteDur, rel / 4);
+      envGate.gain.setTargetAtTime(0.0, now + noteDur, rel / 4);
 
       setTimeout(() => {
         const stillNode = findNodeById(node.id);
@@ -6921,6 +7117,10 @@ export function triggerNodeEffect(
   } else if (node.type === RADIO_ORB_TYPE) {
     node.isTriggered = true;
     node.animationState = 1;
+    const padIndex = node.audioParams.sampleIndex ?? 0;
+    if (typeof window.radioSamplerPlayPad === 'function') {
+      window.radioSamplerPlayPad(padIndex);
+    }
     setTimeout(() => {
       const stillNode = findNodeById(node.id);
       if (stillNode) stillNode.isTriggered = false;
@@ -6981,6 +7181,12 @@ export function triggerNodeEffect(
         osc.stop(now + soundParams.decay + 0.05);
         harmonic.stop(now + soundParams.decay * 0.6 + 0.05);
         subHarmonic.stop(now + soundParams.decay * 1.2 + 0.05);
+        if (sidechainAmount > 0 && masterGain) {
+          const duckTarget = 1.0 - sidechainAmount * 0.85;
+          masterGain.gain.cancelScheduledValues(now);
+          masterGain.gain.setValueAtTime(duckTarget, now);
+          masterGain.gain.setTargetAtTime(masterGain._originalGainBeforeMute ?? 0.8, now + 0.015, 0.06);
+        }
       } else if (node.type === "drum_snare") {
         const noiseDur = soundParams.noiseDecay ?? 0.15;
         const bodyDecay = soundParams.decay ?? 0.2;
@@ -10079,6 +10285,7 @@ export function saveState() {
           blocks: scaleKeySeqState.blocks || [],
           currentIdx: 0
       },
+      sidechainAmount: sidechainAmount,
       djEqHiGain: djEqHiNode?.gain.value ?? 0,
       djEqMidGain: djEqMidNode?.gain.value ?? 0,
       djEqLowGain: djEqLowNode?.gain.value ?? 0,
@@ -10090,6 +10297,9 @@ export function saveState() {
           patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
       })),
       crushGroups: patchState.crushGroups.map(g => ({
+          patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
+      })),
+      fogGroups: patchState.fogGroups.map(g => ({
           patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
       }))
   };
@@ -10164,6 +10374,37 @@ export function saveState() {
           patchState.mistGroups.push(newGroup);
       });
       updateMistWetness();
+  }
+  if (loadedState.fogGroups) {
+      patchState.fogGroups = [];
+      if (fogLayer) fogLayer.innerHTML = "";
+      loadedState.fogGroups.forEach(g => {
+          const container = document.createElement('div');
+          container.className = 'fog-group';
+          if (fogLayer) fogLayer.appendChild(container);
+          const newGroup = { container, patches: [] };
+          g.patches.forEach(p => {
+              const patchEl = document.createElement('div');
+              patchEl.className = 'fog-patch';
+              const size = p.size || 200;
+              patchEl.style.width = size + 'px';
+              patchEl.style.height = size + 'px';
+              const coords = getScreenCoords(p.x, p.y);
+              patchEl.style.left = coords.x - size / 2 + 'px';
+              patchEl.style.top = coords.y - size / 2 + 'px';
+              patchEl.style.backgroundImage = 'radial-gradient(circle at 50% 50%, rgba(80,200,255,0.3) 0%, transparent 70%)';
+              patchEl.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
+              patchEl.style.setProperty('--dy', `${Math.random() * 20 - 10}px`);
+              patchEl.style.setProperty('--duration', `${12 + Math.random() * 6}s`);
+              patchEl.style.setProperty('--hueDuration', `${20 + Math.random() * 10}s`);
+              patchEl.dataset.x = p.x;
+              patchEl.dataset.y = p.y;
+              container.appendChild(patchEl);
+              newGroup.patches.push({ element: patchEl, x: p.x, y: p.y, size });
+          });
+          patchState.fogGroups.push(newGroup);
+      });
+      updateFogWetness();
   }
 
 
@@ -10248,6 +10489,11 @@ async function loadState(stateToLoad) {
     if (perfReverbWetGain) perfReverbWetGain.gain.value = (stateToLoad.performanceReverbEnabled ?? false) ? (stateToLoad.performanceReverbLevel ?? PERF_REVERB_WET) : 0.0;
     if (perfReverbInput) perfReverbInput.gain.value = (stateToLoad.performanceReverbEnabled ?? false) ? 1.0 : 0.0;
     perfReverbEnabled = stateToLoad.performanceReverbEnabled ?? false;
+    sidechainAmount = stateToLoad.sidechainAmount ?? 0;
+    const scSlider = document.getElementById('kickSidechainSlider');
+    const scVal = document.getElementById('kickSidechainValue');
+    if (scSlider) { scSlider.value = sidechainAmount; }
+    if (scVal) { scVal.textContent = Math.round(sidechainAmount * 100) + '%'; }
     microcosmEnabled = stateToLoad.microcosmEnabled ?? false;
     if (microcosmInput) microcosmInput.gain.value = microcosmEnabled ? 1.0 : 0.0;
     if (microcosmWetGain) microcosmWetGain.gain.value = microcosmEnabled ? 1.0 : 0.0;
@@ -10365,7 +10611,7 @@ async function loadState(stateToLoad) {
         initializeGlobalEffectSliders();
     }
 
-    // Restore patch effects (mist and crush)
+    // Restore patch effects (mist, crush, and fog)
     if (stateToLoad.mistGroups && Array.isArray(stateToLoad.mistGroups)) {
         patchState.mistGroups = [];
         stateToLoad.mistGroups.forEach(groupData => {
@@ -10436,6 +10682,39 @@ async function loadState(stateToLoad) {
             }
         });
         updateCrushWetness();
+    }
+
+    if (stateToLoad.fogGroups && Array.isArray(stateToLoad.fogGroups)) {
+        patchState.fogGroups = [];
+        stateToLoad.fogGroups.forEach(groupData => {
+            if (groupData.patches && Array.isArray(groupData.patches)) {
+                const container = document.createElement('div');
+                container.className = 'fog-group';
+                fogLayer?.appendChild(container);
+                const group = { container, patches: [] };
+                groupData.patches.forEach(patchData => {
+                    const patch = document.createElement('div');
+                    patch.className = 'fog-patch';
+                    const size = patchData.size || 200;
+                    patch.style.width = size + 'px';
+                    patch.style.height = size + 'px';
+                    const coords = getScreenCoords(patchData.x, patchData.y);
+                    patch.style.left = coords.x - size / 2 + 'px';
+                    patch.style.top = coords.y - size / 2 + 'px';
+                    patch.style.backgroundImage = 'radial-gradient(circle at 50% 50%, rgba(80,200,255,0.3) 0%, transparent 70%)';
+                    patch.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
+                    patch.style.setProperty('--dy', `${Math.random() * 20 - 10}px`);
+                    patch.style.setProperty('--duration', `${12 + Math.random() * 6}s`);
+                    patch.style.setProperty('--hueDuration', `${20 + Math.random() * 10}s`);
+                    patch.dataset.x = patchData.x;
+                    patch.dataset.y = patchData.y;
+                    container.appendChild(patch);
+                    group.patches.push({ element: patch, x: patchData.x, y: patchData.y, size });
+                });
+                patchState.fogGroups.push(group);
+            }
+        });
+        updateFogWetness();
     }
 
     isPerformingUndoRedo = false;
@@ -11205,6 +11484,7 @@ function rerouteAudioForNode(node, destinationNode) {
   const delaySendGain = node.audioNodes.delaySendGain;
   const mistSendGain = node.audioNodes.mistSendGain;
   const crushSendGain = node.audioNodes.crushSendGain;
+  const fogSendGain = node.audioNodes.fogSendGain;
 
   try {
     outputNode.disconnect();
@@ -11221,6 +11501,9 @@ function rerouteAudioForNode(node, destinationNode) {
     }
     if (crushSendGain && crushEffectInput) {
       outputNode.connect(crushSendGain);
+    }
+    if (fogSendGain && fogEffectInput) {
+      outputNode.connect(fogSendGain);
     }
   } catch (e) {
     try {
@@ -12090,15 +12373,20 @@ function updateAllPitchesAndUI() {
     });
     drawPianoRoll();
 
-    if (hamburgerMenuPanel && !hamburgerMenuPanel.classList.contains("hidden") && editPanelContent) {
-        let aSelectIsFocused = false;
-        if (document.activeElement && document.activeElement.tagName === 'SELECT' && editPanelContent.contains(document.activeElement)) {
-            aSelectIsFocused = true;
+    if (
+        sideToolbar && !sideToolbar.classList.contains("hidden") &&
+        (nodeTypeToAdd === "sound" || nodeTypeToAdd === "nebula" || nodeTypeToAdd === RESONAUTER_TYPE || nodeTypeToAdd === ALIEN_ORB_TYPE || nodeTypeToAdd === ALIEN_DRONE_TYPE)
+    ) {
+        noteIndexToAdd = -1;
+        if (currentTool === "add" || currentTool === "brush") {
+            if (document.getElementById("hexNoteSelectorContainer")) {
+                createHexNoteSelectorDOM(sideToolbarContent);
+            }
         }
+    }
 
-        if (aSelectIsFocused) {} else {
-            populateEditPanel();
-        }
+    if (!(editPanelContent && document.activeElement && editPanelContent.contains(document.activeElement))) {
+        populateEditPanel();
     }
 }
 
@@ -12785,6 +13073,7 @@ function animationLoop() {
 
   updateMistWetness();
   updateCrushWetness();
+  updateFogWetness();
 
   try {
     nodes.forEach((node) => {
@@ -18552,18 +18841,14 @@ function draw() {
   ctx.setLineDash([]);
   updateMistPatchPositions();
   updateCrushPatchPositions();
+  updateFogPatchPositions();
 
 
     if (stringPanel && !stringPanel.classList.contains('hidden')) {
-        const sel = Array.from(selectedElements);
-        if (sel.length === 1 && sel[0].type === 'connection') {
-            const c = findConnectionById(sel[0].id);
-            if (c && c.type === 'string_violin') {
-                positionStringPanel(c);
-            } else {
-                hideStringPanel();
-                hideStringConnectionMenu();
-            }
+        const connId = parseInt(stringPanel.dataset.connectionId);
+        const conn = !isNaN(connId) ? findConnectionById(connId) : null;
+        if (conn && conn.type === 'string_violin') {
+            positionStringPanel(conn);
         } else {
             hideStringPanel();
             hideStringConnectionMenu();
@@ -20946,6 +21231,7 @@ function handleMouseMove(event) {
     });
     updateMistWetness();
     updateCrushWetness();
+    updateFogWetness();
     canvas.style.cursor = "move";
   } else {
     let cursorSetByHandle = false;
@@ -21580,6 +21866,7 @@ function handleMouseUp(event) {
       identifyAndRouteAllGroups();
       updateMistWetness();
       updateCrushWetness();
+      updateFogWetness();
   } else if (wasCreatingSelectionRect) {
       actionHandledInMainBlock = true;
       const selX1 = Math.min(selectionRect.startX, selectionRect.endX);
@@ -21643,12 +21930,15 @@ function handleMouseUp(event) {
                   noteIndexToAdd = brushNoteSequence[brushNoteSequenceIndex];
                   brushNoteSequenceIndex = (brushNoteSequenceIndex + 1) % brushNoteSequence.length;
               }
+              const prevEngine = soundEngineToAdd;
+              soundEngineToAdd = brushSoundEngine;
               const newNode = addNode(
                   mousePos.x,
                   mousePos.y,
                   typeToPlace,
                   subtypeToPlace,
               );
+              soundEngineToAdd = prevEngine;
               noteIndexToAdd = prevNote;
               if (newNode) {
                   stateWasChanged = true;
@@ -22258,7 +22548,6 @@ function handleMouseUp(event) {
         hideTonePanel();
         hideAnalogOrbMenu();
         hideSamplerPanel();
-        hideStringPanel();
       }
   } else if (selectedArray.length === 1 && selectedArray[0].type === 'connection') {
       const selectedConn = findConnectionById(selectedArray[0].id);
@@ -22286,7 +22575,6 @@ function handleMouseUp(event) {
           hideMotorOrbMenu();
           hideMotorOrbPanel();
           hideArvoDroneOrbMenu();
-          hideStringPanel();
       }
   } else {
     hideAlienOrbMenu();
@@ -22307,7 +22595,6 @@ function handleMouseUp(event) {
     hideArvoPanel();
     hideTonePanel();
     hideSamplerPanel();
-    hideStringPanel();
   }
   ctrlLikeAtMouseDown = false;
 }
@@ -22404,6 +22691,7 @@ function handleWheel(event) {
     isBrushing ||
     patchState.isMisting ||
     patchState.isCrushing ||
+    patchState.isFogging ||
     patchState.isErasing
   ) {
     return;
@@ -22607,6 +22895,14 @@ function createHexNoteSelectorDOM(
     existingToggleButton.remove();
   }
 
+  const existingNoteLabel = parentElement.querySelector("#hexSelectedNoteLabel");
+  if (existingNoteLabel) existingNoteLabel.remove();
+
+  const selectedNoteLabel = document.createElement("div");
+  selectedNoteLabel.id = "hexSelectedNoteLabel";
+  selectedNoteLabel.classList.add("hex-selected-note-label");
+  parentElement.insertBefore(selectedNoteLabel, parentElement.firstChild);
+
   const container = document.createElement("div");
   container.id = "hexNoteSelectorContainer";
   container.classList.add("hex-note-container");
@@ -22668,6 +22964,8 @@ function createHexNoteSelectorDOM(
         .forEach((hex) => hex.classList.remove("hex-selected"));
       currentSelectedValue = null;
       noteIndexToAdd = -1;
+      const noteLabelEl = parentElement.querySelector("#hexSelectedNoteLabel");
+      if (noteLabelEl) noteLabelEl.textContent = "Random";
     }
 
     if (isEditing && targetElementsData.length > 0) {
@@ -22676,113 +22974,70 @@ function createHexNoteSelectorDOM(
   });
   parentElement.insertBefore(randomToggleButton, parentElement.firstChild);
 
-  const midiStartNote = 0;
-  const octavesToDisplay = 5;
-  const noteCount = 12 * octavesToDisplay + 1;
+  // Wicki-Hayden layout: right = +2 semitones (major second), up = +7 semitones (perfect fifth)
+  // Every scale has the same shape regardless of key — just shifted left/right
+  const numCols = 6;
+  const numRows = 8;
 
-  const columns = 5;
-  const baseHeight = Math.floor(noteCount / columns);
-  const extra = noteCount % columns;
-  const baseHexColumnsLayout = Array.from({ length: columns }, (_, idx) =>
-    idx < extra ? baseHeight + 1 : baseHeight,
-  );
-  const hexColumnsLayout = baseHexColumnsLayout;
-  let currentHexIndex = 0;
+  const rootMidi = Math.round(frequencyToMidi(
+    getFrequency(currentScale, 0, 0, currentRootNote, globalTransposeOffset)
+  ));
+  // Root appears at musicalRow=2, col=1 → wickiBase = rootMidi - 2*7 - 1*2 = rootMidi - 16
+  const wickiBase = rootMidi - 16;
+
   const scaleIndexToMidiMap = new Map();
-
-  const relevantStartIndex = -12;
-  const relevantEndIndex = 36;
-  for (let i = relevantStartIndex; i < relevantEndIndex; i++) {
-    const midi = Math.round(
-      frequencyToMidi(
-        getFrequency(
-          currentScale,
-          i,
-          0,
-          currentRootNote,
-          globalTransposeOffset,
-        ),
-      ),
-    );
-    if (!isNaN(midi)) {
-      scaleIndexToMidiMap.set(i, midi);
-    }
+  for (let i = -12; i < 36; i++) {
+    const midi = Math.round(frequencyToMidi(
+      getFrequency(currentScale, i, 0, currentRootNote, globalTransposeOffset)
+    ));
+    if (!isNaN(midi)) scaleIndexToMidiMap.set(i, midi);
   }
 
-  const horizontalStep = 2;
-  const verticalStep = 7;
+  // DOM renders top-to-bottom; musicalRow 0 = lowest pitch, numRows-1 = highest
+  for (let domRow = 0; domRow < numRows; domRow++) {
+    const musRow = numRows - 1 - domRow;
+    const rowDiv = document.createElement("div");
+    rowDiv.classList.add("hex-wicki-row");
+    if (musRow % 2 === 1) rowDiv.classList.add("hex-wicki-row-offset");
 
-  for (const [colIndex, hexesInColumn] of hexColumnsLayout.entries()) {
-    const columnDiv = document.createElement("div");
-    columnDiv.classList.add("hex-column");
-    columnDiv.style.setProperty("--column", colIndex + 1);
-
-    for (let i = 0; i < hexesInColumn; i++) {
-      if (currentHexIndex >= noteCount) break;
-      const midiNote =
-        midiStartNote + colIndex * horizontalStep + i * verticalStep;
+    for (let col = 0; col < numCols; col++) {
+      const midiNote = wickiBase + musRow * 7 + col * 2;
       const noteName = getNoteName(midiNote, NOTE_NAMES);
+
       const hexDiv = document.createElement("div");
       hexDiv.classList.add("hexagon-note");
       hexDiv.textContent = noteName;
       hexDiv.dataset.midiNote = midiNote;
 
-      const noteModulo = midiNote % 12;
-      const rootModulo = currentRootNote % 12;
+      const noteModulo = ((midiNote % 12) + 12) % 12;
+      const rootModulo = ((currentRootNote % 12) + 12) % 12;
       const intervalFromRoot = (noteModulo - rootModulo + 12) % 12;
       const isRoot = noteModulo === rootModulo;
       const isInScale = currentScale.notes.includes(intervalFromRoot);
-      let closestScaleIndex = null;
-      let minDiff = Infinity;
 
-      for (const [scaleIndex, scaleMidi] of scaleIndexToMidiMap.entries()) {
-        const diff = Math.abs(midiNote - scaleMidi);
-        if (diff === 0) {
-          minDiff = diff;
-          closestScaleIndex = scaleIndex;
-          break;
-        }
-        if (diff < minDiff) {
-          minDiff = diff;
-          closestScaleIndex = scaleIndex;
-        }
+      let closestScaleIndex = null, minDiff = Infinity;
+      for (const [si, sMidi] of scaleIndexToMidiMap.entries()) {
+        const diff = Math.abs(midiNote - sMidi);
+        if (diff === 0) { closestScaleIndex = si; break; }
+        if (diff < minDiff) { minDiff = diff; closestScaleIndex = si; }
       }
-
       if (closestScaleIndex === null) closestScaleIndex = 0;
       hexDiv.dataset.scaleIndex = closestScaleIndex;
 
-      if (isRoot) {
-        hexDiv.classList.add("hex-root");
-      } else if (isInScale) {
-        hexDiv.classList.add("hex-in-scale");
-      } else {
-        hexDiv.classList.add("hex-disabled");
-      }
+      if (isRoot) hexDiv.classList.add("hex-root");
+      else if (isInScale) hexDiv.classList.add("hex-in-scale");
+      else hexDiv.classList.add("hex-disabled");
 
-      if (
-        !isRandomActive &&
-        closestScaleIndex === currentSelectedValue &&
-        !hexDiv.classList.contains("hex-disabled")
-      ) {
+      if (!isRandomActive && closestScaleIndex === currentSelectedValue) {
         hexDiv.classList.add("hex-selected");
       }
 
       hexDiv.addEventListener("mousedown", (e) => {
         e.stopPropagation();
-        if (e.currentTarget.classList.contains("hex-disabled")) {
-          return;
-        }
+        if (e.currentTarget.classList.contains("hex-disabled")) return;
 
         const clickedScaleIndexStr = e.currentTarget.dataset.scaleIndex;
-        const clickedMidiNote = e.currentTarget.dataset.midiNote;
-
-        if (
-          clickedScaleIndexStr === undefined ||
-          clickedScaleIndexStr === null
-        ) {
-          console.error("Clicked hex is missing data-scale-index attribute.");
-          return;
-        }
+        if (clickedScaleIndexStr === undefined || clickedScaleIndexStr === null) return;
         const clickedScaleIndex = parseInt(clickedScaleIndexStr, 10);
 
         isRandomActive = false;
@@ -22795,26 +23050,39 @@ function createHexNoteSelectorDOM(
           noteIndexToAdd = clickedScaleIndex;
         }
 
-        const previouslySelected = container.querySelectorAll(
-          ".hexagon-note.hex-selected",
-        );
-
-        previouslySelected.forEach((selectedHex) => {
-          selectedHex.classList.remove("hex-selected");
-        });
-
+        container.querySelectorAll(".hexagon-note.hex-selected")
+          .forEach((h) => h.classList.remove("hex-selected"));
         e.currentTarget.classList.add("hex-selected");
+
+        const noteLabelEl = parentElement.querySelector("#hexSelectedNoteLabel");
+        if (noteLabelEl) {
+          const nn = getNoteNameFromScaleIndex(currentScale, clickedScaleIndex, NOTE_NAMES, currentRootNote, globalTransposeOffset);
+          noteLabelEl.textContent = nn;
+        }
       });
       hexDiv.addEventListener("mouseup", (e) => e.stopPropagation());
-      columnDiv.appendChild(hexDiv);
-      currentHexIndex++;
+      rowDiv.appendChild(hexDiv);
     }
-    if (columnDiv.hasChildNodes()) {
-      container.appendChild(columnDiv);
-    }
-    if (currentHexIndex >= noteCount) break;
+    container.appendChild(rowDiv);
   }
   parentElement.appendChild(container);
+
+  if (currentSelectedValue !== null && !isRandomActive) {
+    const noteLabelEl = parentElement.querySelector("#hexSelectedNoteLabel");
+    if (noteLabelEl) {
+      const noteName = getNoteNameFromScaleIndex(currentScale, currentSelectedValue, NOTE_NAMES, currentRootNote, globalTransposeOffset);
+      noteLabelEl.textContent = noteName;
+    }
+    const selectedHex = container.querySelector(".hexagon-note.hex-selected");
+    if (selectedHex) {
+      requestAnimationFrame(() => {
+        selectedHex.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+      });
+    }
+  } else {
+    const noteLabelEl = parentElement.querySelector("#hexSelectedNoteLabel");
+    if (noteLabelEl) noteLabelEl.textContent = "Random";
+  }
 }
 
 function applyScaleIndexToSelection(scaleIndex, targetElementsData) {
@@ -22998,6 +23266,7 @@ function setActiveTool(toolName) {
         isBrushing = false;
         lastBrushNode = null;
         brushNoteSequenceIndex = 0;
+        brushSoundEngine = null;
         if (brushBtn) brushBtn.classList.remove("active");
     }
     if (currentTool === "mist" && toolName !== "mist") {
@@ -23010,6 +23279,11 @@ function setActiveTool(toolName) {
         patchState.isCrushing = false;
         if (crushBtn) crushBtn.classList.remove("active");
         if (crushLayer) crushLayer.classList.remove("crush-active");
+    }
+    if (currentTool === "fog" && toolName !== "fog") {
+        patchState.isFogging = false;
+        if (fogBtn) fogBtn.classList.remove("active");
+        if (fogLayer) fogLayer.classList.remove("fog-active");
     }
     if (currentTool === "eraser" && toolName !== "eraser") {
         patchState.isErasing = false;
@@ -23084,6 +23358,14 @@ function setActiveTool(toolName) {
             toolName === "crush" || toolName === "eraser",
         );
         crushLayer.classList.toggle("eraser-active", toolName === "eraser");
+    }
+    if (fogBtn) fogBtn.classList.toggle("active", toolName === "fog");
+    if (fogLayer) {
+        fogLayer.classList.toggle(
+            "fog-active",
+            toolName === "fog" || toolName === "eraser",
+        );
+        fogLayer.classList.toggle("eraser-active", toolName === "eraser");
     }
 
     if (toolName !== "add" && toolName !== "brush") {
@@ -27819,6 +28101,14 @@ function populateInstrumentMenu() {
         setupAddTool(null, RESONAUTER_TYPE, false);
       },
     },
+    {
+      icon: "📻",
+      label: "Radio Pad",
+      handler: () => {
+        soundEngineToAdd = null;
+        setupAddTool(null, RADIO_ORB_TYPE, false);
+      },
+    },
   ];
   instruments.forEach((inst) => {
     const btn = document.createElement("button");
@@ -28076,6 +28366,7 @@ function populateMistMenu() {
   const mistTools = [
     { icon: "🌁", label: "Mist", handler: () => setActiveTool("mist") },
     { icon: "🪐", label: "Nebula Crunch", handler: () => setActiveTool("crush") },
+    { icon: "🌫️", label: "Fog Filter", handler: () => setActiveTool("fog") },
     { icon: "🧽", label: "Eraser", handler: () => setActiveTool("eraser") },
   ];
 
@@ -29350,7 +29641,7 @@ function showRadioOrbMenu(node) {
     const label = document.createElement('label');
     label.textContent = 'Sample Pad:';
     const select = document.createElement('select');
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) {
         const opt = document.createElement('option');
         opt.value = i;
         opt.textContent = `Pad ${i + 1}`;
@@ -29405,6 +29696,8 @@ function showStringConnectionMenu(connection) {
         v => v.toFixed(1)
     );
     addSlider(`string-vrate-${connection.id}`, 'Vibrato Rate', 0.1, 12, 0.1, params.vibratoRate ?? d.vibratoRate, 'vibratoRate', v=>v.toFixed(1)+'Hz');
+
+    addSlider(`string-glide-${connection.id}`, 'Glide', 0, 1, 0.01, params.glide ?? d.glide, 'glide', v => v === 0 ? 'off' : v.toFixed(2)+'s');
 }
 
 function showSamplerOrbMenu(node) {
@@ -29614,11 +29907,19 @@ export function handleNewWorkspace(skipConfirm = false) {
   if (crushLayer) {
     crushLayer.innerHTML = '';
   }
-  
+  if (fogLayer) {
+    fogLayer.innerHTML = '';
+  }
+  patchState.fogGroups.forEach(group => {
+    if (group.container) group.container.remove();
+  });
+
   patchState.mistGroups = [];
   patchState.crushGroups = [];
+  patchState.fogGroups = [];
   patchState.currentMistGroup = null;
   patchState.currentCrushGroup = null;
+  patchState.currentFogGroup = null;
 
   // Save the cleared state to prevent patches from reappearing on refresh
   saveState();
@@ -29630,6 +29931,9 @@ export function handleNewWorkspace(skipConfirm = false) {
     }
     if (crushWetGain) {
       crushWetGain.gain.setValueAtTime(0.0, audioContext.currentTime);
+    }
+    if (fogWetGain) {
+      fogWetGain.gain.setValueAtTime(0.0, audioContext.currentTime);
     }
     
     identifyAndRouteAllGroups();
@@ -29958,6 +30262,7 @@ function populateBrushOptionsPanel() {
     nodeTypeForBrush,
     waveformValue,
     gridContainer,
+    soundEngine = null,
   ) => {
     const button = document.createElement("button");
     button.classList.add("brush-option-icon-button");
@@ -29981,6 +30286,7 @@ function populateBrushOptionsPanel() {
       if (button.disabled) return;
       brushNodeType = nodeTypeForBrush;
       brushWaveform = waveformValue;
+      brushSoundEngine = soundEngine;
 
       sideToolbarContent
         .querySelectorAll(".brush-option-icon-button")
@@ -29996,7 +30302,7 @@ function populateBrushOptionsPanel() {
   ) {
     const analogGrid = createBrushSection("Analog");
     analogWaveformPresets.forEach((preset) => {
-      createBrushOptionButton(preset, "sound", preset.type, analogGrid);
+      createBrushOptionButton(preset, "sound", preset.type, analogGrid, "tone");
     });
   }
 
@@ -30129,6 +30435,7 @@ function changeScale(scaleKey, skipNodeUpdate = false) {
   if (!scales[scaleKey]) return;
   currentScaleKey = scaleKey;
   currentScale = scales[scaleKey];
+  applyScaleColorTransition();
   // Apply theme class without wiping unrelated body classes
   try {
     const bodyEl = document.body;
@@ -30258,7 +30565,9 @@ function changeScale(scaleKey, skipNodeUpdate = false) {
   }
   
   drawPianoRoll();
-  populateEditPanel();
+  if (!(editPanelContent && document.activeElement && editPanelContent.contains(document.activeElement))) {
+      populateEditPanel();
+  }
   if (!skipNodeUpdate) {
       saveState();
   }
@@ -31781,6 +32090,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
   identifyAndRouteAllGroups();
   updateMistWetness();
   updateCrushWetness();
+  updateFogWetness();
   draw();
   if (
     helpWizard &&
@@ -31939,6 +32249,15 @@ const connectorSnapToggle = document.getElementById("connectorSnapToggle");
 if (connectorSnapToggle) {
   connectorSnapToggle.addEventListener("change", (e) => {
     connectorSnapEnabled = e.target.checked;
+  });
+}
+
+const scaleColorTransitionToggle = document.getElementById('scaleColorTransitionToggle');
+if (scaleColorTransitionToggle) {
+  scaleColorTransitionToggle.checked = scaleColorTransitionEnabled;
+  scaleColorTransitionToggle.addEventListener('change', (e) => {
+    scaleColorTransitionEnabled = e.target.checked;
+    try { localStorage.setItem('scaleColorTransition', scaleColorTransitionEnabled ? 'true' : 'false'); } catch {}
   });
 }
 
@@ -32559,6 +32878,27 @@ if (crushLayer) {
     }
   });
 }
+if (fogLayer) {
+  fogLayer.addEventListener('pointerdown', (e) => {
+    if (currentTool === 'fog') {
+      patchState.isFogging = true;
+      patchState.currentFogGroup = null;
+      const coords = getWorldCoords(e.clientX, e.clientY);
+      createFogPatch(coords.x, coords.y);
+    } else if (currentTool === 'eraser') {
+      patchState.isErasing = true;
+      erasePatchesAt(e.clientX, e.clientY);
+    }
+  });
+  fogLayer.addEventListener('pointermove', (e) => {
+    if (currentTool === 'fog' && patchState.isFogging) {
+      const coords = getWorldCoords(e.clientX, e.clientY);
+      createFogPatch(coords.x, coords.y);
+    } else if (currentTool === 'eraser' && patchState.isErasing) {
+      erasePatchesAt(e.clientX, e.clientY);
+    }
+  });
+}
 document.addEventListener('pointerup', () => {
   let didChange = false;
   if (patchState.isMisting) {
@@ -32569,6 +32909,11 @@ document.addEventListener('pointerup', () => {
   if (patchState.isCrushing) {
     patchState.isCrushing = false;
     patchState.currentCrushGroup = null;
+    didChange = true;
+  }
+  if (patchState.isFogging) {
+    patchState.isFogging = false;
+    patchState.currentFogGroup = null;
     didChange = true;
   }
   if (patchState.isErasing) {
@@ -32862,6 +33207,12 @@ window.addEventListener("keydown", (e) => {
     }
     if (patchState.isCrushing) {
       patchState.isCrushing = false;
+      setActiveTool("edit");
+      e.preventDefault();
+      return;
+    }
+    if (patchState.isFogging) {
+      patchState.isFogging = false;
       setActiveTool("edit");
       e.preventDefault();
       return;
@@ -34571,7 +34922,7 @@ function ensureAllNodesEffectSendsConnected() {
     const connectIf = (sendGain, dest, tag) => {
       try {
         if (!sendGain || !dest) return;
-        const flag = tag === 'mist' ? '__mistConnected' : '__crushConnected';
+        const flag = tag === 'mist' ? '__mistConnected' : tag === 'crush' ? '__crushConnected' : '__fogConnected';
         if (!sendGain[flag]) {
           sendGain.connect(dest);
           sendGain[flag] = true;
@@ -34583,10 +34934,12 @@ function ensureAllNodesEffectSendsConnected() {
     };
     if (an.mistSendGain) connectIf(an.mistSendGain, typeof mistEffectInput !== 'undefined' ? mistEffectInput : null, 'mist');
     if (an.crushSendGain) connectIf(an.crushSendGain, typeof crushEffectInput !== 'undefined' ? crushEffectInput : null, 'crush');
+    if (an.fogSendGain) connectIf(an.fogSendGain, typeof fogEffectInput !== 'undefined' ? fogEffectInput : null, 'fog');
     if (Array.isArray(an.orbitoneSynths)) {
       an.orbitoneSynths.forEach((o) => {
         if (o && o.mistSendGain) connectIf(o.mistSendGain, typeof mistEffectInput !== 'undefined' ? mistEffectInput : null, 'mist');
         if (o && o.crushSendGain) connectIf(o.crushSendGain, typeof crushEffectInput !== 'undefined' ? crushEffectInput : null, 'crush');
+        if (o && o.fogSendGain) connectIf(o.fogSendGain, typeof fogEffectInput !== 'undefined' ? fogEffectInput : null, 'fog');
       });
     }
   });
