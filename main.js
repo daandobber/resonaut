@@ -22961,6 +22961,8 @@ function createHexNoteSelectorDOM(
     noteIndexToAdd = -1;
   }
 
+  let renderHexNoteGrid = () => {};
+
   const octaveControls = document.createElement("div");
   octaveControls.id = "hexOctaveControls";
   octaveControls.classList.add("hex-octave-controls");
@@ -22986,7 +22988,8 @@ function createHexNoteSelectorDOM(
   });
   const rebuildHexNoteSelectorAtOffset = (offset) => {
     hexNoteSelectorOctaveOffset = offset;
-    createHexNoteSelectorDOM(parentElement, targetElementsData);
+    octaveResetButton.textContent = `${hexNoteSelectorOctaveOffset >= 0 ? "+" : ""}${hexNoteSelectorOctaveOffset}`;
+    renderHexNoteGrid();
   };
   octaveDownButton.addEventListener("pointerdown", (e) => {
     e.preventDefault();
@@ -23043,96 +23046,100 @@ function createHexNoteSelectorDOM(
   const numCols = 6;
   const numRows = 8;
 
-  const rootMidi = Math.round(frequencyToMidi(
-    getFrequency(currentScale, 0, 0, currentRootNote, globalTransposeOffset)
-  ));
-  // Root appears at musicalRow=2, col=1; octave buttons shift the compact view.
-  const wickiRootRow = 2;
-  const wickiRootCol = 1;
-  const wickiBase =
-    rootMidi - wickiRootRow * 7 - wickiRootCol * 2 + hexNoteSelectorOctaveOffset * 12;
-
-  const scaleIndexToMidiMap = new Map();
-  for (let i = MIN_SCALE_INDEX; i <= MAX_SCALE_INDEX; i++) {
-    const midi = Math.round(frequencyToMidi(
-      getFrequency(currentScale, i, 0, currentRootNote, globalTransposeOffset)
+  renderHexNoteGrid = () => {
+    container.replaceChildren();
+    const rootMidi = Math.round(frequencyToMidi(
+      getFrequency(currentScale, 0, 0, currentRootNote, globalTransposeOffset)
     ));
-    if (!isNaN(midi)) scaleIndexToMidiMap.set(i, midi);
-  }
+    // Root appears at musicalRow=2, col=1; octave buttons shift the compact view.
+    const wickiRootRow = 2;
+    const wickiRootCol = 1;
+    const wickiBase =
+      rootMidi - wickiRootRow * 7 - wickiRootCol * 2 + hexNoteSelectorOctaveOffset * 12;
 
-  // DOM renders top-to-bottom; musicalRow 0 = lowest pitch, numRows-1 = highest
-  for (let domRow = 0; domRow < numRows; domRow++) {
-    const musRow = numRows - 1 - domRow;
-    const rowDiv = document.createElement("div");
-    rowDiv.classList.add("hex-wicki-row");
-    rowDiv.style.zIndex = String(numRows - domRow);
-    if (musRow % 2 === 1) rowDiv.classList.add("hex-wicki-row-offset");
-
-    for (let col = 0; col < numCols; col++) {
-      const midiNote = wickiBase + musRow * 7 + col * 2;
-      const noteName = getNoteName(midiNote, NOTE_NAMES);
-
-      const hexDiv = document.createElement("div");
-      hexDiv.classList.add("hexagon-note");
-      hexDiv.textContent = noteName;
-      hexDiv.dataset.midiNote = midiNote;
-
-      const noteModulo = ((midiNote % 12) + 12) % 12;
-      const rootModulo = ((currentRootNote % 12) + 12) % 12;
-      const intervalFromRoot = (noteModulo - rootModulo + 12) % 12;
-      const isRoot = noteModulo === rootModulo;
-      const isInScale = currentScale.notes.includes(intervalFromRoot);
-
-      let closestScaleIndex = null, minDiff = Infinity;
-      for (const [si, sMidi] of scaleIndexToMidiMap.entries()) {
-        const diff = Math.abs(midiNote - sMidi);
-        if (diff === 0) { closestScaleIndex = si; break; }
-        if (diff < minDiff) { minDiff = diff; closestScaleIndex = si; }
-      }
-      if (closestScaleIndex === null) closestScaleIndex = 0;
-      hexDiv.dataset.scaleIndex = closestScaleIndex;
-
-      if (isRoot) hexDiv.classList.add("hex-root");
-      else if (isInScale) hexDiv.classList.add("hex-in-scale");
-      else hexDiv.classList.add("hex-disabled");
-
-      if (!isRandomActive && closestScaleIndex === currentSelectedValue) {
-        hexDiv.classList.add("hex-selected");
-      }
-
-      hexDiv.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-        if (e.currentTarget.classList.contains("hex-disabled")) return;
-
-        const clickedScaleIndexStr = e.currentTarget.dataset.scaleIndex;
-        if (clickedScaleIndexStr === undefined || clickedScaleIndexStr === null) return;
-        const clickedScaleIndex = parseInt(clickedScaleIndexStr, 10);
-
-        isRandomActive = false;
-        randomToggleButton.classList.remove("active");
-        currentSelectedValue = clickedScaleIndex;
-
-        if (isEditing) {
-          applyScaleIndexToSelection(clickedScaleIndex, targetElementsData);
-        } else {
-          noteIndexToAdd = clickedScaleIndex;
-        }
-
-        container.querySelectorAll(".hexagon-note.hex-selected")
-          .forEach((h) => h.classList.remove("hex-selected"));
-        e.currentTarget.classList.add("hex-selected");
-
-        const noteLabelEl = parentElement.querySelector("#hexSelectedNoteLabel");
-        if (noteLabelEl) {
-          const nn = getNoteNameFromScaleIndex(currentScale, clickedScaleIndex, NOTE_NAMES, currentRootNote, globalTransposeOffset);
-          noteLabelEl.textContent = nn;
-        }
-      });
-      hexDiv.addEventListener("mouseup", (e) => e.stopPropagation());
-      rowDiv.appendChild(hexDiv);
+    const scaleIndexToMidiMap = new Map();
+    for (let i = MIN_SCALE_INDEX; i <= MAX_SCALE_INDEX; i++) {
+      const midi = Math.round(frequencyToMidi(
+        getFrequency(currentScale, i, 0, currentRootNote, globalTransposeOffset)
+      ));
+      if (!isNaN(midi)) scaleIndexToMidiMap.set(i, midi);
     }
-    container.appendChild(rowDiv);
-  }
+
+    // DOM renders top-to-bottom; musicalRow 0 = lowest pitch, numRows-1 = highest
+    for (let domRow = 0; domRow < numRows; domRow++) {
+      const musRow = numRows - 1 - domRow;
+      const rowDiv = document.createElement("div");
+      rowDiv.classList.add("hex-wicki-row");
+      rowDiv.style.zIndex = String(numRows - domRow);
+      if (musRow % 2 === 1) rowDiv.classList.add("hex-wicki-row-offset");
+
+      for (let col = 0; col < numCols; col++) {
+        const midiNote = wickiBase + musRow * 7 + col * 2;
+        const noteName = getNoteName(midiNote, NOTE_NAMES);
+
+        const hexDiv = document.createElement("div");
+        hexDiv.classList.add("hexagon-note");
+        hexDiv.textContent = noteName;
+        hexDiv.dataset.midiNote = midiNote;
+
+        const noteModulo = ((midiNote % 12) + 12) % 12;
+        const rootModulo = ((currentRootNote % 12) + 12) % 12;
+        const intervalFromRoot = (noteModulo - rootModulo + 12) % 12;
+        const isRoot = noteModulo === rootModulo;
+        const isInScale = currentScale.notes.includes(intervalFromRoot);
+
+        let closestScaleIndex = null, minDiff = Infinity;
+        for (const [si, sMidi] of scaleIndexToMidiMap.entries()) {
+          const diff = Math.abs(midiNote - sMidi);
+          if (diff === 0) { closestScaleIndex = si; break; }
+          if (diff < minDiff) { minDiff = diff; closestScaleIndex = si; }
+        }
+        if (closestScaleIndex === null) closestScaleIndex = 0;
+        hexDiv.dataset.scaleIndex = closestScaleIndex;
+
+        if (isRoot) hexDiv.classList.add("hex-root");
+        else if (isInScale) hexDiv.classList.add("hex-in-scale");
+        else hexDiv.classList.add("hex-disabled");
+
+        if (!isRandomActive && closestScaleIndex === currentSelectedValue) {
+          hexDiv.classList.add("hex-selected");
+        }
+
+        hexDiv.addEventListener("mousedown", (e) => {
+          e.stopPropagation();
+          if (e.currentTarget.classList.contains("hex-disabled")) return;
+
+          const clickedScaleIndexStr = e.currentTarget.dataset.scaleIndex;
+          if (clickedScaleIndexStr === undefined || clickedScaleIndexStr === null) return;
+          const clickedScaleIndex = parseInt(clickedScaleIndexStr, 10);
+
+          isRandomActive = false;
+          randomToggleButton.classList.remove("active");
+          currentSelectedValue = clickedScaleIndex;
+
+          if (isEditing) {
+            applyScaleIndexToSelection(clickedScaleIndex, targetElementsData);
+          } else {
+            noteIndexToAdd = clickedScaleIndex;
+          }
+
+          container.querySelectorAll(".hexagon-note.hex-selected")
+            .forEach((h) => h.classList.remove("hex-selected"));
+          e.currentTarget.classList.add("hex-selected");
+
+          const noteLabelEl = parentElement.querySelector("#hexSelectedNoteLabel");
+          if (noteLabelEl) {
+            const nn = getNoteNameFromScaleIndex(currentScale, clickedScaleIndex, NOTE_NAMES, currentRootNote, globalTransposeOffset);
+            noteLabelEl.textContent = nn;
+          }
+        });
+        hexDiv.addEventListener("mouseup", (e) => e.stopPropagation());
+        rowDiv.appendChild(hexDiv);
+      }
+      container.appendChild(rowDiv);
+    }
+  };
+  renderHexNoteGrid();
   parentElement.appendChild(container);
 
   if (currentSelectedValue !== null && !isRandomActive) {
