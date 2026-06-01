@@ -22977,20 +22977,33 @@ function createHexNoteSelectorDOM(
   octaveUpButton.textContent = "+";
   octaveUpButton.title = "Higher note grid";
   [octaveDownButton, octaveResetButton, octaveUpButton].forEach((button) => {
-    button.addEventListener("mousedown", (e) => e.stopPropagation());
-    button.addEventListener("mouseup", (e) => e.stopPropagation());
+    ["pointerdown", "mousedown", "mouseup", "click"].forEach((eventName) => {
+      button.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
   });
-  octaveDownButton.addEventListener("click", () => {
+  const rebuildHexNoteSelectorAtOffset = (offset) => {
+    hexNoteSelectorOctaveOffset = offset;
+    createHexNoteSelectorDOM(parentElement, targetElementsData);
+  };
+  octaveDownButton.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     hexNoteSelectorOctaveOffset = Math.max(-5, hexNoteSelectorOctaveOffset - 1);
-    createHexNoteSelectorDOM(parentElement, targetElementsData);
+    rebuildHexNoteSelectorAtOffset(hexNoteSelectorOctaveOffset);
   });
-  octaveResetButton.addEventListener("click", () => {
-    hexNoteSelectorOctaveOffset = 0;
-    createHexNoteSelectorDOM(parentElement, targetElementsData);
+  octaveResetButton.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    rebuildHexNoteSelectorAtOffset(0);
   });
-  octaveUpButton.addEventListener("click", () => {
+  octaveUpButton.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     hexNoteSelectorOctaveOffset = Math.min(6, hexNoteSelectorOctaveOffset + 1);
-    createHexNoteSelectorDOM(parentElement, targetElementsData);
+    rebuildHexNoteSelectorAtOffset(hexNoteSelectorOctaveOffset);
   });
   octaveControls.appendChild(octaveDownButton);
   octaveControls.appendChild(octaveResetButton);
