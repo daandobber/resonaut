@@ -1047,6 +1047,7 @@ let pianoRollMinusRect = null;
 let pianoRollPlusRect = null;
 let pianoRollMode = 'piano';
 let pianoRollOctave = 0;
+let hexNoteSelectorOctaveOffset = 0;
 let pianoRollHoveredIndex = -1;
 let pianoRollHoverMinus = false;
 let pianoRollHoverPlus = false;
@@ -22902,6 +22903,12 @@ function createHexNoteSelectorDOM(
   if (existingToggleButton) {
     existingToggleButton.remove();
   }
+  const existingOctaveControls = parentElement.querySelector(
+    "#hexOctaveControls",
+  );
+  if (existingOctaveControls) {
+    existingOctaveControls.remove();
+  }
 
   const existingNoteLabel = parentElement.querySelector("#hexSelectedNoteLabel");
   if (existingNoteLabel) existingNoteLabel.remove();
@@ -22954,6 +22961,42 @@ function createHexNoteSelectorDOM(
     noteIndexToAdd = -1;
   }
 
+  const octaveControls = document.createElement("div");
+  octaveControls.id = "hexOctaveControls";
+  octaveControls.classList.add("hex-octave-controls");
+  const octaveDownButton = document.createElement("button");
+  octaveDownButton.type = "button";
+  octaveDownButton.textContent = "-";
+  octaveDownButton.title = "Lower note grid";
+  const octaveResetButton = document.createElement("button");
+  octaveResetButton.type = "button";
+  octaveResetButton.textContent = `${hexNoteSelectorOctaveOffset >= 0 ? "+" : ""}${hexNoteSelectorOctaveOffset}`;
+  octaveResetButton.title = "Reset note grid";
+  const octaveUpButton = document.createElement("button");
+  octaveUpButton.type = "button";
+  octaveUpButton.textContent = "+";
+  octaveUpButton.title = "Higher note grid";
+  [octaveDownButton, octaveResetButton, octaveUpButton].forEach((button) => {
+    button.addEventListener("mousedown", (e) => e.stopPropagation());
+    button.addEventListener("mouseup", (e) => e.stopPropagation());
+  });
+  octaveDownButton.addEventListener("click", () => {
+    hexNoteSelectorOctaveOffset = Math.max(-5, hexNoteSelectorOctaveOffset - 1);
+    createHexNoteSelectorDOM(parentElement, targetElementsData);
+  });
+  octaveResetButton.addEventListener("click", () => {
+    hexNoteSelectorOctaveOffset = 0;
+    createHexNoteSelectorDOM(parentElement, targetElementsData);
+  });
+  octaveUpButton.addEventListener("click", () => {
+    hexNoteSelectorOctaveOffset = Math.min(6, hexNoteSelectorOctaveOffset + 1);
+    createHexNoteSelectorDOM(parentElement, targetElementsData);
+  });
+  octaveControls.appendChild(octaveDownButton);
+  octaveControls.appendChild(octaveResetButton);
+  octaveControls.appendChild(octaveUpButton);
+  parentElement.insertBefore(octaveControls, parentElement.firstChild);
+
   const randomToggleButton = document.createElement("button");
   randomToggleButton.id = "hexRandomToggleBtn";
   randomToggleButton.classList.add("hex-random-toggle");
@@ -22984,16 +23027,17 @@ function createHexNoteSelectorDOM(
 
   // Wicki-Hayden layout: right = +2 semitones (major second), up = +7 semitones (perfect fifth)
   // Every scale has the same shape regardless of key — just shifted left/right
-  const numCols = 8;
-  const numRows = 10;
+  const numCols = 6;
+  const numRows = 8;
 
   const rootMidi = Math.round(frequencyToMidi(
     getFrequency(currentScale, 0, 0, currentRootNote, globalTransposeOffset)
   ));
-  // Keep the root near the lower-middle while exposing more octaves above and below.
-  const wickiRootRow = 4;
-  const wickiRootCol = 2;
-  const wickiBase = rootMidi - wickiRootRow * 7 - wickiRootCol * 2;
+  // Root appears at musicalRow=2, col=1; octave buttons shift the compact view.
+  const wickiRootRow = 2;
+  const wickiRootCol = 1;
+  const wickiBase =
+    rootMidi - wickiRootRow * 7 - wickiRootCol * 2 + hexNoteSelectorOctaveOffset * 12;
 
   const scaleIndexToMidiMap = new Map();
   for (let i = MIN_SCALE_INDEX; i <= MAX_SCALE_INDEX; i++) {
