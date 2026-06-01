@@ -22796,15 +22796,10 @@ function createNoteSelector(
   }
 
   const optionsArray = [];
-  const numNotes = currentScale.notes.length;
-  const octavesToCover = 4;
   const startingScaleIndex = MIN_SCALE_INDEX;
-  const endingScaleIndex = Math.min(
-    MAX_SCALE_INDEX,
-    startingScaleIndex + numNotes * octavesToCover,
-  );
+  const endingScaleIndex = MAX_SCALE_INDEX;
 
-  for (let i = startingScaleIndex; i < endingScaleIndex; i++) {
+  for (let i = startingScaleIndex; i <= endingScaleIndex; i++) {
     const noteName = getNoteNameFromScaleIndex(
       currentScale,
       i,
@@ -22989,17 +22984,19 @@ function createHexNoteSelectorDOM(
 
   // Wicki-Hayden layout: right = +2 semitones (major second), up = +7 semitones (perfect fifth)
   // Every scale has the same shape regardless of key — just shifted left/right
-  const numCols = 6;
-  const numRows = 8;
+  const numCols = 8;
+  const numRows = 10;
 
   const rootMidi = Math.round(frequencyToMidi(
     getFrequency(currentScale, 0, 0, currentRootNote, globalTransposeOffset)
   ));
-  // Root appears at musicalRow=2, col=1 → wickiBase = rootMidi - 2*7 - 1*2 = rootMidi - 16
-  const wickiBase = rootMidi - 16;
+  // Keep the root near the lower-middle while exposing more octaves above and below.
+  const wickiRootRow = 4;
+  const wickiRootCol = 2;
+  const wickiBase = rootMidi - wickiRootRow * 7 - wickiRootCol * 2;
 
   const scaleIndexToMidiMap = new Map();
-  for (let i = -12; i < 36; i++) {
+  for (let i = MIN_SCALE_INDEX; i <= MAX_SCALE_INDEX; i++) {
     const midi = Math.round(frequencyToMidi(
       getFrequency(currentScale, i, 0, currentRootNote, globalTransposeOffset)
     ));
@@ -23011,6 +23008,7 @@ function createHexNoteSelectorDOM(
     const musRow = numRows - 1 - domRow;
     const rowDiv = document.createElement("div");
     rowDiv.classList.add("hex-wicki-row");
+    rowDiv.style.zIndex = String(numRows - domRow);
     if (musRow % 2 === 1) rowDiv.classList.add("hex-wicki-row-offset");
 
     for (let col = 0; col < numCols; col++) {
@@ -34387,13 +34385,13 @@ function handleKeysPianoRollClick(event) {
   const { x, y } = getPianoRollEventPos(event);
 
   if (pianoRollMinusRect && x >= pianoRollMinusRect.x && x <= pianoRollMinusRect.x + pianoRollMinusRect.width && y >= pianoRollMinusRect.y && y <= pianoRollMinusRect.y + pianoRollMinusRect.height) {
-      pianoRollOctave = Math.max(-4, pianoRollOctave - 1);
+      pianoRollOctave = Math.max(-8, pianoRollOctave - 1);
       drawPianoRoll();
       saveState();
       return;
   }
   if (pianoRollPlusRect && x >= pianoRollPlusRect.x && x <= pianoRollPlusRect.x + pianoRollPlusRect.width && y >= pianoRollPlusRect.y && y <= pianoRollPlusRect.y + pianoRollPlusRect.height) {
-      pianoRollOctave = Math.min(8, pianoRollOctave + 1);
+      pianoRollOctave = Math.min(10, pianoRollOctave + 1);
       drawPianoRoll();
       saveState();
       return;
