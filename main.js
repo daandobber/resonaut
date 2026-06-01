@@ -2949,13 +2949,12 @@ export function createAudioNodesForNode(node) {
             
             audioNodes.orbitoneSynths = [];
             if (
-                node.audioParams.orbitonesEnabled &&
-                node.audioParams.orbitoneCount > 0 &&
-                node.audioParams.orbitoneIntervals
+                node.audioParams.orbitonesEnabled
             ) {
+                const orbitoneAllocationCount = getOrbitoneAllocationCount(node);
                 const orbitFreqs = getOrbitoneFrequencies(
                     node.audioParams.scaleIndex,
-                    node.audioParams.orbitoneCount,
+                    orbitoneAllocationCount,
                     node.audioParams.orbitoneIntervals,
                     0,
                     currentScale,
@@ -2993,13 +2992,12 @@ export function createAudioNodesForNode(node) {
 
             audioNodes.orbitoneSynths = [];
             if (
-                node.audioParams.orbitonesEnabled &&
-                node.audioParams.orbitoneCount > 0 &&
-                node.audioParams.orbitoneIntervals
+                node.audioParams.orbitonesEnabled
             ) {
+                const orbitoneAllocationCount = getOrbitoneAllocationCount(node);
                 const orbitFreqs = getOrbitoneFrequencies(
                     node.audioParams.scaleIndex,
-                    node.audioParams.orbitoneCount,
+                    orbitoneAllocationCount,
                     node.audioParams.orbitoneIntervals,
                     0,
                     currentScale,
@@ -3155,13 +3153,12 @@ export function createAudioNodesForNode(node) {
             );
             audioNodes.orbitoneSynths = [];
             if (
-                node.audioParams.orbitonesEnabled &&
-                node.audioParams.orbitoneCount > 0 &&
-                node.audioParams.orbitoneIntervals
+                node.audioParams.orbitonesEnabled
             ) {
+                const orbitoneAllocationCount = getOrbitoneAllocationCount(node);
                 const orbitFreqs = getOrbitoneFrequencies(
                     node.audioParams.scaleIndex,
-                    node.audioParams.orbitoneCount,
+                    orbitoneAllocationCount,
                     node.audioParams.orbitoneIntervals,
                     0,
                     currentScale,
@@ -3237,13 +3234,12 @@ export function createAudioNodesForNode(node) {
             );
             audioNodes.orbitoneSynths = [];
             if (
-                node.audioParams.orbitonesEnabled &&
-                node.audioParams.orbitoneCount > 0 &&
-                node.audioParams.orbitoneIntervals
+                node.audioParams.orbitonesEnabled
             ) {
+                const orbitoneAllocationCount = getOrbitoneAllocationCount(node);
                 const orbitFreqs = getOrbitoneFrequencies(
                     node.audioParams.scaleIndex,
-                    node.audioParams.orbitoneCount,
+                    orbitoneAllocationCount,
                     node.audioParams.orbitoneIntervals,
                     0,
                     currentScale,
@@ -5204,7 +5200,8 @@ export function updateNodeAudioParams(node) {
       );
       const mainNoteFreq = allOutputFrequencies[0];
       const orbitoneBaseMixLevel =
-        params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+        params.orbitoneMix !== undefined ? params.orbitoneMix : 0.65;
+      const isPulseEngine = node.audioParams && (node.audioParams.engine === 'pulse' || node.audioParams.waveform === 'pulse');
 
       if (oscillator1 && !isNaN(mainNoteFreq) && mainNoteFreq > 0) {
         if (node.audioParams && node.audioParams.engine !== 'tonefm') {
@@ -5231,7 +5228,7 @@ export function updateNodeAudioParams(node) {
             );
           }
         }
-        if (osc1Gain) {
+        if (osc1Gain && !isPulseEngine) {
           const mix = params.orbitonesEnabled ? 1.0 - orbitoneBaseMixLevel : 1.0;
           const lvl = (params.osc1Level ?? 1.0) * mix;
           osc1Gain.gain.setTargetAtTime(lvl, now, generalUpdateTimeConstant);
@@ -5251,7 +5248,7 @@ export function updateNodeAudioParams(node) {
             pitchUpdateTimeConstant,
           );
         }
-        if (osc2Gain) {
+        if (osc2Gain && !isPulseEngine) {
           const lvlBase = params.osc2Enabled ? params.osc2Level ?? 1.0 : 0;
           const lvl = lvlBase * (params.orbitonesEnabled ? 1.0 - orbitoneBaseMixLevel : 1.0);
           osc2Gain.gain.setTargetAtTime(lvl, now, generalUpdateTimeConstant);
@@ -5390,11 +5387,15 @@ export function updateNodeAudioParams(node) {
               );
             }
           }
-          if (orbitIndGain) {
+          if (orbitIndGain && !isPulseEngine) {
           const osc1Level = params.osc1Level ?? 1.0;
           const osc2Level = params.osc2Enabled ? params.osc2Level ?? 0 : 0;
-          let volMultiplier =
-            orbitoneBaseMixLevel / Math.max(1, params.orbitoneCount);
+          let volMultiplier = getOrbitoneVoicePeak(
+            1.0,
+            orbitoneBaseMixLevel,
+            params.orbitoneCount,
+            params.osc1Level ?? 1.0,
+          );
           if (params.orbitoneVolumeVariation > 0) {
             volMultiplier *=
               1.0 - Math.random() * params.orbitoneVolumeVariation;
@@ -5429,6 +5430,7 @@ export function updateNodeAudioParams(node) {
             );
           }
         }
+        muteInactiveOrbitoneVoices(node, now);
       }
     } else if (node.type === PRORB_TYPE) {
       const { osc1, osc1Gain, osc2, osc2Gain, filter, lfo, lfoGain, lfo2, lfo2Gain, reverbSendGain, delaySendGain } = node.audioNodes;
@@ -5446,7 +5448,7 @@ export function updateNodeAudioParams(node) {
       }
       if (osc2Gain) {
         const lvlBase = params.osc2Enabled ? params.osc2Level ?? 1.0 : 0;
-        const orbitMix = params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+        const orbitMix = params.orbitoneMix !== undefined ? params.orbitoneMix : 0.65;
         const lvl = lvlBase * (params.orbitonesEnabled ? 1.0 - orbitMix : 1.0);
         osc2Gain.gain.setTargetAtTime(lvl, now, generalUpdateTimeConstant);
       }
@@ -5817,6 +5819,20 @@ export function updateNodeAudioParams(node) {
   }
 }
 
+function scheduleAlienOrbHitGain(gainParam, startTime, peak) {
+  if (!gainParam) return;
+  const safePeak = Math.min(1.2, Math.max(0.001, peak || 0.001));
+  const attack = 0.008;
+  const hold = 0.09;
+  const releaseTimeConstant = 0.045;
+
+  gainParam.cancelScheduledValues(startTime);
+  gainParam.setValueAtTime(0, startTime);
+  gainParam.linearRampToValueAtTime(safePeak, startTime + attack);
+  gainParam.setTargetAtTime(0.0001, startTime + attack + hold, releaseTimeConstant);
+  gainParam.setValueAtTime(0, startTime + attack + hold + 0.45);
+}
+
 export function triggerNodeEffect(
   node,
   pulseData = {},
@@ -5828,6 +5844,12 @@ export function triggerNodeEffect(
   const now = audioContext ? audioContext.currentTime : 0;
   const params = node.audioParams;
   const intensity = pulseData.intensity ?? 1.0;
+  const orbitonePlaybackOrder = createOrbitonePlaybackOrder(node, (params.orbitoneCount || 0) + 1);
+  const getMainOrbitoneDelay = () =>
+    params.orbitonesEnabled ? getOrbitoneOrderedTimingOffset(params, 0, orbitonePlaybackOrder) : 0;
+  const getOrbitoneDelay = (voiceIndex) =>
+    getOrbitoneOrderedTimingOffset(params, voiceIndex + 1, orbitonePlaybackOrder);
+  const mainStartTime = now + getMainOrbitoneDelay() / 1000.0;
   if ('fromTimeline' in pulseData) delete pulseData.fromTimeline;
 
   const baseVolumeSettingForFinalEnvelope = 1.0;
@@ -5952,7 +5974,7 @@ export function triggerNodeEffect(
       }
 
       if (audioNodes.triggerStart) {
-        audioNodes.triggerStart(now, intensity);
+        audioNodes.triggerStart(mainStartTime, intensity);
       }
       // Ensure Orbitone voices are scheduled and main/Orbitone mix is respected
       try {
@@ -5966,9 +5988,9 @@ export function triggerNodeEffect(
           intensity,
         });
       } catch {}
-      try { triggerPulseOrbitones(node, now, intensity); } catch {}
+      try { triggerPulseOrbitones(node, now, intensity, orbitonePlaybackOrder); } catch {}
 
-      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      const noteOffTime = mainStartTime + atk + dec + (sus > 0 ? 0.1 : 0);
       if (audioNodes.triggerStop) {
         audioNodes.triggerStop(noteOffTime);
       }
@@ -5980,7 +6002,7 @@ export function triggerNodeEffect(
       return;
     }
 
-    // Pluck synth engine (Tone.PluckSynth)
+    // Pluck synth engine
     if (!isSampler && node.audioParams && node.audioParams.engine === 'tonepluck') {
       node.isTriggered = true;
       node.animationState = 1;
@@ -5997,7 +6019,7 @@ export function triggerNodeEffect(
 
       // Trigger main pluck
       if (audioNodes.triggerStart) {
-        try { audioNodes.triggerStart(now, intensity); } catch {}
+        try { audioNodes.triggerStart(mainStartTime, intensity); } catch {}
       }
 
       // Orbitones
@@ -6011,21 +6033,23 @@ export function triggerNodeEffect(
           effectivePitch,
         ).slice(1);
 
-        const orbitoneMix = params.orbitoneMix ?? 0.5;
-        const mainVolume = intensity * (1.0 - orbitoneMix);
-        const orbitoneVolume = (intensity * orbitoneMix) / audioNodes.orbitoneSynths.length;
+        const orbitoneMix = Math.max(0, Math.min(1, params.orbitoneMix ?? 0.65));
+        const mainVolume = Math.max(0.72, 1.0 - orbitoneMix * 0.32);
+        const orbitoneVolume = getOrbitoneVoicePeak(
+          0.55,
+          orbitoneMix,
+          params.orbitoneCount,
+        );
 
         // Set main synth volume
-        if (gainNode && gainNode.gain) {
-          try { gainNode.gain.setValueAtTime(mainVolume, now); } catch {}
+        const mainLevelGain = audioNodes.mainLevelGain || gainNode;
+        if (mainLevelGain && mainLevelGain.gain) {
+          try { mainLevelGain.gain.setValueAtTime(mainVolume, mainStartTime); } catch {}
         }
 
         audioNodes.orbitoneSynths.forEach((orbitone, idx) => {
           if (idx < allFreqs.length) {
-            const offMs = params.orbitoneTimingOffsets && 
-                         params.orbitoneTimingOffsets[idx] !== undefined
-                         ? params.orbitoneTimingOffsets[idx]
-                         : 0;
+            const offMs = getOrbitoneDelay(idx);
             const startT = now + offMs / 1000.0;
 
             // Volume per orbitone
@@ -6039,12 +6063,13 @@ export function triggerNodeEffect(
         });
       } else {
         // No orbitones, use full volume for main synth
-        if (gainNode && gainNode.gain) {
-          try { gainNode.gain.setValueAtTime(intensity, now); } catch {}
+        const mainLevelGain = audioNodes.mainLevelGain || gainNode;
+        if (mainLevelGain && mainLevelGain.gain) {
+          try { mainLevelGain.gain.setValueAtTime(1.0, mainStartTime); } catch {}
         }
       }
 
-      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      const noteOffTime = mainStartTime + atk + dec + (sus > 0 ? 0.1 : 0);
       if (audioNodes.triggerStop) {
         try { audioNodes.triggerStop(noteOffTime); } catch {}
       }
@@ -6068,9 +6093,9 @@ export function triggerNodeEffect(
         try { audioNodes.setCarrierFrequency(effectivePitch); } catch {}
       }
       if (audioNodes.triggerStart) {
-        try { audioNodes.triggerStart(now, intensity); } catch {}
+        try { audioNodes.triggerStart(mainStartTime, intensity); } catch {}
       }
-      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      const noteOffTime = mainStartTime + atk + dec + (sus > 0 ? 0.1 : 0);
       if (audioNodes.triggerStop) {
         try { audioNodes.triggerStop(noteOffTime); } catch {}
       }
@@ -6125,11 +6150,11 @@ export function triggerNodeEffect(
       // Prefer explicit frequency to ensure proper polyphony from sequencers
       if (audioNodes.triggerStart) {
         try {
-          audioNodes.triggerStart(now, effectivePitch, intensity);
+          audioNodes.triggerStart(mainStartTime, effectivePitch, intensity);
         } catch (e) {
           // Fallback: set carrier then use legacy signature
           try { if (audioNodes.setCarrierFrequency) audioNodes.setCarrierFrequency(effectivePitch); } catch {}
-          try { audioNodes.triggerStart(now, intensity); } catch {}
+          try { audioNodes.triggerStart(mainStartTime, intensity); } catch {}
         }
       }
 
@@ -6144,23 +6169,24 @@ export function triggerNodeEffect(
           effectivePitch,
         ).slice(1);
         
-        const orbitoneMix = params.orbitoneMix ?? 0.5;
-        const mainVolume = intensity * (1.0 - orbitoneMix);
-        const orbitoneVolume = (intensity * orbitoneMix) / audioNodes.orbitoneSynths.length;
+        const orbitoneMix = params.orbitoneMix ?? 0.65;
+        const mainVolume = getMainVoicePeak(intensity, orbitoneMix);
+        const orbitoneVolume = getOrbitoneVoicePeak(
+          intensity,
+          orbitoneMix,
+          params.orbitoneCount,
+        );
         
         // Set main synth volume
         if (gainNode && gainNode.gain) {
-          gainNode.gain.setValueAtTime(mainVolume, now);
+          gainNode.gain.setValueAtTime(mainVolume, mainStartTime);
         }
         
         // Trigger orbitones with timing offsets
         audioNodes.orbitoneSynths.forEach((orbitone, idx) => {
           if (idx < allFreqs.length) {
             // Calculate timing offset for this orbitone
-            const offMs = params.orbitoneTimingOffsets && 
-                         params.orbitoneTimingOffsets[idx] !== undefined
-                         ? params.orbitoneTimingOffsets[idx]
-                         : 0;
+            const offMs = getOrbitoneDelay(idx);
             const startT = now + offMs / 1000.0;
             
             // Update orbitone frequency
@@ -6184,11 +6210,11 @@ export function triggerNodeEffect(
       } else {
         // No orbitones, use full volume for main synth
         if (gainNode && gainNode.gain) {
-          gainNode.gain.setValueAtTime(intensity, now);
+          gainNode.gain.setValueAtTime(intensity, mainStartTime);
         }
       }
 
-      const noteOffTime = now + atk + dec + (sus > 0 ? 0.1 : 0);
+      const noteOffTime = mainStartTime + atk + dec + (sus > 0 ? 0.1 : 0);
       if (audioNodes.triggerStop) {
         audioNodes.triggerStop(noteOffTime);
       }
@@ -6197,10 +6223,7 @@ export function triggerNodeEffect(
       if (audioNodes.orbitoneSynths && audioNodes.orbitoneSynths.length > 0) {
         audioNodes.orbitoneSynths.forEach((orbitone, idx) => {
           if (orbitone.triggerStop) {
-            const offMs = params.orbitoneTimingOffsets && 
-                         params.orbitoneTimingOffsets[idx] !== undefined
-                         ? params.orbitoneTimingOffsets[idx]
-                         : 0;
+            const offMs = getOrbitoneDelay(idx);
             const orbitoneStopTime = noteOffTime + offMs / 1000.0;
             orbitone.triggerStop(orbitoneStopTime);
           }
@@ -6307,7 +6330,7 @@ export function triggerNodeEffect(
         );
       }
       const orbitMix =
-        params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+        params.orbitoneMix !== undefined ? params.orbitoneMix : 0.65;
       if (osc1Gain) {
         const mainLvl =
           (params.osc1Level ?? 1.0) *
@@ -6326,10 +6349,12 @@ export function triggerNodeEffect(
         node.audioNodes.orbitoneIndividualGains &&
         node.audioNodes.orbitoneOscillators.length > 0
       ) {
-        const numAct = node.audioNodes.orbitoneOscillators.length;
-        const levelPerOrbit =
-          (intensity * orbitMix * (params.osc1Level ?? 1.0)) /
-          Math.max(1, numAct);
+        const levelPerOrbit = getOrbitoneVoicePeak(
+          intensity,
+          orbitMix,
+          params.orbitoneCount,
+          params.osc1Level ?? 1.0,
+        );
 
         const freqs = getOrbitoneFrequencies(
           effectiveScaleIndex,
@@ -6343,11 +6368,8 @@ export function triggerNodeEffect(
         freqs.forEach((_, idx) => {
           const offMs =
             idx === 0
-              ? 0
-              : params.orbitoneTimingOffsets &&
-                params.orbitoneTimingOffsets[idx - 1] !== undefined
-              ? params.orbitoneTimingOffsets[idx - 1]
-              : 0;
+              ? getMainOrbitoneDelay()
+              : getOrbitoneDelay(idx - 1);
           highlightOrbitoneBar(node.id, idx, offMs);
         });
 
@@ -6358,10 +6380,7 @@ export function triggerNodeEffect(
           const g = node.audioNodes.orbitoneIndividualGains[i];
           if (osc && g && !isNaN(f) && f > 0) {
             const offMs =
-              params.orbitoneTimingOffsets &&
-              params.orbitoneTimingOffsets[i] !== undefined
-                ? params.orbitoneTimingOffsets[i]
-                : 0;
+              getOrbitoneDelay(i);
             const startT = now + offMs / 1000.0;
             osc.frequency.cancelScheduledValues(startT);
             osc.frequency.setValueAtTime(f, startT);
@@ -6394,11 +6413,12 @@ export function triggerNodeEffect(
       const envGate = node.audioNodes.envelopeGate || gainNode;
       envGate.gain.cancelScheduledValues(now);
       envGate.gain.setValueAtTime(0, now);
-      envGate.gain.linearRampToValueAtTime(peak, now + atk);
-      envGate.gain.setTargetAtTime(peak * sus, now + atk, dec / 4);
+      envGate.gain.setValueAtTime(0, mainStartTime);
+      envGate.gain.linearRampToValueAtTime(peak, mainStartTime + atk);
+      envGate.gain.setTargetAtTime(peak * sus, mainStartTime + atk, dec / 4);
 
       const noteDur = atk + dec + 0.3;
-      envGate.gain.setTargetAtTime(0.0, now + noteDur, rel / 4);
+      envGate.gain.setTargetAtTime(0.0, mainStartTime + noteDur, rel / 4);
 
       setTimeout(() => {
         const stillNode = findNodeById(node.id);
@@ -6424,13 +6444,14 @@ export function triggerNodeEffect(
 
     gainNode.gain.cancelScheduledValues(now);
     gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.setValueAtTime(0, mainStartTime);
     gainNode.gain.linearRampToValueAtTime(
       finalEnvelopePeak,
-      now + ampEnv.attack,
+      mainStartTime + ampEnv.attack,
     );
     gainNode.gain.setTargetAtTime(
       finalEnvelopePeak * ampEnv.sustain,
-      now + ampEnv.attack,
+      mainStartTime + ampEnv.attack,
       ampEnv.decay / 3 + 0.001,
     );
 
@@ -6473,13 +6494,7 @@ export function triggerNodeEffect(
         );
 
         allOutputFrequencies.forEach((_, idx) => {
-          const offMs =
-            idx === 0
-              ? 0
-              : params.orbitoneTimingOffsets &&
-                params.orbitoneTimingOffsets[idx - 1] !== undefined
-              ? params.orbitoneTimingOffsets[idx - 1]
-              : 0;
+          const offMs = idx === 0 ? getMainOrbitoneDelay() : getOrbitoneDelay(idx - 1);
           highlightOrbitoneBar(node.id, idx, offMs);
         });
 
@@ -6487,11 +6502,8 @@ export function triggerNodeEffect(
             if (isNaN(freq) || freq <= 0) return;
             const isMainNote = index === 0;
             const timingOffsetMs = isMainNote
-              ? 0
-              : params.orbitoneTimingOffsets &&
-                params.orbitoneTimingOffsets[index - 1] !== undefined
-              ? params.orbitoneTimingOffsets[index - 1]
-              : 0;
+              ? getMainOrbitoneDelay()
+              : getOrbitoneDelay(index - 1);
             const scheduledStartTime = now + timingOffsetMs / 1000.0;
             const bufferToUse = params.sampleReverse
               ? getReversedBuffer(definition)
@@ -6500,7 +6512,7 @@ export function triggerNodeEffect(
             const endFrac = params.sampleEnd ?? 1;
             let noteVolumeFactor;
             const orbitoneBaseMixLevel =
-              params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+              params.orbitoneMix !== undefined ? params.orbitoneMix : 0.65;
             if (!params.orbitonesEnabled || params.orbitoneCount === 0) {
               noteVolumeFactor = isMainNote ? 1.0 : 0;
             } else {
@@ -6508,7 +6520,11 @@ export function triggerNodeEffect(
                 orbitoneBaseMixLevel >= 0.99 ? 0.0 : 1.0 - orbitoneBaseMixLevel;
               noteVolumeFactor = isMainNote
                 ? mainNoteVolWhenMixedOut
-                : orbitoneBaseMixLevel / Math.max(1, params.orbitoneCount);
+                : getOrbitoneVoicePeak(
+                    1.0,
+                    orbitoneBaseMixLevel,
+                    params.orbitoneCount,
+                  );
             }
             let targetSamplerIndividualPeak =
               noteVolumeFactor * (params.sampleGain ?? 1.0);
@@ -6593,14 +6609,16 @@ export function triggerNodeEffect(
         orbitoneIndividualGains.length > 0
       ) {
         const orbitoneMix =
-          params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+          params.orbitoneMix !== undefined ? params.orbitoneMix : 0.65;
         const osc1Level = params.osc1Level ?? 1.0;
         const osc2Level = params.osc2Enabled ? params.osc2Level ?? 0 : 0;
-        osc1TargetGainLevel = intensity * (1.0 - orbitoneMix) * osc1Level;
-        const numActiveOrbitones = orbitoneOscillators.length;
-        const levelPerOrbitone =
-          (intensity * orbitoneMix * osc1Level) /
-          Math.max(1, numActiveOrbitones);
+        osc1TargetGainLevel = getMainVoicePeak(intensity, orbitoneMix, osc1Level);
+        const levelPerOrbitone = getOrbitoneVoicePeak(
+          intensity,
+          orbitoneMix,
+          params.orbitoneCount,
+          osc1Level,
+        );
 
         const allOutputFrequencies = getOrbitoneFrequencies(
           effectiveScaleIndex,
@@ -6614,11 +6632,8 @@ export function triggerNodeEffect(
         allOutputFrequencies.forEach((_, idx) => {
           const offMs =
             idx === 0
-              ? 0
-              : params.orbitoneTimingOffsets &&
-                params.orbitoneTimingOffsets[idx - 1] !== undefined
-              ? params.orbitoneTimingOffsets[idx - 1]
-              : 0;
+              ? getOrbitoneOrderedTimingOffset(params, 0, orbitonePlaybackOrder)
+              : getOrbitoneDelay(idx - 1);
           highlightOrbitoneBar(node.id, idx, offMs);
         });
 
@@ -6627,10 +6642,7 @@ export function triggerNodeEffect(
           const orbitIndGain = orbitoneIndividualGains[i];
           if (orbitOsc && orbitIndGain && !isNaN(freq) && freq > 0) {
             const offMs =
-              params.orbitoneTimingOffsets &&
-              params.orbitoneTimingOffsets[i] !== undefined
-                ? params.orbitoneTimingOffsets[i]
-                : 0;
+              getOrbitoneDelay(i);
             const startT = now + offMs / 1000.0;
             orbitOsc.frequency.cancelScheduledValues(startT);
             orbitOsc.frequency.setValueAtTime(freq, startT);
@@ -6708,7 +6720,7 @@ export function triggerNodeEffect(
       ) {
         const osc1Level = params.osc1Level ?? 1.0;
         const osc2Level = params.osc2Level ?? 1.0;
-        const orbitMix = params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+        const orbitMix = params.orbitoneMix !== undefined ? params.orbitoneMix : 0.65;
         osc1TargetGainLevel = intensity * (1.0 - orbitMix) * osc1Level;
         osc2Gain.gain.cancelScheduledValues(now);
         const lvl2 = intensity * (1.0 - orbitMix) * osc2Level * (params.osc2Enabled ? 1 : 0);
@@ -6929,12 +6941,10 @@ export function triggerNodeEffect(
         const tmp = createAlienSynth(node.audioParams.engine, effectivePitch, true);
         const g = tmp && tmp.mix && tmp.mix.gain ? tmp.mix.gain : null;
         const baseAmp = (node.audioNodes && node.audioNodes.baseGain) || 1;
-        const orbitMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.5;
-        const vol = baseAmp * (node.audioParams.orbitonesEnabled ? 1.0 - orbitMix : 1.0) * (intensity ?? 1.0);
+        const orbitMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.65;
+        const vol = baseAmp * (node.audioParams.orbitonesEnabled ? getMainVoicePeak(intensity ?? 1.0, orbitMix) : (intensity ?? 1.0));
         if (g) {
-          g.cancelScheduledValues(now);
-          g.setValueAtTime(Math.min(1.0, Math.max(0.01, vol)), now);
-          g.setTargetAtTime(0.0, now + 0.5, 0.2);
+          scheduleAlienOrbHitGain(g, now, vol);
         }
         // schedule cleanup across potential engines
         setTimeout(() => {
@@ -6972,10 +6982,9 @@ export function triggerNodeEffect(
       allFreqs[0],
     );
     const amp = node.audioNodes.baseGain || 1;
-    const orbitMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.5;
-    mix.cancelScheduledValues(now);
-    mix.setValueAtTime(amp * (node.audioParams.orbitonesEnabled ? 1.0 - orbitMix : 1.0), now);
-    mix.setTargetAtTime(0.0, now + 0.5, 0.2);
+    const orbitMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.65;
+    const mainPeak = amp * (node.audioParams.orbitonesEnabled ? 1.0 - orbitMix : 1.0) * (intensity ?? 1.0);
+    scheduleAlienOrbHitGain(mix, mainStartTime, mainPeak);
     if (node.audioNodes.orbitoneSynths && node.audioNodes.orbitoneSynths.length > 0) {
       node.audioNodes.orbitoneSynths.forEach((synth, idx) => {
         if (idx + 1 >= allFreqs.length) return;
@@ -6986,15 +6995,24 @@ export function triggerNodeEffect(
         );
         const sMix = synth.mix.gain;
         const targetAmp = synth.baseGain || 1;
-        sMix.cancelScheduledValues(now);
-        sMix.setValueAtTime((amp * orbitMix / node.audioNodes.orbitoneSynths.length) * targetAmp, now);
-        sMix.setTargetAtTime(0.0, now + 0.5, 0.2);
+        const startT = now + getOrbitoneDelay(idx) / 1000.0;
+        const voicePeak = getOrbitoneVoicePeak(
+          amp * (intensity ?? 1.0),
+          orbitMix,
+          node.audioParams.orbitoneCount,
+          targetAmp,
+        );
+        scheduleAlienOrbHitGain(sMix, startT, voicePeak);
       });
     }
+    const maxAlienDelayMs = Math.max(
+      getMainOrbitoneDelay(),
+      ...(node.audioParams.orbitoneTimingOffsets || [0]),
+    );
     setTimeout(() => {
       const stillNode = findNodeById(node.id);
       if (stillNode) stillNode.isTriggered = false;
-    }, 500);
+    }, maxAlienDelayMs + 700);
   } else if (node.type === ALIEN_DRONE_TYPE) {
     if (!node.audioNodes) return;
     node.isTriggered = true;
@@ -7013,18 +7031,24 @@ export function triggerNodeEffect(
       allFreqs[0],
     );
     const baseAmp = node.audioNodes.baseGain || 1;
-    const orbitMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.5;
+    const orbitMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.65;
     const mainMix = node.audioNodes.mix.gain;
     mainMix.cancelScheduledValues(now);
-    mainMix.setValueAtTime(baseAmp * (node.audioParams.orbitonesEnabled ? 1.0 - orbitMix : 1.0), now);
+    mainMix.setValueAtTime(0, now);
+    mainMix.setValueAtTime(baseAmp * (node.audioParams.orbitonesEnabled ? 1.0 - orbitMix : 1.0), mainStartTime);
     if (node.audioNodes.orbitoneSynths && node.audioNodes.orbitoneSynths.length > 0) {
       node.audioNodes.orbitoneSynths.forEach((synth, idx) => {
         if (idx + 1 >= allFreqs.length) return;
         updateAlienNodesParams(synth, node.audioParams.engine, allFreqs[idx + 1]);
         const sMix = synth.mix.gain;
         const targetAmp = synth.baseGain || 1;
+        const startT = now + getOrbitoneDelay(idx) / 1000.0;
         sMix.cancelScheduledValues(now);
-        sMix.setValueAtTime((baseAmp * orbitMix / node.audioNodes.orbitoneSynths.length) * targetAmp, now);
+        sMix.setValueAtTime(0, now);
+        sMix.setValueAtTime(
+          getOrbitoneVoicePeak(baseAmp, orbitMix, node.audioParams.orbitoneCount, targetAmp),
+          startT,
+        );
       });
     }
     setTimeout(() => {
@@ -7073,34 +7097,28 @@ export function triggerNodeEffect(
     orbitFreqs.forEach((_, idx) => {
       const offMs =
         idx === 0
-          ? 0
-          : node.audioParams.orbitoneTimingOffsets &&
-            node.audioParams.orbitoneTimingOffsets[idx - 1] !== undefined
-          ? node.audioParams.orbitoneTimingOffsets[idx - 1]
-          : 0;
+          ? getMainOrbitoneDelay()
+          : getOrbitoneDelay(idx - 1);
       highlightOrbitoneBar(node.id, idx, offMs);
     });
 
     const orbitMix =
       node.audioParams.orbitoneMix !== undefined
         ? node.audioParams.orbitoneMix
-        : 0.5;
+        : 0.65;
     const mainIntensity = node.audioParams.orbitonesEnabled
-      ? intensity * (1.0 - orbitMix)
+      ? getMainVoicePeak(intensity, orbitMix)
       : intensity;
 
     const perOrbitIntensity = node.audioParams.orbitonesEnabled
-      ? (intensity * orbitMix) / Math.max(1, node.audioParams.orbitoneCount)
+      ? getOrbitoneVoicePeak(intensity, orbitMix, node.audioParams.orbitoneCount)
       : 0;
 
     orbitFreqs.forEach((freq, idx) => {
       const offMs =
         idx === 0
-          ? 0
-          : node.audioParams.orbitoneTimingOffsets &&
-            node.audioParams.orbitoneTimingOffsets[idx - 1] !== undefined
-          ? node.audioParams.orbitoneTimingOffsets[idx - 1]
-          : 0;
+          ? getMainOrbitoneDelay()
+          : getOrbitoneDelay(idx - 1);
       const delay = Math.max(0, offMs);
       const vol = idx === 0 ? mainIntensity : perOrbitIntensity;
       if (delay === 0) {
@@ -8263,6 +8281,9 @@ function playSingleRetrigger(
   const now = audioContext.currentTime;
 
   const params = node.audioParams;
+  const orbitonePlaybackOrder = createOrbitonePlaybackOrder(node, (params.orbitoneCount || 0) + 1);
+  const getOrbitoneDelay = (voiceIndex) =>
+    getOrbitoneOrderedTimingOffset(params, voiceIndex + 1, orbitonePlaybackOrder);
   const audioNodes = node.audioNodes;
   const isMuted =
     params.retriggerMuteSteps &&
@@ -8550,7 +8571,7 @@ function playSingleRetrigger(
         orbitoneIndividualGains.length > 0
       ) {
         const orbitoneMix =
-          params.orbitoneMix !== undefined ? params.orbitoneMix : 0.5;
+          params.orbitoneMix !== undefined ? params.orbitoneMix : 0.65;
         const osc1Level = params.osc1Level ?? 1.0;
         const osc1TargetLevel = currentVolume * (1.0 - orbitoneMix) * osc1Level;
         if (osc1Gain) {
@@ -8562,10 +8583,12 @@ function playSingleRetrigger(
         }
 
         const osc2Level = params.osc2Enabled ? params.osc2Level ?? 0 : 0;
-        const numActiveOrbitones = orbitoneOscillators.length;
-        const levelPerOrbitone =
-          (currentVolume * orbitoneMix * osc1Level) /
-          Math.max(1, numActiveOrbitones);
+        const levelPerOrbitone = getOrbitoneVoicePeak(
+          currentVolume,
+          orbitoneMix,
+          params.orbitoneCount,
+          osc1Level,
+        );
 
         const allOutputFrequencies = getOrbitoneFrequencies(
           baseScaleIndex + pitchStepOffset,
@@ -8579,11 +8602,8 @@ function playSingleRetrigger(
         allOutputFrequencies.forEach((_, idx) => {
           const offMs =
             idx === 0
-              ? 0
-              : params.orbitoneTimingOffsets &&
-                params.orbitoneTimingOffsets[idx - 1] !== undefined
-              ? params.orbitoneTimingOffsets[idx - 1]
-              : 0;
+              ? getOrbitoneOrderedTimingOffset(params, 0, orbitonePlaybackOrder)
+              : getOrbitoneDelay(idx - 1);
           highlightOrbitoneBar(node.id, idx, offMs);
         });
 
@@ -8595,10 +8615,7 @@ function playSingleRetrigger(
 
           if (orbitOsc && orbitGain && !isNaN(freq) && freq > 0) {
             const offMs =
-              params.orbitoneTimingOffsets &&
-              params.orbitoneTimingOffsets[i] !== undefined
-                ? params.orbitoneTimingOffsets[i]
-                : 0;
+              getOrbitoneDelay(i);
             const startT = scheduledPlayTime + offMs / 1000.0;
             orbitOsc.frequency.setValueAtTime(freq, startT);
 
@@ -8643,11 +8660,7 @@ function playSingleRetrigger(
             freq > 0
           ) {
             const modRatio = params.modulatorRatio || 1.0;
-            const startT = scheduledPlayTime +
-              (params.orbitoneTimingOffsets &&
-              params.orbitoneTimingOffsets[i] !== undefined
-                ? params.orbitoneTimingOffsets[i]
-                : 0) / 1000.0;
+            const startT = scheduledPlayTime + getOrbitoneDelay(i) / 1000.0;
             modOsc.frequency.setValueAtTime(freq * modRatio, startT);
             if (modGain) {
               const modEnv = tempAudioParamsForRetrigger.modulatorEnv || {
@@ -9203,6 +9216,9 @@ function updateOrbitoneNoteDisplay(node, container) {
   const baseMidi = frequencyToMidi(freqs[0]);
   const offsets = freqs.map((f) => frequencyToMidi(f) - baseMidi);
   const maxOffset = Math.max(1, ...offsets.map((o) => Math.abs(o)));
+  const voiceCount = Math.max(0, params.orbitoneCount || 0);
+  const displayOrder = Array.from({ length: voiceCount + 1 }, (_, index) => index);
+  if (params.orbitoneOrder === "reverse") displayOrder.reverse();
   for (let i = 0; i < freqs.length; i++) {
     const off = offsets[i];
     const noteName = getNoteName(
@@ -9217,12 +9233,7 @@ function updateOrbitoneNoteDisplay(node, container) {
     const hPct = Math.max(2, (Math.abs(off) / maxOffset) * 100);
     bar.style.height = `${hPct}%`;
     const timingOff =
-      i === 0
-        ? 0
-        : params.orbitoneTimingOffsets &&
-          params.orbitoneTimingOffsets[i - 1] !== undefined
-        ? params.orbitoneTimingOffsets[i - 1]
-        : 0;
+      getOrbitoneOrderedTimingOffset(params, i, displayOrder);
     wrap.style.marginLeft = i === 0 ? "0px" : `${Math.min(20, timingOff * 0.05)}px`;
     wrap.title = `${noteName} (${off >= 0 ? "+" : ""}${off.toFixed(1)} st)`;
     const label = document.createElement("div");
@@ -9236,9 +9247,16 @@ function updateOrbitoneNoteDisplay(node, container) {
 
 function createOrbitoneNoteDisplay(node) {
   const container = document.createElement("div");
+  container.id = `orbitone-notes-node${node.id}`;
   container.classList.add("orbitone-notes-area");
   updateOrbitoneNoteDisplay(node, container);
   return container;
+}
+
+function refreshOrbitoneNoteDisplay(node) {
+  if (!node) return;
+  const container = document.getElementById(`orbitone-notes-node${node.id}`);
+  if (container) updateOrbitoneNoteDisplay(node, container);
 }
 
 function highlightOrbitoneBar(nodeId, index, delayMs = 0) {
@@ -14019,8 +14037,12 @@ function animationLoop() {
             const orbitMix =
               node.audioParams.orbitoneMix !== undefined
                 ? node.audioParams.orbitoneMix
-                : 0.5;
-            const baseMix = orbitMix / Math.max(1, node.audioParams.orbitoneCount);
+                : 0.65;
+            const baseMix = getOrbitoneVoicePeak(
+              1.0,
+              orbitMix,
+              node.audioParams.orbitoneCount,
+            );
             const baseAmp = node.audioNodes.baseGain || 1;
             const totalNotes = (node.audioParams.orbitoneCount || 0) + 1;
             const rotateSpread = node.audioParams.orbitoneRotateSpread ?? 1;
@@ -15024,12 +15046,7 @@ function drawNode(node) {
       currentStylesTimeline
         .getPropertyValue("--timeline-grid-default-border-color")
         .trim() || "rgba(120, 220, 120, 0.7)";
-    fillColor =
-      node.audioParams &&
-      node.audioParams.color !== undefined &&
-      node.audioParams.color !== null
-        ? node.audioParams.color.replace(/[\d\.]+\)$/g, "0.05)")
-        : gridBoxStrokeFromCSSTimeline.replace(/[\d\.]+\)$/g, "0.05)");
+    fillColor = "rgba(0, 0, 0, 0)";
     borderColor =
       node.audioParams &&
       node.audioParams.color !== undefined &&
@@ -15997,10 +16014,7 @@ function drawNode(node) {
         : currentStylesTimeline
             .getPropertyValue("--timeline-grid-default-border-color")
             .trim() || "rgba(120, 220, 120, 0.7)";
-    const gridBoxFillActual = gridBoxStrokeActual.replace(
-      /[\d\.]+\)$/g,
-      "0.05)",
-    );
+    const gridBoxFillActual = "rgba(0, 0, 0, 0)";
     const scanlineColor =
       currentStylesTimeline
         .getPropertyValue("--timeline-grid-default-scanline-color")
@@ -16011,7 +16025,6 @@ function drawNode(node) {
         .trim() || gridBoxStrokeActual.replace(/[\d\.]+\)$/g, "0.3)");
 
     ctx.fillStyle = gridBoxFillActual;
-    ctx.fillRect(rectX, rectY, node.width, node.height);
 
     ctx.strokeStyle = gridBoxStrokeActual;
     let currentDefaultLineWidth = Math.max(0.8 / viewScale, 2 / viewScale);
@@ -27011,7 +27024,16 @@ function populateEditPanel() {
                 ) {
                     const orbitoneMainSection = document.createElement("div");
                     orbitoneMainSection.classList.add("panel-section");
-                    orbitoneMainSection.innerHTML = "<p><strong>Orbitone Settings:</strong></p>";
+                    const orbitoneTitleRow = document.createElement("div");
+                    orbitoneTitleRow.className = "orbitone-title-row";
+                    orbitoneTitleRow.innerHTML = "<p><strong>Orbitones:</strong></p>";
+                    const orbitoneInfo = document.createElement("button");
+                    orbitoneInfo.type = "button";
+                    orbitoneInfo.className = "orbitone-info-button";
+                    orbitoneInfo.textContent = "i";
+                    orbitoneInfo.title = "Orbitones are extra chord voices around this orb. Chord color changes the interval pattern; Note distance spreads the voices; Strum spreads them out in time.";
+                    orbitoneTitleRow.appendChild(orbitoneInfo);
+                    orbitoneMainSection.appendChild(orbitoneTitleRow);
 
                     const enableOrbitonesLabel = document.createElement("label");
                     enableOrbitonesLabel.htmlFor = `edit-node-orbitones-enable-${node.id}`;
@@ -27035,8 +27057,15 @@ function populateEditPanel() {
                                     n.type === ALIEN_DRONE_TYPE)
                             ) {
                                 n.audioParams.orbitonesEnabled = isEnabled;
-                                stopNodeAudio(n);
-                                n.audioNodes = createAudioNodesForNode(n);
+                                if (isEnabled && (!n.audioParams.orbitoneCount || n.audioParams.orbitoneCount <= 0)) {
+                                    applyOrbitonePreset(n, "chord");
+                                }
+                                if (isEnabled && getExistingOrbitoneVoiceCount(n) === 0) {
+                                    stopNodeAudio(n);
+                                    n.audioNodes = createAudioNodesForNode(n);
+                                } else {
+                                    muteInactiveOrbitoneVoices(n);
+                                }
                                 if (n.audioNodes) updateNodeAudioParams(n);
                             }
                         });
@@ -27057,127 +27086,200 @@ function populateEditPanel() {
                         const currentOrbitoneCount = node.audioParams.orbitoneCount || 0;
                         const orbitoneCountSliderContainer = createSlider(
                             `edit-node-orbitone-count-${node.id}`,
-                            `Number of extra Orbitones (${currentOrbitoneCount}):`, 0, 5, 1, currentOrbitoneCount,
+                            `Voices (${currentOrbitoneCount}):`, 0, 5, 1, currentOrbitoneCount,
                             (e_change_event) => {
                                 const newCount = parseInt(e_change_event.target.value);
                                 selectedArray.forEach((elData) => {
                                     const n = findNodeById(elData.id);
-                                    if (
-                                        n &&
-                                        n.audioParams &&
-                                        (n.type === "sound" ||
-                                            n.type === ALIEN_ORB_TYPE ||
-                                            n.type === ALIEN_DRONE_TYPE)
-                                    ) {
+                                    if (isOrbitoneCapableNode(n)) {
                                         n.audioParams.orbitoneCount = newCount;
-                                        applyOrbitoneVoicingFromPhase(n);
-                                        applyOrbitoneTimingFromPhase(n);
-                                        stopNodeAudio(n); n.audioNodes = createAudioNodesForNode(n); if (n.audioNodes) updateNodeAudioParams(n);
+                                        applyOrbitoneStrumMorph(n, n.audioParams.orbitoneStrum ?? n.audioParams.orbitoneTimingPhase ?? 0);
+                                        muteInactiveOrbitoneVoices(n);
+                                        if (n.audioNodes) updateNodeAudioParams(n);
+                                        refreshOrbitoneNoteDisplay(n);
                                     }
                                 });
                                 identifyAndRouteAllGroups(); saveState(); populateEditPanel();
                             },
                             (e_input) => {
-                                e_input.target.previousElementSibling.textContent = `Number of extra Orbitones (${e_input.target.value}):`;
+                                e_input.target.previousElementSibling.textContent = `Voices (${e_input.target.value}):`;
                             },
                         );
                         orbitoneSettingsSection.appendChild(orbitoneCountSliderContainer);
 
                         if (node.audioParams.orbitoneCount > 0) {
-                            const currentVoicingPhase = node.audioParams.orbitoneVoicingPhase || 0;
-                            const voicingPhaseSlider = createSlider(
-                                `edit-orbitone-voicing-phase-${node.id}`, `Orbitone Voicing Style (${currentVoicingPhase}):`, 0, 100, 1, currentVoicingPhase,
+                            const legacyTypeToMorph = { cluster: 0, triad: 20, sus: 40, seventh: 60, fifths: 80, octaves: 100 };
+                            const currentChordMorph = node.audioParams.orbitoneChordMorph ?? legacyTypeToMorph[node.audioParams.orbitoneChordType] ?? 20;
+                            const chordMorphSlider = createSlider(
+                                `edit-orbitone-chord-morph-${node.id}`, `Chord color (${currentChordMorph}):`, 0, 100, 1, currentChordMorph,
                                 (e_change) => {
                                     const val = parseInt(e_change.target.value);
                                     selectedArray.forEach((el) => {
                                         const n = findNodeById(el.id);
-                                        if (
-                                            n &&
-                                            n.audioParams &&
-                                            (n.type === "sound" ||
-                                                n.type === ALIEN_ORB_TYPE ||
-                                                n.type === ALIEN_DRONE_TYPE)
-                                        ) {
-                                            n.audioParams.orbitoneVoicingPhase = val;
-                                            applyOrbitoneVoicingFromPhase(n);
-                                            stopNodeAudio(n); n.audioNodes = createAudioNodesForNode(n); if (n.audioNodes) updateNodeAudioParams(n);
+                                        if (isOrbitoneCapableNode(n)) {
+                                            applyOrbitoneChordSettings(n, val, n.audioParams.orbitoneNoteDistance ?? 1);
+                                            updateNodeAudioParams(n);
+                                            refreshOrbitoneNoteDisplay(n);
                                         }
                                     });
-                                    identifyAndRouteAllGroups(); saveState(); populateEditPanel();
-                                },
-                                (e_input) => { e_input.target.previousElementSibling.textContent = `Orbitone Voicing Style (${e_input.target.value}):`; },
-                            );
-                            orbitoneSettingsSection.appendChild(voicingPhaseSlider);
-
-                            const currentTimingPhase = node.audioParams.orbitoneTimingPhase || 0;
-                            const applyTimingPhase = (val) => {
-                                selectedArray.forEach((el) => {
-                                    const n = findNodeById(el.id);
-                                    if (
-                                        n &&
-                                        n.audioParams &&
-                                        (n.type === "sound" ||
-                                            n.type === ALIEN_ORB_TYPE ||
-                                            n.type === ALIEN_DRONE_TYPE)
-                                    ) {
-                                        n.audioParams.orbitoneTimingPhase = val;
-                                        applyOrbitoneTimingFromPhase(n);
-                                        updateNodeAudioParams(n);
-                                    }
-                                });
-                            };
-                            const timingPhaseSlider = createSlider(
-                                `edit-orbitone-timing-phase-${node.id}`, `Orbitone Timing Style (${currentTimingPhase}):`, 0, 100, 1, currentTimingPhase,
-                                (e_change) => {
-                                    const val = parseInt(e_change.target.value);
-                                    applyTimingPhase(val);
                                     identifyAndRouteAllGroups();
                                     saveState();
                                 },
                                 (e_input) => {
                                     const val = parseInt(e_input.target.value);
-                                    applyTimingPhase(val);
-                                    e_input.target.previousElementSibling.textContent = `Orbitone Timing Style (${val}):`;
+                                    selectedArray.forEach((el) => {
+                                        const n = findNodeById(el.id);
+                                        if (isOrbitoneCapableNode(n)) {
+                                            applyOrbitoneChordSettings(n, val, n.audioParams.orbitoneNoteDistance ?? 1);
+                                            updateNodeAudioParams(n);
+                                            refreshOrbitoneNoteDisplay(n);
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Chord color (${val}):`;
                                 },
                             );
-                            orbitoneSettingsSection.appendChild(timingPhaseSlider);
+                            orbitoneSettingsSection.appendChild(chordMorphSlider);
+                            const chordHint = document.createElement("div");
+                            chordHint.className = "orbitone-slider-hint orbitone-slider-hint-wide";
+                            chordHint.innerHTML = "<span>Cluster</span><span>Triad</span><span>Sus</span><span>7th</span><span>5ths</span><span>Oct</span>";
+                            orbitoneSettingsSection.appendChild(chordHint);
 
-                            const currentSpread = node.audioParams.orbitoneSpread || 0;
-                            const applySpread = (val) => {
-                                selectedArray.forEach((el) => {
-                                    const n = findNodeById(el.id);
-                                    if (
-                                        n &&
-                                        n.audioParams &&
-                                        (n.type === "sound" ||
-                                            n.type === ALIEN_ORB_TYPE ||
-                                            n.type === ALIEN_DRONE_TYPE)
-                                    ) {
-                                        n.audioParams.orbitoneSpread = val;
-                                        applyOrbitoneTimingFromPhase(n);
-                                        updateNodeAudioParams(n);
-                                    }
-                                });
-                            };
-                            const spreadSliderContainer = createSlider(
-                                `edit-node-orbitone-spread-${node.id}`, `Orbitone Spread (${currentSpread.toFixed(1)}):`, 0, 3, 0.1, currentSpread,
-                                (e_change_event) => {
-                                    const newVal = parseFloat(e_change_event.target.value);
-                                    applySpread(newVal);
+                            const currentDistance = node.audioParams.orbitoneNoteDistance ?? 1;
+                            const distanceSlider = createSlider(
+                                `edit-orbitone-distance-${node.id}`, `Note distance (${currentDistance.toFixed(2)}):`, 0.5, 2, 0.05, currentDistance,
+                                (e_change) => {
+                                    const val = parseFloat(e_change.target.value);
+                                    selectedArray.forEach((el) => {
+                                        const n = findNodeById(el.id);
+                                        if (isOrbitoneCapableNode(n)) {
+                                            applyOrbitoneChordSettings(n, n.audioParams.orbitoneChordMorph ?? currentChordMorph, val);
+                                            updateNodeAudioParams(n);
+                                            refreshOrbitoneNoteDisplay(n);
+                                        }
+                                    });
                                     identifyAndRouteAllGroups();
                                     saveState();
                                 },
                                 (e_input) => {
                                     const val = parseFloat(e_input.target.value);
-                                    applySpread(val);
-                                    e_input.target.previousElementSibling.textContent = `Orbitone Spread (${val.toFixed(1)}):`;
+                                    selectedArray.forEach((el) => {
+                                        const n = findNodeById(el.id);
+                                        if (isOrbitoneCapableNode(n)) {
+                                            applyOrbitoneChordSettings(n, n.audioParams.orbitoneChordMorph ?? currentChordMorph, val);
+                                            updateNodeAudioParams(n);
+                                            refreshOrbitoneNoteDisplay(n);
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Note distance (${val.toFixed(2)}):`;
                                 },
                             );
-                            orbitoneSettingsSection.appendChild(spreadSliderContainer);
+                            orbitoneSettingsSection.appendChild(distanceSlider);
 
-                            const currentMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.5;
+                            const currentStrum = node.audioParams.orbitoneStrum ?? node.audioParams.orbitoneTimingPhase ?? 0;
+                            const applyStrum = (val) => {
+                                selectedArray.forEach((el) => {
+                                    const n = findNodeById(el.id);
+                                    if (isOrbitoneCapableNode(n)) {
+                                        applyOrbitoneStrumMorph(n, val);
+                                        updateNodeAudioParams(n);
+                                        refreshOrbitoneNoteDisplay(n);
+                                    }
+                                });
+                            };
+                            const strumSlider = createSlider(
+                                `edit-orbitone-strum-${node.id}`, `Strum (${currentStrum}):`, 0, 100, 1, currentStrum,
+                                (e_change) => {
+                                    const val = parseInt(e_change.target.value);
+                                    applyStrum(val);
+                                    identifyAndRouteAllGroups();
+                                    saveState();
+                                },
+                                (e_input) => {
+                                    const val = parseInt(e_input.target.value);
+                                    applyStrum(val);
+                                    e_input.target.previousElementSibling.textContent = `Strum (${val}):`;
+                                },
+                            );
+                            orbitoneSettingsSection.appendChild(strumSlider);
+                            const strumHint = document.createElement("div");
+                            strumHint.className = "orbitone-slider-hint";
+                            strumHint.innerHTML = "<span>Chord</span><span>Strum</span>";
+                            orbitoneSettingsSection.appendChild(strumHint);
+
+                            const currentTimeCurve = node.audioParams.orbitoneTimeCurve ?? 0;
+                            const curveSlider = createSlider(
+                                `edit-orbitone-time-curve-${node.id}`, `Timing curve (${currentTimeCurve}):`, -100, 100, 1, currentTimeCurve,
+                                (e_change) => {
+                                    const val = parseInt(e_change.target.value);
+                                    selectedArray.forEach((el) => {
+                                        const n = findNodeById(el.id);
+                                        if (isOrbitoneCapableNode(n)) {
+                                            n.audioParams.orbitoneTimeCurve = val;
+                                            applyOrbitoneTimingFromPhase(n);
+                                            updateNodeAudioParams(n);
+                                            refreshOrbitoneNoteDisplay(n);
+                                        }
+                                    });
+                                    identifyAndRouteAllGroups();
+                                    saveState();
+                                },
+                                (e_input) => {
+                                    const val = parseInt(e_input.target.value);
+                                    selectedArray.forEach((el) => {
+                                        const n = findNodeById(el.id);
+                                        if (isOrbitoneCapableNode(n)) {
+                                            n.audioParams.orbitoneTimeCurve = val;
+                                            applyOrbitoneTimingFromPhase(n);
+                                            updateNodeAudioParams(n);
+                                            refreshOrbitoneNoteDisplay(n);
+                                        }
+                                    });
+                                    e_input.target.previousElementSibling.textContent = `Timing curve (${val}):`;
+                                },
+                            );
+                            orbitoneSettingsSection.appendChild(curveSlider);
+                            const curveHint = document.createElement("div");
+                            curveHint.className = "orbitone-slider-hint";
+                            curveHint.innerHTML = "<span>Speed up</span><span>Even</span><span>Slow down</span>";
+                            orbitoneSettingsSection.appendChild(curveHint);
+
+                            const orderWrap = document.createElement("div");
+                            orderWrap.className = "orbitone-select-row";
+                            const orderLabel = document.createElement("label");
+                            orderLabel.htmlFor = `edit-orbitone-order-${node.id}`;
+                            orderLabel.textContent = "Order:";
+                            const orderSelect = document.createElement("select");
+                            orderSelect.id = `edit-orbitone-order-${node.id}`;
+                            [
+                                ["normal", "Front to back"],
+                                ["reverse", "Back to front"],
+                                ["random", "Random"],
+                                ["pingpong", "Ping-pong"],
+                            ].forEach(([value, label]) => {
+                                const option = document.createElement("option");
+                                option.value = value;
+                                option.textContent = label;
+                                if ((node.audioParams.orbitoneOrder || "normal") === value) option.selected = true;
+                                orderSelect.appendChild(option);
+                            });
+                            orderSelect.addEventListener("change", (e) => {
+                                selectedArray.forEach((el) => {
+                                    const n = findNodeById(el.id);
+                                    if (isOrbitoneCapableNode(n)) {
+                                        n.audioParams.orbitoneOrder = e.target.value;
+                                        n._orbitonePingPongReverse = false;
+                                        refreshOrbitoneNoteDisplay(n);
+                                    }
+                                });
+                                saveState();
+                            });
+                            orderWrap.appendChild(orderLabel);
+                            orderWrap.appendChild(orderSelect);
+                            orbitoneSettingsSection.appendChild(orderWrap);
+
+                            const currentMix = node.audioParams.orbitoneMix !== undefined ? node.audioParams.orbitoneMix : 0.65;
                             const mixSliderContainer = createSlider(
-                                `edit-node-orbitone-mix-${node.id}`, `Orbitone Mix (Main <-> Orbitones) (${currentMix.toFixed(2)}):`, 0, 1, 0.05, currentMix,
+                                `edit-node-orbitone-mix-${node.id}`, `Level (${currentMix.toFixed(2)}):`, 0, 1, 0.05, currentMix,
                                 (e_change_event) => {
                                     const newMix = parseFloat(e_change_event.target.value);
                                     selectedArray.forEach((elData) => {
@@ -27194,65 +27296,9 @@ function populateEditPanel() {
                                     });
                                     identifyAndRouteAllGroups(); saveState();
                                 },
-                                (e_input) => { e_input.target.previousElementSibling.textContent = `Orbitone Mix (Main <-> Orbitones) (${parseFloat(e_input.target.value).toFixed(2)}):`; },
+                                (e_input) => { e_input.target.previousElementSibling.textContent = `Level (${parseFloat(e_input.target.value).toFixed(2)}):`; },
                             );
                             orbitoneSettingsSection.appendChild(mixSliderContainer);
-
-                            const currentRotate = node.audioParams.orbitoneRotateSpeed || 0;
-                              const rotateSliderContainer = createSlider(
-                                  `edit-node-orbitone-rotate-${node.id}`, `Orbitone Key Rotate Speed (${currentRotate.toFixed(2)}):`, 0, 5, 0.1, currentRotate,
-                                  (e_change_event) => {
-                                      const newVal = parseFloat(e_change_event.target.value);
-                                      selectedArray.forEach((elData) => {
-                                          const n = findNodeById(elData.id);
-                                          if (
-                                              n &&
-                                              n.audioParams &&
-                                              n.type === ALIEN_DRONE_TYPE
-                                          ) {
-                                              n.audioParams.orbitoneRotateSpeed = newVal;
-                                              if (n.audioNodes && newVal === 0) {
-                                                  updateNodeAudioParams(n);
-                                              }
-                                          }
-                                      });
-                                      saveState();
-                                  },
-                                  (e_input) => {
-                                      const val = parseFloat(e_input.target.value);
-                                      e_input.target.previousElementSibling.textContent = `Orbitone Key Rotate Speed (${val.toFixed(2)}):`;
-                                  },
-                              );
-                              orbitoneSettingsSection.appendChild(rotateSliderContainer);
-
-                              const currentRotateSpread = node.audioParams.orbitoneRotateSpread ?? 1;
-                              const rotateSpreadSlider = createSlider(
-                                  `edit-node-orbitone-rotate-spread-${node.id}`,
-                                  `Orbitone Rotate Spread (${currentRotateSpread.toFixed(2)}):`,
-                                  0,
-                                  1,
-                                  0.05,
-                                  currentRotateSpread,
-                                  (e_change_event) => {
-                                      const newVal = parseFloat(e_change_event.target.value);
-                                      selectedArray.forEach((elData) => {
-                                          const n = findNodeById(elData.id);
-                                          if (
-                                              n &&
-                                              n.audioParams &&
-                                              n.type === ALIEN_DRONE_TYPE
-                                          ) {
-                                              n.audioParams.orbitoneRotateSpread = newVal;
-                                          }
-                                      });
-                                      saveState();
-                                  },
-                                  (e_input) => {
-                                      const val = parseFloat(e_input.target.value);
-                                      e_input.target.previousElementSibling.textContent = `Orbitone Rotate Spread (${val.toFixed(2)}):`;
-                                  },
-                              );
-                              orbitoneSettingsSection.appendChild(rotateSpreadSlider);
 
                             const orbitoneDisplay = createOrbitoneNoteDisplay(node);
                             orbitoneSettingsSection.appendChild(orbitoneDisplay);
@@ -30461,7 +30507,8 @@ function changeScale(scaleKey, skipNodeUpdate = false) {
     rootStyle.setProperty('--start-node-color', startColor);
     rootStyle.setProperty('--start-node-border', borderColor);
     rootStyle.setProperty('--timeline-grid-default-scanline-color', scanlineColor);
-    rootStyle.setProperty('--timeline-grid-default-border-color', borderColor);
+    rootStyle.setProperty('--timeline-grid-default-border-color', 'var(--grid-color, rgba(100,130,180,0.35))');
+    rootStyle.setProperty('--timeline-grid-internal-lines-color', 'var(--grid-color, rgba(100,130,180,0.25))');
   }
   if (scaleSelectTransport) {
       scaleSelectTransport.value = scaleKey;
@@ -30806,19 +30853,191 @@ function getOrbitoneFrequencies(
   return frequencies.slice(0, 1 + orbitoneCount);
 }
 
-function applyOrbitoneVoicingFromPhase(node) {
-  if (
-    !node ||
-    !node.audioParams ||
-    !(
-      node.type === "sound" ||
+function getOrbitoneVoicePeak(intensity, orbitMix, orbitoneCount, voiceLevel = 1.0) {
+  const count = Math.max(1, orbitoneCount || 0);
+  const normalizedMix = Math.max(0, Math.min(1, orbitMix ?? 0.65));
+  const peak = (intensity ?? 1.0) * normalizedMix * (voiceLevel ?? 1.0);
+  return Math.min(1.2, Math.max(0.001, peak / Math.sqrt(count)));
+}
+
+function getOrbitoneAllocationCount(node) {
+  if (!node?.audioParams?.orbitonesEnabled) return 0;
+  return 5;
+}
+
+function getMainVoicePeak(intensity, orbitMix, voiceLevel = 1.0) {
+  const normalizedMix = Math.max(0, Math.min(1, orbitMix ?? 0.65));
+  return (intensity ?? 1.0) * (1.0 - normalizedMix) * (voiceLevel ?? 1.0);
+}
+
+function isOrbitoneCapableNode(node) {
+  return (
+    node &&
+    node.audioParams &&
+    (node.type === "sound" ||
       node.type === ALIEN_ORB_TYPE ||
-      node.type === ALIEN_DRONE_TYPE
-    )
-  )
-    return;
+      node.type === ALIEN_DRONE_TYPE)
+  );
+}
+
+function applyOrbitonePreset(node, presetName) {
+  if (!isOrbitoneCapableNode(node)) return;
+  const p = node.audioParams;
+  p.orbitonesEnabled = true;
+  p.orbitoneMix = presetName === "wide" ? 0.72 : 0.65;
+  p.orbitoneCount = presetName === "wide" ? 4 : 3;
+  p.orbitoneChordMorph = presetName === "wide" ? 75 : 20;
+  p.orbitoneNoteDistance = presetName === "wide" ? 1.35 : 1;
+
+  if (presetName === "strum") {
+    p.orbitoneStrum = 72;
+  } else if (presetName === "wide") {
+    p.orbitoneVoicingPhase = 70;
+    p.orbitoneStrum = 42;
+  } else {
+    p.orbitoneStrum = 0;
+  }
+
+  applyOrbitoneStrumMorph(node, p.orbitoneStrum);
+}
+
+function applyOrbitoneStrumMorph(node, value) {
+  if (!isOrbitoneCapableNode(node)) return;
+  const p = node.audioParams;
+  const morph = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+  p.orbitoneStrum = morph;
+  p.orbitoneVoicingPhase = p.orbitoneVoicingPhase ?? 45;
+  p.orbitoneTimingPhase = morph;
+  applyOrbitoneVoicingFromPhase(node);
+  p.orbitoneSpread = 1;
+  applyOrbitoneTimingFromPhase(node);
+}
+
+function applyOrbitoneChordSettings(node, chordMorph, noteDistance) {
+  if (!isOrbitoneCapableNode(node)) return;
+  const p = node.audioParams;
+  if (Number.isFinite(chordMorph)) p.orbitoneChordMorph = chordMorph;
+  if (Number.isFinite(noteDistance)) p.orbitoneNoteDistance = noteDistance;
+  applyOrbitoneVoicingFromPhase(node);
+  applyOrbitoneTimingFromPhase(node);
+}
+
+function getExistingOrbitoneVoiceCount(node) {
+  const audioNodes = node?.audioNodes || {};
+  return Math.max(
+    audioNodes.orbitoneOscillators?.length || 0,
+    audioNodes.orbitoneSynths?.length || 0,
+    audioNodes.orbitoneIndividualGains?.length || 0,
+  );
+}
+
+function createOrbitonePlaybackOrder(node, count) {
+  const mode = node?.audioParams?.orbitoneOrder || "normal";
+  const safeCount = Math.max(0, count || 0);
+  const normal = Array.from({ length: safeCount }, (_, index) => index);
+  if (mode === "reverse") return normal.slice().reverse();
+  if (mode === "random") {
+    const shuffled = normal.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+  if (mode === "pingpong") {
+    const reverse = !!node._orbitonePingPongReverse;
+    node._orbitonePingPongReverse = !reverse;
+    return reverse ? normal.slice().reverse() : normal;
+  }
+  return normal;
+}
+
+function getOrbitoneOrderedTimingOffset(params, voiceIndex, playbackOrder = null) {
+  const offsets = params?.orbitoneTimingOffsets || [];
+  const orbitoneCount = Math.max(params?.orbitoneCount || 0, offsets.length);
+  if (orbitoneCount <= 0) return 0;
+  const count = orbitoneCount + 1;
+  const order = playbackOrder || Array.from({ length: count }, (_, index) => index);
+  const orderSlot = order.indexOf(voiceIndex);
+  const timingIndex = orderSlot >= 0 ? orderSlot : voiceIndex;
+  if (timingIndex <= 0) return 0;
+  return offsets[timingIndex - 1] !== undefined ? offsets[timingIndex - 1] : 0;
+}
+
+function muteInactiveOrbitoneVoices(node, time = null) {
+  const activeCount = node?.audioParams?.orbitonesEnabled
+    ? Math.max(0, node.audioParams.orbitoneCount || 0)
+    : 0;
+  const audioNodes = node?.audioNodes || {};
+  const now = time ?? (audioContext?.currentTime || 0);
+  const muteParam = (param) => {
+    if (!param) return;
+    try {
+      param.cancelScheduledValues(now);
+      param.setTargetAtTime(0, now, 0.01);
+    } catch {
+      try { param.value = 0; } catch {}
+    }
+  };
+
+  audioNodes.orbitoneIndividualGains?.forEach((gain, index) => {
+    if (index >= activeCount) muteParam(gain.gain);
+  });
+  audioNodes.orbitoneSynths?.forEach((synth, index) => {
+    if (index >= activeCount) {
+      muteParam(synth.gainNode?.gain);
+      muteParam(synth.mix?.gain);
+    }
+  });
+}
+
+function applyOrbitoneVoicingFromPhase(node) {
+  if (!isOrbitoneCapableNode(node)) return;
   const phase = node.audioParams.orbitoneVoicingPhase || 0;
   const count = node.audioParams.orbitoneCount || 0;
+  if (node.audioParams.orbitoneChordMorph !== undefined || node.audioParams.orbitoneChordType) {
+    const chordStops = [
+      { name: "cluster", value: 0, pattern: [1, 2, 3, 4, 5] },
+      { name: "triad", value: 20, pattern: [2, 4, 6, 8, 10] },
+      { name: "sus", value: 40, pattern: [3, 4, 7, 10, 11] },
+      { name: "seventh", value: 60, pattern: [2, 4, 6, 9, 11] },
+      { name: "fifths", value: 80, pattern: [4, 8, 12, 16, 20] },
+      { name: "octaves", value: 100, pattern: [7, 14, 21, 28, 35] },
+    ];
+    const legacyTypeToMorph = {
+      cluster: 0,
+      triad: 20,
+      sus: 40,
+      seventh: 60,
+      fifths: 80,
+      octaves: 100,
+    };
+    const morph = Math.max(0, Math.min(
+      100,
+      node.audioParams.orbitoneChordMorph ??
+        legacyTypeToMorph[node.audioParams.orbitoneChordType] ??
+        20,
+    ));
+    let lower = chordStops[0];
+    let upper = chordStops[chordStops.length - 1];
+    for (let i = 0; i < chordStops.length - 1; i++) {
+      if (morph >= chordStops[i].value && morph <= chordStops[i + 1].value) {
+        lower = chordStops[i];
+        upper = chordStops[i + 1];
+        break;
+      }
+    }
+    const span = Math.max(1, upper.value - lower.value);
+    const t = (morph - lower.value) / span;
+    const distance = Math.max(0.5, Math.min(2, node.audioParams.orbitoneNoteDistance ?? 1));
+    node.audioParams.orbitoneChordMorph = morph;
+    node.audioParams.orbitoneIntervals = lower.pattern.slice(0, count).map((step, index) => {
+      const blendedStep = step + (upper.pattern[index] - step) * t;
+      const direction = step < 0 ? -1 : 1;
+      return direction * Math.max(1, Math.round(Math.abs(blendedStep) * distance));
+    });
+    return;
+  }
   let intervals = [];
   let calculatedSpread = 0;
 
@@ -30865,41 +31084,24 @@ function applyOrbitoneVoicingFromPhase(node) {
 }
 
 function applyOrbitoneTimingFromPhase(node) {
-  if (
-    !node ||
-    !node.audioParams ||
-    !(
-      node.type === "sound" ||
-      node.type === ALIEN_ORB_TYPE ||
-      node.type === ALIEN_DRONE_TYPE
-    )
-  )
-    return;
-  const phase = node.audioParams.orbitoneTimingPhase || 0;
+  if (!isOrbitoneCapableNode(node)) return;
+  const phase = Math.max(0, Math.min(100, node.audioParams.orbitoneTimingPhase || 0));
   const count = node.audioParams.orbitoneCount || 0;
   let offsets = [];
 
   if (count > 0) {
-    if (phase <= 10) {
-      for (let i = 0; i < count; i++) offsets.push(0);
-    } else if (phase <= 30) {
-      for (let i = 0; i < count; i++)
-        offsets.push(Math.floor(Math.random() * 25) + i * 5);
-    } else if (phase <= 50) {
-      for (let i = 0; i < count; i++)
-        offsets.push(i * 30 + Math.floor(Math.random() * 20));
-    } else if (phase <= 70) {
-      for (let i = 0; i < count; i++)
-        offsets.push(i * 80 + Math.floor(Math.random() * 40));
-    } else if (phase <= 90) {
-      for (let i = 0; i < count; i++)
-        offsets.push(i * 150 + Math.floor(Math.random() * 50));
-    } else {
-      for (let i = 0; i < count; i++)
-        offsets.push(Math.floor(Math.random() * 200) + i * 15);
+    const strum = Math.max(0, (phase - 5) / 95);
+    const maxDelayMs = Math.pow(strum, 1.2) * 420;
+    const curve = Math.max(-100, Math.min(100, node.audioParams.orbitoneTimeCurve ?? 0));
+    const curveExponent = Math.pow(4, curve / 50);
+    const totalNotes = count + 1;
+    for (let i = 0; i < count; i++) {
+      const notePosition = totalNotes <= 1 ? 1 : (i + 1) / (totalNotes - 1);
+      const shapedPosition = Math.pow(notePosition, curveExponent);
+      offsets.push(Math.round(shapedPosition * maxDelayMs));
     }
   }
-  const spreadFactor = node.audioParams.orbitoneSpread || 0;
+  const spreadFactor = node.audioParams.orbitoneSpread ?? 1;
   const finalOffsets = offsets.map((o) => o * spreadFactor);
   node.audioParams.orbitoneTimingOffsets = finalOffsets.slice(0, count);
 }
@@ -31435,9 +31637,14 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         visualStyle: "alien_orb_default",
         orbitonesEnabled: false,
         orbitoneCount: defaultOrbitoneCount,
-        orbitoneVoicingPhase: 0,
+        orbitoneVoicingPhase: 45,
+        orbitoneChordMorph: 20,
+        orbitoneNoteDistance: 1,
         orbitoneTimingPhase: 0,
-        orbitoneMix: 0.5,
+        orbitoneStrum: 0,
+        orbitoneTimeCurve: 0,
+        orbitoneOrder: "normal",
+        orbitoneMix: 0.65,
         orbitoneIntervals: [],
         orbitoneTimingOffsets: [],
         orbitoneSpread: 1,
@@ -31464,9 +31671,14 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         visualStyle: "alien_drone_default",
         orbitonesEnabled: false,
         orbitoneCount: defaultOrbitoneCount,
-        orbitoneVoicingPhase: 0,
+        orbitoneVoicingPhase: 45,
+        orbitoneChordMorph: 20,
+        orbitoneNoteDistance: 1,
         orbitoneTimingPhase: 0,
-        orbitoneMix: 0.5,
+        orbitoneStrum: 0,
+        orbitoneTimeCurve: 0,
+        orbitoneOrder: "normal",
+        orbitoneMix: 0.65,
         orbitoneIntervals: [],
         orbitoneTimingOffsets: [],
         orbitoneSpread: 1,
@@ -31611,9 +31823,14 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
       osc1Type: nodeSubtypeForAudioParams,
       orbitonesEnabled: false,
       orbitoneCount: defaultOrbitoneCount,
-      orbitoneVoicingPhase: 0,
+      orbitoneVoicingPhase: 45,
+      orbitoneChordMorph: 20,
+      orbitoneNoteDistance: 1,
       orbitoneTimingPhase: 0,
-      orbitoneMix: 0.5,
+      orbitoneStrum: 0,
+      orbitoneTimeCurve: 0,
+      orbitoneOrder: "normal",
+      orbitoneMix: 0.65,
       orbitoneIntervals: [],
       orbitoneTimingOffsets: [],
       orbitoneSpread: 1,

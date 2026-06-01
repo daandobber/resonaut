@@ -1674,18 +1674,66 @@ margin-top: 6px;
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  padding: 6px 2px 0 2px;
+  padding: 4px 2px 0 2px;
   border: 1px solid var(--button-hover);
   background-color: rgba(0,0,0,0.2);
-  min-height: 60px;
-  height: 100px;
+  min-height: 42px;
+  height: 58px;
   border-radius: 3px;
   margin-top: 6px;
+}
+.orbitone-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.orbitone-title-row p {
+  margin: 0 0 6px;
+}
+.orbitone-info-button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  opacity: 0.85;
+}
+.orbitone-slider-hint {
+  display: flex;
+  justify-content: space-between;
+  margin: -5px 0 5px;
+  font-size: 0.72em;
+  opacity: 0.7;
+}
+.orbitone-slider-hint-wide {
+  font-size: 0.62em;
+  gap: 4px;
+}
+.orbitone-slider-hint-wide span {
+  min-width: 0;
+  text-align: center;
+}
+.orbitone-select-row {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.orbitone-select-row label {
+  font-size: 0.82em;
+}
+.orbitone-select-row select {
+  width: 100%;
 }
 .orbitone-note-bar-wrapper {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
   height: 100%;
   flex-grow: 1;
   padding: 2px 1px;
@@ -1693,6 +1741,7 @@ margin-top: 6px;
 .orbitone-note-bar {
   width: 100%;
   min-height: 2%;
+  flex-shrink: 0;
   background-color: var(--button-active);
   border-radius: 2px 2px 0 0;
   transition: background-color 0.05s ease-out, box-shadow 0.05s ease-out,
@@ -1705,7 +1754,7 @@ margin-top: 6px;
   transform: scaleY(1.05);
 }
 .orbitone-note-label {
-  font-size: 0.7em;
+  font-size: 0.62em;
   margin-top: 2px;
   color: var(--text-color);
 }
@@ -2040,4 +2089,3 @@ margin-top: 6px;
 /* Ensure piano roll canvas stays compact */
 #pianoRollCanvas { width: 250px !important; height: 80px !important; display: block; }
 #pianoRollContainer { display: flex; align-items: center; }
-

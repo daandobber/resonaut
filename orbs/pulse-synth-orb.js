@@ -96,9 +96,10 @@ export function createPulseSynthOrb(node) {
   // ORBITONES: additional pulse voices mixed pre-mainGain
   const orbitoneOscillators = [];
   const orbitoneIndividualGains = [];
-  if (p.orbitonesEnabled && p.orbitoneCount > 0) {
+  const orbitoneAllocationCount = p.orbitonesEnabled ? 5 : 0;
+  if (orbitoneAllocationCount > 0) {
     const duty = Math.max(0.01, Math.min(0.99, p.duty ?? DEFAULT_PULSE_SYNTH_PARAMS.duty));
-    for (let i = 0; i < p.orbitoneCount; i++) {
+    for (let i = 0; i < orbitoneAllocationCount; i++) {
       const o = new Tone.PulseOscillator({ width: duty });
       const g = new Tone.Gain(0);
       o.connect(g);
@@ -151,7 +152,7 @@ export function createPulseSynthOrb(node) {
     const dec = Math.max(0.001, ap.ampEnvDecay ?? DEFAULT_PULSE_SYNTH_PARAMS.ampEnvDecay);
     const sus = Math.max(0, Math.min(1, ap.ampEnvSustain ?? DEFAULT_PULSE_SYNTH_PARAMS.ampEnvSustain));
     const now = time ?? Tone.getContext().currentTime;
-    const orbitMix = ap.orbitonesEnabled ? (ap.orbitoneMix ?? 0.5) : 0;
+    const orbitMix = ap.orbitonesEnabled ? (ap.orbitoneMix ?? 0.65) : 0;
     const peak = Math.max(0.001, Math.min(1.5, velocity)) * (1 - orbitMix);
 
     try {
