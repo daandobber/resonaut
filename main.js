@@ -1048,6 +1048,7 @@ let pianoRollPlusRect = null;
 let pianoRollMode = 'piano';
 let pianoRollOctave = 0;
 let hexNoteSelectorOctaveOffset = 0;
+const HEX_NOTE_SELECTOR_BASE_OCTAVE = 2;
 let pianoRollHoveredIndex = -1;
 let pianoRollHoverMinus = false;
 let pianoRollHoverPlus = false;
@@ -22928,6 +22929,10 @@ function createHexNoteSelectorDOM(
   let currentSelectedValue = null;
   let isEditing = targetElementsData.length > 0;
   let isRandomActive = !isEditing;
+  const getHexOctaveLabel = () => {
+    const startOctave = HEX_NOTE_SELECTOR_BASE_OCTAVE + hexNoteSelectorOctaveOffset;
+    return `C${startOctave}-C${startOctave + 3}`;
+  };
 
   if (isEditing) {
     targetElementsData.forEach((elData) => {
@@ -22972,8 +22977,8 @@ function createHexNoteSelectorDOM(
   octaveDownButton.title = "Lower note grid";
   const octaveResetButton = document.createElement("button");
   octaveResetButton.type = "button";
-  octaveResetButton.textContent = `${hexNoteSelectorOctaveOffset >= 0 ? "+" : ""}${hexNoteSelectorOctaveOffset}`;
-  octaveResetButton.title = "Reset note grid";
+  octaveResetButton.textContent = getHexOctaveLabel();
+  octaveResetButton.title = "Reset note grid to C2-C5";
   const octaveUpButton = document.createElement("button");
   octaveUpButton.type = "button";
   octaveUpButton.textContent = "+";
@@ -22988,7 +22993,7 @@ function createHexNoteSelectorDOM(
   });
   const rebuildHexNoteSelectorAtOffset = (offset) => {
     hexNoteSelectorOctaveOffset = offset;
-    octaveResetButton.textContent = `${hexNoteSelectorOctaveOffset >= 0 ? "+" : ""}${hexNoteSelectorOctaveOffset}`;
+    octaveResetButton.textContent = getHexOctaveLabel();
     renderHexNoteGrid();
   };
   octaveDownButton.addEventListener("pointerdown", (e) => {
@@ -23051,11 +23056,13 @@ function createHexNoteSelectorDOM(
     const rootMidi = Math.round(frequencyToMidi(
       getFrequency(currentScale, 0, 0, currentRootNote, globalTransposeOffset)
     ));
-    // Root appears at musicalRow=2, col=1; octave buttons shift the compact view.
+    const desiredRootMidi = 12 * (HEX_NOTE_SELECTOR_BASE_OCTAVE + 1 + hexNoteSelectorOctaveOffset) + currentRootNote;
+    const octaveAlignedRootMidi = rootMidi + Math.round((desiredRootMidi - rootMidi) / 12) * 12;
+    // Root appears at musicalRow=2, col=1; octave buttons choose the visible octave band.
     const wickiRootRow = 2;
     const wickiRootCol = 1;
     const wickiBase =
-      rootMidi - wickiRootRow * 7 - wickiRootCol * 2 + hexNoteSelectorOctaveOffset * 12;
+      octaveAlignedRootMidi - wickiRootRow * 7 - wickiRootCol * 2;
 
     const scaleIndexToMidiMap = new Map();
     for (let i = MIN_SCALE_INDEX; i <= MAX_SCALE_INDEX; i++) {
