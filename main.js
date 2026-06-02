@@ -1370,12 +1370,22 @@ let wandLastTriggerTime = 0;
 const WAND_MODE_BOTH = "both";
 const WAND_MODE_NOTES = "notes";
 const WAND_MODE_ORBS = "orbs";
+const WAND_SOUND_GLOW = "glow";
+const WAND_SOUND_STRING = "string";
+const WAND_SOUND_SPARK = "spark";
 const WAND_TRIGGER_COOLDOWN_DEFAULT = 0.2;
 const WAND_STRUM_MIN_DIST_DEFAULT = 28;
+const WAND_VOLUME_DEFAULT = 0.07;
+const WAND_NOTE_LENGTH_DEFAULT = 0.9;
+const WAND_BRIGHTNESS_DEFAULT = 0.65;
 let wandMode = WAND_MODE_BOTH;
+let wandSound = WAND_SOUND_GLOW;
 let wandTriggerCooldown = WAND_TRIGGER_COOLDOWN_DEFAULT;
 let wandStrumMinDist = WAND_STRUM_MIN_DIST_DEFAULT;
 let wandTriggerIntensity = 1.0;
+let wandVolume = WAND_VOLUME_DEFAULT;
+let wandNoteLength = WAND_NOTE_LENGTH_DEFAULT;
+let wandBrightness = WAND_BRIGHTNESS_DEFAULT;
 let wandHoveredNodeId = null;
 let wandBeamEnd = null;
 let wandBeamTimer = 0;
@@ -9149,43 +9159,65 @@ function playWandNote(screenY, screenX) {
 
   // X-as: links = donker/gedempt, rechts = helder/open
   const tX = Math.max(0, Math.min(1, (screenX ?? canvas.width / 2) / canvas.width));
-  const filterFreq = 180 + tX * tX * 7000; // kwadratisch voor meer nuance
+  const brightness = Math.max(0, Math.min(1, wandBrightness));
+  const filterT = Math.max(0, Math.min(1, tX * (0.45 + brightness * 1.25)));
+  const filterFreq = 160 + filterT * filterT * 9500;
 
   const now = audioContext.currentTime;
-  const dur = 0.9;
+  const dur = Math.max(0.05, wandNoteLength);
+  const peak = Math.max(0, wandVolume);
+  if (peak <= 0) return;
 
-  // Twee licht-verstimde oscillatoren voor dromerig koor-effect
   const osc1 = audioContext.createOscillator();
   const osc2 = audioContext.createOscillator();
-  osc1.type = 'triangle';
-  osc2.type = 'sine';
-  osc1.frequency.value = freq;
-  osc2.frequency.value = freq * 1.004; // lichte detune
-
-  // Laagdoorlaatfilter (X-as)
   const filter = audioContext.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.value = filterFreq;
-  filter.Q.value = 1.4;
-
-  // Zachte envelope - expliciete lineaire ramps zodat gain écht 0 bereikt (geen klik)
   const gainNode = audioContext.createGain();
+  const detune = 1 + (0.002 + brightness * 0.006);
+  let attack = 0.04;
+  let bodyLevel = peak * 0.58;
+  let stopPadding = 0.03;
+
+  filter.type = "lowpass";
+  filter.frequency.value = filterFreq;
+  filter.Q.value = 1.2 + brightness * 2.5;
+  osc1.frequency.value = freq;
+  osc2.frequency.value = freq * detune;
+
+  if (wandSound === WAND_SOUND_STRING) {
+    osc1.type = "triangle";
+    osc2.type = "sawtooth";
+    osc2.frequency.value = freq * (0.996 - brightness * 0.004);
+    filter.Q.value = 2.8 + brightness * 2.2;
+    attack = 0.006;
+    bodyLevel = peak * 0.34;
+  } else if (wandSound === WAND_SOUND_SPARK) {
+    osc1.type = "sine";
+    osc2.type = "square";
+    osc2.frequency.value = freq * 2.01;
+    filter.frequency.value = Math.min(12000, filterFreq * 1.35);
+    filter.Q.value = 0.8 + brightness * 1.6;
+    attack = 0.002;
+    bodyLevel = peak * 0.18;
+    stopPadding = 0.015;
+  } else {
+    osc1.type = "triangle";
+    osc2.type = "sine";
+  }
+
   gainNode.gain.setValueAtTime(0, now);
-  gainNode.gain.linearRampToValueAtTime(0.07, now + 0.05);
-  gainNode.gain.linearRampToValueAtTime(0.04, now + 0.2);
+  gainNode.gain.linearRampToValueAtTime(peak, now + attack);
+  gainNode.gain.exponentialRampToValueAtTime(Math.max(0.0001, bodyLevel), now + Math.min(dur * 0.38, 0.28));
   gainNode.gain.linearRampToValueAtTime(0, now + dur);
 
   osc1.connect(filter);
   osc2.connect(filter);
   filter.connect(gainNode);
-  // Naar masterGain → gaat automatisch door alle actieve performance effecten
   gainNode.connect(masterGain);
 
   osc1.start(now);
   osc2.start(now);
-  // Stop nádat gain 0 bereikt heeft, zodat er geen klik is
-  osc1.stop(now + dur + 0.02);
-  osc2.stop(now + dur + 0.02);
+  osc1.stop(now + dur + stopPadding);
+  osc2.stop(now + dur + stopPadding);
 }
 
 function createWindParticles(count) {
@@ -10275,9 +10307,13 @@ export function saveState() {
       globalTransposeOffset: globalTransposeOffset,
       wandOptions: {
         mode: wandMode,
+        sound: wandSound,
         triggerCooldown: wandTriggerCooldown,
         strumMinDist: wandStrumMinDist,
         triggerIntensity: wandTriggerIntensity,
+        volume: wandVolume,
+        noteLength: wandNoteLength,
+        brightness: wandBrightness,
       },
       pianoRollMode: pianoRollMode,
       pianoRollOctave: pianoRollOctave,
@@ -10506,9 +10542,13 @@ async function loadState(stateToLoad) {
     globalTransposeOffset = stateToLoad.globalTransposeOffset || 0;
     if (stateToLoad.wandOptions) {
       const validModes = [WAND_MODE_BOTH, WAND_MODE_NOTES, WAND_MODE_ORBS];
+      const validSounds = [WAND_SOUND_GLOW, WAND_SOUND_STRING, WAND_SOUND_SPARK];
       wandMode = validModes.includes(stateToLoad.wandOptions.mode)
         ? stateToLoad.wandOptions.mode
         : WAND_MODE_BOTH;
+      wandSound = validSounds.includes(stateToLoad.wandOptions.sound)
+        ? stateToLoad.wandOptions.sound
+        : WAND_SOUND_GLOW;
       wandTriggerCooldown = Math.max(
         0.03,
         Math.min(1.5, stateToLoad.wandOptions.triggerCooldown ?? WAND_TRIGGER_COOLDOWN_DEFAULT),
@@ -10520,6 +10560,18 @@ async function loadState(stateToLoad) {
       wandTriggerIntensity = Math.max(
         0.1,
         Math.min(2.0, stateToLoad.wandOptions.triggerIntensity ?? 1.0),
+      );
+      wandVolume = Math.max(
+        0,
+        Math.min(0.25, stateToLoad.wandOptions.volume ?? WAND_VOLUME_DEFAULT),
+      );
+      wandNoteLength = Math.max(
+        0.05,
+        Math.min(2.5, stateToLoad.wandOptions.noteLength ?? WAND_NOTE_LENGTH_DEFAULT),
+      );
+      wandBrightness = Math.max(
+        0,
+        Math.min(1, stateToLoad.wandOptions.brightness ?? WAND_BRIGHTNESS_DEFAULT),
       );
     }
     pianoRollMode = stateToLoad.pianoRollMode || 'piano';
@@ -30494,6 +30546,32 @@ function populateWandOptionsPanel() {
   modeRow.appendChild(modeSelect);
   section.appendChild(modeRow);
 
+  const soundRow = document.createElement("div");
+  soundRow.classList.add("wand-option-row");
+  const soundLabel = document.createElement("label");
+  soundLabel.htmlFor = "wandSoundSelect";
+  soundLabel.textContent = "Sound";
+  const soundSelect = document.createElement("select");
+  soundSelect.id = "wandSoundSelect";
+  [
+    { value: WAND_SOUND_GLOW, label: "Glow" },
+    { value: WAND_SOUND_STRING, label: "String" },
+    { value: WAND_SOUND_SPARK, label: "Spark" },
+  ].forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    soundSelect.appendChild(option);
+  });
+  soundSelect.value = wandSound;
+  soundSelect.addEventListener("change", (e) => {
+    wandSound = e.target.value;
+    saveState();
+  });
+  soundRow.appendChild(soundLabel);
+  soundRow.appendChild(soundSelect);
+  section.appendChild(soundRow);
+
   const addWandSlider = (id, labelPrefix, min, max, step, value, formatter, setter) => {
     const slider = createSlider(
       id,
@@ -30513,6 +30591,45 @@ function populateWandOptionsPanel() {
     slider.classList.add("wand-slider-row");
     section.appendChild(slider);
   };
+
+  addWandSlider(
+    "wandVolumeSlider",
+    "Volume",
+    0,
+    0.25,
+    0.005,
+    wandVolume,
+    (v) => v.toFixed(3),
+    (v) => {
+      wandVolume = Math.max(0, Math.min(0.25, v));
+    },
+  );
+
+  addWandSlider(
+    "wandLengthSlider",
+    "Length",
+    0.05,
+    2.5,
+    0.01,
+    wandNoteLength,
+    (v) => `${v.toFixed(2)}s`,
+    (v) => {
+      wandNoteLength = Math.max(0.05, Math.min(2.5, v));
+    },
+  );
+
+  addWandSlider(
+    "wandBrightnessSlider",
+    "Bright",
+    0,
+    1,
+    0.01,
+    wandBrightness,
+    (v) => Math.round(v * 100).toString(),
+    (v) => {
+      wandBrightness = Math.max(0, Math.min(1, v));
+    },
+  );
 
   addWandSlider(
     "wandSpacingSlider",
@@ -30559,9 +30676,13 @@ function populateWandOptionsPanel() {
   resetBtn.textContent = "Reset";
   resetBtn.addEventListener("click", () => {
     wandMode = WAND_MODE_BOTH;
+    wandSound = WAND_SOUND_GLOW;
     wandTriggerCooldown = WAND_TRIGGER_COOLDOWN_DEFAULT;
     wandStrumMinDist = WAND_STRUM_MIN_DIST_DEFAULT;
     wandTriggerIntensity = 1.0;
+    wandVolume = WAND_VOLUME_DEFAULT;
+    wandNoteLength = WAND_NOTE_LENGTH_DEFAULT;
+    wandBrightness = WAND_BRIGHTNESS_DEFAULT;
     saveState();
     populateWandOptionsPanel();
   });
