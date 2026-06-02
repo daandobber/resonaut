@@ -9152,15 +9152,13 @@ function playWandNote(screenY, screenX) {
   if (!audioContext || !masterGain || !currentScale) return;
   const scaleLen = currentScale.notes.length;
   const totalNotes = scaleLen * 2;
-  const tY = 1 - Math.max(0, Math.min(1, screenY / canvas.height));
-  const scaleIndex = Math.round(tY * totalNotes);
+  const tX = Math.max(0, Math.min(1, (screenX ?? canvas.width / 2) / canvas.width));
+  const scaleIndex = Math.round(tX * totalNotes);
   const freq = getFrequency(currentScale, scaleIndex, 0, currentRootNote, globalTransposeOffset);
   if (!freq || isNaN(freq)) return;
 
-  // X-as: links = donker/gedempt, rechts = helder/open
-  const tX = Math.max(0, Math.min(1, (screenX ?? canvas.width / 2) / canvas.width));
-  const brightness = Math.max(0, Math.min(1, wandBrightness));
-  const filterT = Math.max(0, Math.min(1, tX * (0.45 + brightness * 1.25)));
+  const brightness = 1 - Math.max(0, Math.min(1, screenY / canvas.height));
+  const filterT = Math.max(0, Math.min(1, brightness));
   const filterFreq = 160 + filterT * filterT * 9500;
 
   const now = audioContext.currentTime;
@@ -30615,19 +30613,6 @@ function populateWandOptionsPanel() {
     (v) => `${v.toFixed(2)}s`,
     (v) => {
       wandNoteLength = Math.max(0.05, Math.min(2.5, v));
-    },
-  );
-
-  addWandSlider(
-    "wandBrightnessSlider",
-    "Bright",
-    0,
-    1,
-    0.01,
-    wandBrightness,
-    (v) => Math.round(v * 100).toString(),
-    (v) => {
-      wandBrightness = Math.max(0, Math.min(1, v));
     },
   );
 
