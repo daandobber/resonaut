@@ -37,9 +37,7 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-export function updateBlackHoleOrb(node, dt, nodes, canAffectNode, syncContext = null) {
-  if (!node || !Array.isArray(nodes) || dt <= 0) return;
-
+function getBlackHoleFieldContribution(node, target, dt, syncContext) {
   const params = node.audioParams || {};
   const radius = Math.max(80, params.radius ?? DEFAULT_BLACK_HOLE_PARAMS.radius);
   const pull = params.pull ?? DEFAULT_BLACK_HOLE_PARAMS.pull;
@@ -49,43 +47,81 @@ export function updateBlackHoleOrb(node, dt, nodes, canAffectNode, syncContext =
   const orbitRotation = params.orbitRotation ?? DEFAULT_BLACK_HOLE_PARAMS.orbitRotation;
   const cos = Math.cos(orbitRotation);
   const sin = Math.sin(orbitRotation);
-  const damping = Math.max(0.75, Math.min(0.99, params.damping ?? DEFAULT_BLACK_HOLE_PARAMS.damping));
-  const maxSpeed = Math.max(60, params.maxSpeed ?? DEFAULT_BLACK_HOLE_PARAMS.maxSpeed);
   const eventHorizon = Math.max(18, node.radius * node.size * 0.75);
 
-  node.accretionPhase = (node.accretionPhase || 0) + dt * (0.45 + Math.abs(orbitSpeed) * 1.5);
+  const dx = target.x - node.x;
+  const dy = target.y - node.y;
+  const lx = dx * cos + dy * sin;
+  const ly = -dx * sin + dy * cos;
+  const sx = lx / orbitAspect;
+  const sy = ly * orbitAspect;
+  const shapedDist = Math.hypot(sx, sy);
+  if (!isFiniteNumber(shapedDist) || shapedDist < 0.001 || shapedDist > radius) return null;
+
+  const shapedNx = sx / shapedDist;
+  const shapedNy = sy / shapedDist;
+  let normalLocalX = shapedNx / orbitAspect;
+  let normalLocalY = shapedNy * orbitAspect;
+  const normalLen = Math.hypot(normalLocalX, normalLocalY) || 1;
+  normalLocalX /= normalLen;
+  normalLocalY /= normalLen;
+
+  const nx = normalLocalX * cos - normalLocalY * sin;
+  const ny = normalLocalX * sin + normalLocalY * cos;
+  const tx = -ny;
+  const ty = nx;
+  const falloff = Math.pow(1 - shapedDist / radius, 1.35);
+  const closePush = shapedDist < eventHorizon ? (eventHorizon - shapedDist) / eventHorizon : 0;
+
+  return {
+    vx: ((tx * swirl - nx * pull) * falloff + nx * closePush * pull * 2.2) * dt,
+    vy: ((ty * swirl - ny * pull) * falloff + ny * closePush * pull * 2.2) * dt,
+    damping: clamp(params.damping ?? DEFAULT_BLACK_HOLE_PARAMS.damping, 0.75, 0.99),
+    maxSpeed: Math.max(60, params.maxSpeed ?? DEFAULT_BLACK_HOLE_PARAMS.maxSpeed),
+    weight: falloff,
+  };
+}
+
+export function updateBlackHoleOrbs(blackHoles, dt, nodes, canAffectNode, syncContext = null) {
+  if (!Array.isArray(blackHoles) || blackHoles.length === 0 || !Array.isArray(nodes) || dt <= 0) return;
+
+  blackHoles.forEach((node) => {
+    if (!node) return;
+    const orbitSpeed = getOrbitSpeed(node.audioParams || {}, syncContext);
+    node.accretionPhase = (node.accretionPhase || 0) + dt * (0.45 + Math.abs(orbitSpeed) * 1.5);
+  });
 
   nodes.forEach((target) => {
-    if (!target || target === node || !canAffectNode(target)) return;
+    if (!target || !canAffectNode(target)) return;
 
-    const dx = target.x - node.x;
-    const dy = target.y - node.y;
-    const lx = dx * cos + dy * sin;
-    const ly = -dx * sin + dy * cos;
-    const sx = lx / orbitAspect;
-    const sy = ly * orbitAspect;
-    const shapedDist = Math.hypot(sx, sy);
-    if (!isFiniteNumber(shapedDist) || shapedDist < 0.001 || shapedDist > radius) return;
+    let addVx = 0;
+    let addVy = 0;
+    let dampingWeight = 0;
+    let dampingSum = 0;
+    let maxSpeed = 60;
 
-    const shapedNx = sx / shapedDist;
-    const shapedNy = sy / shapedDist;
-    let normalLocalX = shapedNx / orbitAspect;
-    let normalLocalY = shapedNy * orbitAspect;
-    const normalLen = Math.hypot(normalLocalX, normalLocalY) || 1;
-    normalLocalX /= normalLen;
-    normalLocalY /= normalLen;
+    blackHoles.forEach((node) => {
+      if (!node || target === node) return;
+      const contribution = getBlackHoleFieldContribution(node, target, dt, syncContext);
+      if (!contribution) return;
+      addVx += contribution.vx;
+      addVy += contribution.vy;
+      dampingSum += contribution.damping * contribution.weight;
+      dampingWeight += contribution.weight;
+      maxSpeed = Math.max(maxSpeed, contribution.maxSpeed);
+    });
 
-    const nx = normalLocalX * cos - normalLocalY * sin;
-    const ny = normalLocalX * sin + normalLocalY * cos;
-    const tx = -ny;
-    const ty = nx;
-    const falloff = Math.pow(1 - shapedDist / radius, 1.35);
-    const closePush = shapedDist < eventHorizon ? (eventHorizon - shapedDist) / eventHorizon : 0;
+    if (dampingWeight <= 0) {
+      target.blackHoleVx = (target.blackHoleVx || 0) * 0.985;
+      target.blackHoleVy = (target.blackHoleVy || 0) * 0.985;
+      return;
+    }
 
+    const damping = dampingSum / dampingWeight;
     target.blackHoleVx = (target.blackHoleVx || 0) * damping;
     target.blackHoleVy = (target.blackHoleVy || 0) * damping;
-    target.blackHoleVx += ((tx * swirl - nx * pull) * falloff + nx * closePush * pull * 2.2) * dt;
-    target.blackHoleVy += ((ty * swirl - ny * pull) * falloff + ny * closePush * pull * 2.2) * dt;
+    target.blackHoleVx += addVx;
+    target.blackHoleVy += addVy;
 
     const speed = Math.hypot(target.blackHoleVx, target.blackHoleVy);
     if (speed > maxSpeed) {
@@ -96,4 +132,8 @@ export function updateBlackHoleOrb(node, dt, nodes, canAffectNode, syncContext =
     target.x += target.blackHoleVx * dt;
     target.y += target.blackHoleVy * dt;
   });
+}
+
+export function updateBlackHoleOrb(node, dt, nodes, canAffectNode, syncContext = null) {
+  updateBlackHoleOrbs(node ? [node] : [], dt, nodes, canAffectNode, syncContext);
 }

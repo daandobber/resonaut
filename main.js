@@ -53,7 +53,7 @@ import {
 } from './orbs/fm-drone-orb.js';
 import { MOTOR_ORB_TYPE, DEFAULT_MOTOR_PARAMS, updateMotorOrb, showMotorOrbMenu, hideMotorOrbMenu, hideMotorOrbPanel } from './orbs/motor-orb.js';
 import { CLOCKWORK_ORB_TYPE, DEFAULT_CLOCKWORK_PARAMS, CLOCKWORK_FORCE_DEFAULT, CLOCKWORK_DECAY_DEFAULT, updateClockworkOrb, advanceClockworkOrb, showClockworkOrbMenu, hideClockworkOrbMenu, hideClockworkOrbPanel } from './orbs/clockwork-orb.js';
-import { BLACK_HOLE_ORB_TYPE, DEFAULT_BLACK_HOLE_PARAMS, updateBlackHoleOrb } from './orbs/black-hole-orb.js';
+import { BLACK_HOLE_ORB_TYPE, DEFAULT_BLACK_HOLE_PARAMS, updateBlackHoleOrbs } from './orbs/black-hole-orb.js';
 import {
   A4_FREQ,
   A4_MIDI_NOTE,
@@ -1068,6 +1068,7 @@ let rotationStartDetails = {
 };
 let isCrankingRadar = null;
 let crankStartDetails = { previousMouseAngleRad: 0 };
+let activeBlackHoleShapeDrag = null;
 let isDraggingLoopHandle = null;
 let loopHandleDragStartX = 0;
 let initialLoopHandleValue = 0;
@@ -1327,6 +1328,81 @@ function updateMotionResonatorFromMovement(node, dt) {
     node.audioNodes.oscillator1.frequency.setTargetAtTime(baseFreq * pitchBend, now, 0.05);
     node.audioNodes.oscillator2.frequency.setTargetAtTime(baseFreq * harmonicStretch * (1 + smoothed * 0.035), now, 0.05);
   } catch {}
+}
+
+function getBlackHoleShapeGeometry(node) {
+  const params = Object.assign({}, DEFAULT_BLACK_HOLE_PARAMS, node?.audioParams || {});
+  const radius = Math.max(80, params.radius);
+  const aspect = Math.max(0.25, Math.min(2.5, params.orbitAspect));
+  const rotation = params.orbitRotation || 0;
+  const major = radius * aspect;
+  const minor = radius / aspect;
+  return { radius, aspect, rotation, major, minor };
+}
+
+function getBlackHoleShapeHandles(node) {
+  if (!node || node.type !== BLACK_HOLE_ORB_TYPE) return [];
+  const { rotation, major, minor } = getBlackHoleShapeGeometry(node);
+  return [
+    {
+      type: "major",
+      x: node.x + Math.cos(rotation) * major,
+      y: node.y + Math.sin(rotation) * major,
+      cursor: "ew-resize",
+    },
+    {
+      type: "minor",
+      x: node.x + Math.cos(rotation + Math.PI / 2) * minor,
+      y: node.y + Math.sin(rotation + Math.PI / 2) * minor,
+      cursor: "ns-resize",
+    },
+  ];
+}
+
+function findBlackHoleShapeHandleAt(x, y) {
+  if (currentTool !== "edit") return null;
+  const hitRadius = 12 / viewScale;
+  for (const sel of selectedElements) {
+    if (sel.type !== "node") continue;
+    const node = findNodeById(sel.id);
+    if (!node || node.type !== BLACK_HOLE_ORB_TYPE) continue;
+    for (const handle of getBlackHoleShapeHandles(node)) {
+      if (distance(x, y, handle.x, handle.y) <= hitRadius) {
+        return { node, handleType: handle.type, cursor: handle.cursor };
+      }
+    }
+  }
+  return null;
+}
+
+function applyBlackHoleShapeDrag(node, handleType, x, y) {
+  if (!node || node.type !== BLACK_HOLE_ORB_TYPE) return;
+  const params = Object.assign({}, DEFAULT_BLACK_HOLE_PARAMS, node.audioParams || {});
+  const current = getBlackHoleShapeGeometry(node);
+  const dx = x - node.x;
+  const dy = y - node.y;
+  const draggedLength = Math.max(30, Math.hypot(dx, dy));
+
+  let major = current.major;
+  let minor = current.minor;
+  let rotation = current.rotation;
+  if (handleType === "major") {
+    major = draggedLength;
+    rotation = Math.atan2(dy, dx);
+  } else {
+    minor = draggedLength;
+    rotation = Math.atan2(dy, dx) - Math.PI / 2;
+  }
+
+  let radius = Math.sqrt(Math.max(80, major) * Math.max(30, minor));
+  let aspect = Math.sqrt(Math.max(30, major) / Math.max(30, minor));
+  aspect = Math.max(0.25, Math.min(2.5, aspect));
+  radius = Math.max(80, Math.min(900, radius));
+
+  node.audioParams = params;
+  node.audioParams.radius = radius;
+  node.audioParams.orbitAspect = aspect;
+  node.audioParams.orbitRotation = rotation;
 }
 
   function makeParameterGroup() {
@@ -13384,6 +13460,15 @@ function animationLoop() {
   updateFogWetness();
 
   try {
+    const blackHoleNodes = nodes.filter((node) => node.type === BLACK_HOLE_ORB_TYPE);
+    updateBlackHoleOrbs(
+      blackHoleNodes,
+      deltaTime,
+      nodes,
+      isPlayableNode,
+      { isGlobalSyncEnabled, globalBPM, subdivisionOptions },
+    );
+
     nodes.forEach((node) => {
       if (node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) {
         updateSpaceRadar(node, deltaTime);
@@ -13394,13 +13479,6 @@ function animationLoop() {
         return;
       }
       if (node.type === BLACK_HOLE_ORB_TYPE) {
-        updateBlackHoleOrb(
-          node,
-          deltaTime,
-          nodes,
-          isPlayableNode,
-          { isGlobalSyncEnabled, globalBPM, subdivisionOptions },
-        );
         return;
       }
       if (node.type === GALACTIC_BLOOM_TYPE) {
@@ -16808,9 +16886,9 @@ function drawNode(node) {
       },
       motion_resonator: {
         fill: hslToRgba(48, 70, 65, baseAlpha),
-        border: hslToRgba(190, 70, 72, 0.95),
+        border: hslToRgba(42, 92, 72, 0.95),
         ring: hslToRgba(48, 90, 78, 0.7),
-        glow: hslToRgba(185, 95, 78, 0.9),
+        glow: hslToRgba(44, 100, 76, 0.9),
       },
     };
     const currentPlanetColors = planetColorsInternal[visualStyle];
@@ -17089,6 +17167,40 @@ function drawNode(node) {
           const glow = currentPlanetColors.glow || borderColor;
 
           ctx.save();
+          if (Array.isArray(node.motionTrace) && node.motionTrace.length > 2) {
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            const traceStart = Math.max(1, node.motionTrace.length - 34);
+            for (let i = traceStart; i < node.motionTrace.length; i++) {
+              const prev = node.motionTrace[i - 1];
+              const point = node.motionTrace[i];
+              const age = (i - traceStart) / Math.max(1, node.motionTrace.length - traceStart - 1);
+              const alpha = age * age * (0.05 + motion * 0.24);
+              const width = (3.5 + age * 10 + motion * 8) / viewScale;
+
+              ctx.save();
+              ctx.shadowColor = colorWithAlpha(glow, 0.45 + motion * 0.35);
+              ctx.shadowBlur = (8 + motion * 18) / viewScale;
+              ctx.strokeStyle = colorWithAlpha(ringColor, alpha);
+              ctx.lineWidth = Math.max(1 / viewScale, width);
+              ctx.beginPath();
+              ctx.moveTo(prev.x, prev.y);
+              ctx.lineTo(point.x, point.y);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            const head = node.motionTrace[node.motionTrace.length - 1];
+            const headGlow = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, r * (0.75 + motion * 0.9));
+            headGlow.addColorStop(0, colorWithAlpha(glow, 0.22 + motion * 0.32));
+            headGlow.addColorStop(0.42, colorWithAlpha(ringColor, 0.08 + motion * 0.14));
+            headGlow.addColorStop(1, colorWithAlpha(glow, 0));
+            ctx.fillStyle = headGlow;
+            ctx.beginPath();
+            ctx.arc(head.x, head.y, r * (0.75 + motion * 0.9), 0, Math.PI * 2);
+            ctx.fill();
+          }
+
           ctx.fillStyle = fillColor;
           ctx.strokeStyle = borderColor;
           ctx.lineWidth = Math.max(1 / viewScale, 1.3 / viewScale);
@@ -17107,14 +17219,6 @@ function drawNode(node) {
             ctx.stroke();
           }
 
-          if (motion > 0.02) {
-            ctx.globalAlpha = motion;
-            ctx.strokeStyle = glow;
-            ctx.lineWidth = Math.max(1 / viewScale, (1 + motion * 2) / viewScale);
-            ctx.beginPath();
-            ctx.arc(node.x, node.y, r * (1.15 + motion * 0.28), 0, Math.PI * 2);
-            ctx.stroke();
-          }
           ctx.restore();
           break;
         }
@@ -17554,6 +17658,37 @@ function drawNode(node) {
     ctx.stroke();
     ctx.restore();
     ctx.setLineDash([]);
+
+    if (isSelectedAndOutlineNeeded) {
+      const handleRadius = 7 / viewScale;
+      const majorX = Math.cos(orbitRotation) * influenceRadius * orbitAspect;
+      const majorY = Math.sin(orbitRotation) * influenceRadius * orbitAspect;
+      const minorX = Math.cos(orbitRotation + Math.PI / 2) * influenceRadius / orbitAspect;
+      const minorY = Math.sin(orbitRotation + Math.PI / 2) * influenceRadius / orbitAspect;
+
+      ctx.strokeStyle = "rgba(180,225,255,0.32)";
+      ctx.lineWidth = Math.max(0.7 / viewScale, 1.2 / viewScale);
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(-majorX, -majorY);
+      ctx.lineTo(majorX, majorY);
+      ctx.moveTo(-minorX, -minorY);
+      ctx.lineTo(minorX, minorY);
+      ctx.stroke();
+
+      [
+        { x: majorX, y: majorY, fill: "rgba(255,215,120,0.92)" },
+        { x: minorX, y: minorY, fill: "rgba(125,220,255,0.92)" },
+      ].forEach((handle) => {
+        ctx.fillStyle = handle.fill;
+        ctx.strokeStyle = "rgba(5,12,20,0.92)";
+        ctx.lineWidth = Math.max(0.8 / viewScale, 1.4 / viewScale);
+        ctx.beginPath();
+        ctx.arc(handle.x, handle.y, handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
 
     ctx.fillStyle = "rgba(0,0,0,1)";
     ctx.strokeStyle = "rgba(230,245,255,0.9)";
@@ -20593,6 +20728,7 @@ function handleMouseDown(event) {
   selectionRect.active = false;
   isRotatingRocket = null;
   isCrankingRadar = null;
+  activeBlackHoleShapeDrag = null;
   isResizingTimelineGrid = false;
   resizingTimelineGridNode = null;
   resizeHandleType = null;
@@ -20690,6 +20826,25 @@ function handleMouseDown(event) {
     if (firstSelectedElement && firstSelectedElement.type === "node") {
       activeSelectedNode = findNodeById(firstSelectedElement.id);
     }
+  }
+
+  const blackHoleShapeHandle = findBlackHoleShapeHandleAt(mousePos.x, mousePos.y);
+  if (blackHoleShapeHandle) {
+    activeBlackHoleShapeDrag = blackHoleShapeHandle;
+    nodeClickedAtMouseDown = blackHoleShapeHandle.node;
+    elementClickedAtMouseDown = {
+      type: "node",
+      id: blackHoleShapeHandle.node.id,
+      nodeRef: blackHoleShapeHandle.node,
+    };
+    _tempWasSelectedAtMouseDown = true;
+    isDragging = false;
+    isResizing = false;
+    isConnecting = false;
+    isSelecting = false;
+    didDrag = false;
+    canvas.style.cursor = "grabbing";
+    return;
   }
 
   if (
@@ -21272,6 +21427,19 @@ function handleMouseMove(event) {
     return;
   }
 
+  if (activeBlackHoleShapeDrag) {
+    applyBlackHoleShapeDrag(
+      activeBlackHoleShapeDrag.node,
+      activeBlackHoleShapeDrag.handleType,
+      mousePos.x,
+      mousePos.y,
+    );
+    didDrag = true;
+    canvas.style.cursor = "grabbing";
+    populateEditPanel();
+    return;
+  }
+
   if (isRotatingTimelineGrid && rotatingTimelineGridNode) {
     const dx = mousePos.x - rotatingTimelineGridNode.x;
     const dy = mousePos.y - rotatingTimelineGridNode.y;
@@ -21669,6 +21837,12 @@ function handleMouseMove(event) {
       !isDrawingNewTimelineGrid &&
       currentTool === "edit"
     ) {
+      const blackHoleShapeHandle = findBlackHoleShapeHandleAt(mousePos.x, mousePos.y);
+      if (blackHoleShapeHandle) {
+        canvas.style.cursor = blackHoleShapeHandle.cursor || "grab";
+        cursorSetByHandle = true;
+      }
+
       const selectedTimelineGrids = Array.from(selectedElements)
         .map((sel) => findNodeById(sel.id))
         .filter((n) => n && n.type === TIMELINE_GRID_TYPE);
@@ -21897,6 +22071,7 @@ function handleMouseUp(event) {
       isPanning = false;
       isRotatingRocket = null;
       isCrankingRadar = null;
+      activeBlackHoleShapeDrag = null;
       isResizingTimelineGrid = false;
       isDrawingNewTimelineGrid = false;
       selectionRect.active = false;
@@ -21925,6 +22100,7 @@ function handleMouseUp(event) {
   const wasPanningView = isPanning;
   const wasRotatingARocketNode = isRotatingRocket;
   const wasCrankingRadar = isCrankingRadar;
+  const wasDraggingBlackHoleShape = activeBlackHoleShapeDrag;
   const wasResizingTimeline = isResizingTimelineGrid;
   const wasDrawingNewTimeline = isDrawingNewTimelineGrid;
 
@@ -21938,12 +22114,18 @@ function handleMouseUp(event) {
   isPanning = false;
   isRotatingRocket = null;
   isCrankingRadar = null;
+  activeBlackHoleShapeDrag = null;
   isResizingTimelineGrid = false;
   selectionRect.active = false;
   canvas.style.cursor = "crosshair";
 
   isRotatingTimelineGrid = false;
   rotatingTimelineGridNode = null;
+
+  if (wasDraggingBlackHoleShape) {
+      actionHandledInMainBlock = true;
+      stateWasChanged = true;
+  }
 
   const nodeClickedStart = nodeClickedAtMouseDown;
   const connectionClickedStart = connectionClickedAtMouseDown;
