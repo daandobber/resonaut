@@ -1106,6 +1106,7 @@ let mouseDownPos = {
 };
 let selectedElements = new Set();
 let clipboardNodes = [];
+let clipboardConnections = [];
 let ctrlLikeAtMouseDown = false;
 let isSelecting = false;
 let selectionRect = {
@@ -11188,10 +11189,15 @@ function removeNode(nodeToRemove) {
 }
 
 function copySelectionToClipboard() {
-  clipboardNodes = [...selectedElements]
-    .filter((el) => el.type === "node")
-    .map((el) => {
-      const n = findNodeById(el.id);
+  const selectedNodeIds = new Set(
+    [...selectedElements]
+      .filter((el) => el.type === "node")
+      .map((el) => el.id),
+  );
+
+  clipboardNodes = [...selectedNodeIds]
+    .map((id) => {
+      const n = findNodeById(id);
       if (!n) return null;
       const clone = JSON.parse(JSON.stringify(n));
       clone.audioNodes = null;
@@ -11199,6 +11205,20 @@ function copySelectionToClipboard() {
       return clone;
     })
     .filter(Boolean);
+
+  clipboardConnections = connections
+    .filter(
+      (conn) =>
+        selectedNodeIds.has(conn.nodeAId) &&
+        selectedNodeIds.has(conn.nodeBId),
+    )
+    .map((conn) => {
+      const clone = JSON.parse(JSON.stringify(conn));
+      clone.audioNodes = null;
+      clone.isSelected = false;
+      clone.animationState = 0;
+      return clone;
+    });
 }
 
 function cutSelection() {
@@ -11215,6 +11235,9 @@ function cutSelection() {
 }
 
 function pasteClipboard(offset = 20) {
+  const idMap = new Map();
+  selectedElements.clear();
+
   clipboardNodes.forEach((data) => {
     const newNode = addNode(
       data.x + offset,
@@ -11228,15 +11251,60 @@ function pasteClipboard(offset = 20) {
         id: newNode.id,
         x: data.x + offset,
         y: data.y + offset,
+        connections: new Set(),
       });
       newNode.audioParams = JSON.parse(
         JSON.stringify(data.audioParams || {}),
       );
       newNode.audioNodes = createAudioNodesForNode(newNode);
       if (newNode.audioNodes) updateNodeAudioParams(newNode);
+      idMap.set(data.id, newNode.id);
       selectedElements.add({ type: "node", id: newNode.id });
     }
   });
+
+  clipboardConnections.forEach((data) => {
+    const newNodeAId = idMap.get(data.nodeAId);
+    const newNodeBId = idMap.get(data.nodeBId);
+    if (newNodeAId === undefined || newNodeBId === undefined) return;
+
+    const nodeA = findNodeById(newNodeAId);
+    const nodeB = findNodeById(newNodeBId);
+    if (!nodeA || !nodeB) return;
+
+    if (!(nodeA.connections instanceof Set)) {
+      nodeA.connections = new Set(nodeA.connections || []);
+    }
+    if (!(nodeB.connections instanceof Set)) {
+      nodeB.connections = new Set(nodeB.connections || []);
+    }
+
+    const newConnection = {
+      ...data,
+      id: connectionIdCounter++,
+      nodeAId: newNodeAId,
+      nodeBId: newNodeBId,
+      audioParams: JSON.parse(JSON.stringify(data.audioParams || {})),
+      audioNodes: null,
+      isSelected: false,
+      animationState: 0,
+    };
+
+    nodeA.connections.add(newNodeBId);
+    nodeB.connections.add(newNodeAId);
+
+    newConnection.audioNodes = createAudioNodesForConnection(newConnection);
+    if (newConnection.audioNodes) {
+      updateConnectionAudioParams(newConnection);
+    }
+
+    connections.push(newConnection);
+    selectedElements.add({ type: "connection", id: newConnection.id });
+  });
+
+  updateConstellationGroup();
+  identifyAndRouteAllGroups();
+  refreshSamplerTimeline();
   populateEditPanel();
   saveState();
 }
