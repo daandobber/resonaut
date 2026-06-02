@@ -918,6 +918,15 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 .brush-option-icon-button.selected { background-color: var(--button-active); border-color: var(--text-color); color: white; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
 .brush-option-icon-button.disabled { background-color: var(--button-disabled-bg); color: var(--button-disabled-color); cursor: not-allowed; border-color: var(--button-bg); opacity: 0.6; }
 .brush-option-icon-button .type-icon { line-height: 1; }
+.wand-options-panel { display: flex; flex-direction: column; gap: 9px; margin-top: 2px; }
+.wand-option-row { display: flex; align-items: center; gap: 8px; }
+.wand-option-row label { flex: 0 0 52px; font-size: 0.85em; opacity: 0.9; }
+.wand-option-row select { flex: 1; min-width: 0; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); border-radius: 3px; padding: 5px 6px; font-size: 0.85em; }
+.wand-slider-row { display: grid; grid-template-columns: 1fr; gap: 3px; }
+.wand-slider-row label { font-size: 0.82em; opacity: 0.9; }
+.wand-slider-row input[type="range"] { width: 100%; margin: 0; }
+.wand-reset-button { align-self: stretch; margin-top: 2px; padding: 5px 8px; background: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); border-radius: 3px; cursor: pointer; font-size: 0.85em; }
+.wand-reset-button:hover { background: var(--button-hover); }
 .floating-panel { position: fixed; background-color: var(--panel-bg, rgba(25,35,60,0.95)); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); color: var(--text-color, #ddeeff); z-index: 1050; opacity: 0; visibility: hidden; transition: opacity 0.2s ease-out, transform 0.2s ease-out, visibility 0s 0.2s; transform: scale(0.95) translateY(-10px); }
 .floating-panel:not(.hidden) { opacity: 1; visibility: visible; transform: scale(1) translateY(0); transition-delay: 0s,0s,0s; }
 #help-popup { top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0.95); width: 300px; max-width: 90%; }

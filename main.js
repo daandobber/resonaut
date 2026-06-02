@@ -1367,14 +1367,21 @@ let tractorBeamTarget = null;
 let ufoConnectorFirstNode = null;
 let ufoOrbWaveform = "sine";
 let wandLastTriggerTime = 0;
-const WAND_TRIGGER_COOLDOWN = 0.2;
+const WAND_MODE_BOTH = "both";
+const WAND_MODE_NOTES = "notes";
+const WAND_MODE_ORBS = "orbs";
+const WAND_TRIGGER_COOLDOWN_DEFAULT = 0.2;
+const WAND_STRUM_MIN_DIST_DEFAULT = 28;
+let wandMode = WAND_MODE_BOTH;
+let wandTriggerCooldown = WAND_TRIGGER_COOLDOWN_DEFAULT;
+let wandStrumMinDist = WAND_STRUM_MIN_DIST_DEFAULT;
+let wandTriggerIntensity = 1.0;
 let wandHoveredNodeId = null;
 let wandBeamEnd = null;
 let wandBeamTimer = 0;
 const WAND_BEAM_DURATION = 0.3;
 let wandIsDrawing = false;
 let wandLastNotePos = null;
-const WAND_STRUM_MIN_DIST = 28;
 const MAX_HISTORY_SIZE = 50;
 let historyStack = [];
 let historyIndex = -1;
@@ -10266,6 +10273,12 @@ export function saveState() {
       currentScaleKey: currentScaleKey,
       currentRootNote: currentRootNote,
       globalTransposeOffset: globalTransposeOffset,
+      wandOptions: {
+        mode: wandMode,
+        triggerCooldown: wandTriggerCooldown,
+        strumMinDist: wandStrumMinDist,
+        triggerIntensity: wandTriggerIntensity,
+      },
       pianoRollMode: pianoRollMode,
       pianoRollOctave: pianoRollOctave,
       masterVolume: masterGain?.gain.value ?? 0.8,
@@ -10491,6 +10504,24 @@ async function loadState(stateToLoad) {
     viewScale = stateToLoad.viewScale || 1.0;
     currentRootNote = stateToLoad.currentRootNote || 0;
     globalTransposeOffset = stateToLoad.globalTransposeOffset || 0;
+    if (stateToLoad.wandOptions) {
+      const validModes = [WAND_MODE_BOTH, WAND_MODE_NOTES, WAND_MODE_ORBS];
+      wandMode = validModes.includes(stateToLoad.wandOptions.mode)
+        ? stateToLoad.wandOptions.mode
+        : WAND_MODE_BOTH;
+      wandTriggerCooldown = Math.max(
+        0.03,
+        Math.min(1.5, stateToLoad.wandOptions.triggerCooldown ?? WAND_TRIGGER_COOLDOWN_DEFAULT),
+      );
+      wandStrumMinDist = Math.max(
+        6,
+        Math.min(120, stateToLoad.wandOptions.strumMinDist ?? WAND_STRUM_MIN_DIST_DEFAULT),
+      );
+      wandTriggerIntensity = Math.max(
+        0.1,
+        Math.min(2.0, stateToLoad.wandOptions.triggerIntensity ?? 1.0),
+      );
+    }
     pianoRollMode = stateToLoad.pianoRollMode || 'piano';
     pianoRollOctave =
       stateToLoad.pianoRollOctave !== undefined
@@ -20233,10 +20264,12 @@ function handleMouseDown(event) {
 
   if (currentTool === "wand" && event.button === 0) {
     updateMousePos(event);
-    wandIsDrawing = true;
-    wandLastNotePos = { x: mousePos.x, y: mousePos.y };
-    spawnWandTrailParticles(mousePos.x, mousePos.y);
-    playWandNote(screenMousePos.y, screenMousePos.x);
+    if (wandMode !== WAND_MODE_ORBS) {
+      wandIsDrawing = true;
+      wandLastNotePos = { x: mousePos.x, y: mousePos.y };
+      spawnWandTrailParticles(mousePos.x, mousePos.y);
+      playWandNote(screenMousePos.y, screenMousePos.x);
+    }
     return;
   }
 
@@ -20899,10 +20932,15 @@ function handleMouseMove(event) {
       spawnWandTrailParticles(mousePos.x, mousePos.y);
       const dx = mousePos.x - wandLastNotePos.x;
       const dy = mousePos.y - wandLastNotePos.y;
-      if (Math.sqrt(dx * dx + dy * dy) >= WAND_STRUM_MIN_DIST / viewScale) {
+      if (Math.sqrt(dx * dx + dy * dy) >= wandStrumMinDist / viewScale) {
         playWandNote(screenMousePos.y, screenMousePos.x);
         wandLastNotePos = { x: mousePos.x, y: mousePos.y };
       }
+      canvas.style.cursor = "crosshair";
+      return;
+    }
+    if (wandMode === WAND_MODE_NOTES) {
+      wandHoveredNodeId = null;
       canvas.style.cursor = "crosshair";
       return;
     }
@@ -20912,7 +20950,7 @@ function handleMouseMove(event) {
       : performance.now() / 1000;
     if (n && isPlayableNode(n)) {
       if (
-        nowTime - wandLastTriggerTime > WAND_TRIGGER_COOLDOWN ||
+        nowTime - wandLastTriggerTime > wandTriggerCooldown ||
         wandHoveredNodeId !== n.id
       ) {
         wandLastTriggerTime = nowTime;
@@ -20920,7 +20958,7 @@ function handleMouseMove(event) {
         currentGlobalPulseId++;
         propagateTrigger(n, 0, currentGlobalPulseId, -1, Infinity, {
           type: "trigger",
-          data: { intensity: 1.0 },
+          data: { intensity: wandTriggerIntensity },
         });
       }
     } else {
@@ -30419,6 +30457,123 @@ function handleWizardKey(e) {
   }
 }
 
+function populateWandOptionsPanel() {
+  if (!sideToolbarContent || !sideToolbarTitle || !sideToolbar) return;
+  sideToolbarContent.innerHTML = "";
+  sideToolbarTitle.textContent = "Magic Wand";
+
+  const section = document.createElement("div");
+  section.classList.add("wand-options-panel", "panel-section");
+
+  const modeRow = document.createElement("div");
+  modeRow.classList.add("wand-option-row");
+  const modeLabel = document.createElement("label");
+  modeLabel.htmlFor = "wandModeSelect";
+  modeLabel.textContent = "Mode";
+  const modeSelect = document.createElement("select");
+  modeSelect.id = "wandModeSelect";
+  [
+    { value: WAND_MODE_BOTH, label: "Notes + Orbs" },
+    { value: WAND_MODE_NOTES, label: "Notes" },
+    { value: WAND_MODE_ORBS, label: "Orbs" },
+  ].forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    modeSelect.appendChild(option);
+  });
+  modeSelect.value = wandMode;
+  modeSelect.addEventListener("change", (e) => {
+    wandMode = e.target.value;
+    wandIsDrawing = false;
+    wandLastNotePos = null;
+    wandHoveredNodeId = null;
+    saveState();
+  });
+  modeRow.appendChild(modeLabel);
+  modeRow.appendChild(modeSelect);
+  section.appendChild(modeRow);
+
+  const addWandSlider = (id, labelPrefix, min, max, step, value, formatter, setter) => {
+    const slider = createSlider(
+      id,
+      `${labelPrefix} (${formatter(value)}):`,
+      min,
+      max,
+      step,
+      value,
+      (e) => setter(parseFloat(e.target.value)),
+      (e) => {
+        const nextValue = parseFloat(e.target.value);
+        setter(nextValue);
+        const label = e.target.previousElementSibling;
+        if (label) label.textContent = `${labelPrefix} (${formatter(nextValue)}):`;
+      },
+    );
+    slider.classList.add("wand-slider-row");
+    section.appendChild(slider);
+  };
+
+  addWandSlider(
+    "wandSpacingSlider",
+    "Spacing",
+    6,
+    120,
+    1,
+    wandStrumMinDist,
+    (v) => `${Math.round(v)}px`,
+    (v) => {
+      wandStrumMinDist = Math.max(6, Math.min(120, v));
+    },
+  );
+
+  addWandSlider(
+    "wandTriggerRateSlider",
+    "Orb Gap",
+    0.03,
+    1.5,
+    0.01,
+    wandTriggerCooldown,
+    (v) => `${v.toFixed(2)}s`,
+    (v) => {
+      wandTriggerCooldown = Math.max(0.03, Math.min(1.5, v));
+    },
+  );
+
+  addWandSlider(
+    "wandIntensitySlider",
+    "Force",
+    0.1,
+    2.0,
+    0.05,
+    wandTriggerIntensity,
+    (v) => v.toFixed(2),
+    (v) => {
+      wandTriggerIntensity = Math.max(0.1, Math.min(2.0, v));
+    },
+  );
+
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.classList.add("wand-reset-button");
+  resetBtn.textContent = "Reset";
+  resetBtn.addEventListener("click", () => {
+    wandMode = WAND_MODE_BOTH;
+    wandTriggerCooldown = WAND_TRIGGER_COOLDOWN_DEFAULT;
+    wandStrumMinDist = WAND_STRUM_MIN_DIST_DEFAULT;
+    wandTriggerIntensity = 1.0;
+    saveState();
+    populateWandOptionsPanel();
+  });
+  section.appendChild(resetBtn);
+
+  sideToolbarContent.appendChild(section);
+  sideToolbar.classList.add("narrow");
+  sideToolbar.classList.remove("hidden");
+  if (hamburgerMenuPanel) hamburgerMenuPanel.classList.add("hidden");
+  if (hamburgerBtn) hamburgerBtn.classList.remove("active");
+}
+
 function populateBrushOptionsPanel() {
   sideToolbarContent.innerHTML = "";
   sideToolbarTitle.textContent = "Brush Options";
@@ -33167,7 +33322,10 @@ if (crushBtn) {
   console.warn("#crushBtn not found");
 }
 if (wandBtn) {
-  wandBtn.addEventListener("click", () => setActiveTool("wand"));
+  wandBtn.addEventListener("click", () => {
+    setActiveTool("wand");
+    populateWandOptionsPanel();
+  });
 } else {
   console.warn("#wandBtn not found");
 }
