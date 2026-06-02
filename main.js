@@ -53,6 +53,7 @@ import {
 } from './orbs/fm-drone-orb.js';
 import { MOTOR_ORB_TYPE, DEFAULT_MOTOR_PARAMS, updateMotorOrb, showMotorOrbMenu, hideMotorOrbMenu, hideMotorOrbPanel } from './orbs/motor-orb.js';
 import { CLOCKWORK_ORB_TYPE, DEFAULT_CLOCKWORK_PARAMS, CLOCKWORK_FORCE_DEFAULT, CLOCKWORK_DECAY_DEFAULT, updateClockworkOrb, advanceClockworkOrb, showClockworkOrbMenu, hideClockworkOrbMenu, hideClockworkOrbPanel } from './orbs/clockwork-orb.js';
+import { BLACK_HOLE_ORB_TYPE, DEFAULT_BLACK_HOLE_PARAMS, updateBlackHoleOrb } from './orbs/black-hole-orb.js';
 import {
   A4_FREQ,
   A4_MIDI_NOTE,
@@ -822,6 +823,7 @@ const NON_AUDIO_NODE_TYPES = [
   CRANK_RADAR_TYPE,
   MOTOR_ORB_TYPE,
   CLOCKWORK_ORB_TYPE,
+  BLACK_HOLE_ORB_TYPE,
   "global_key_setter",
 ];
 
@@ -1191,6 +1193,140 @@ function makeUserDefinedGroup() {
 function refreshNodeAudio(node) {
   if (!node || !node.audioNodes) return;
   updateNodeAudioParams(node);
+}
+
+function createMotionResonatorAudioNodes(node) {
+  const params = node.audioParams || {};
+  const baseFreq = sanitizeFrequency(params.pitch, A4_FREQ);
+  const pannerNode = typeof audioContext.createStereoPanner === 'function'
+    ? audioContext.createStereoPanner()
+    : audioContext.createGain();
+  const audioNodes = {
+    oscillator1: audioContext.createOscillator(),
+    oscillator2: audioContext.createOscillator(),
+    resonatorFilter: audioContext.createBiquadFilter(),
+    bodyFilter: audioContext.createBiquadFilter(),
+    motionGain: audioContext.createGain(),
+    panner: pannerNode,
+    gainNode: audioContext.createGain(),
+  };
+
+  audioNodes.oscillator1.type = 'sine';
+  audioNodes.oscillator2.type = 'triangle';
+  audioNodes.oscillator1.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
+  audioNodes.oscillator2.frequency.setValueAtTime(baseFreq * 1.505, audioContext.currentTime);
+  audioNodes.oscillator2.detune.setValueAtTime(7, audioContext.currentTime);
+  audioNodes.resonatorFilter.type = 'bandpass';
+  audioNodes.resonatorFilter.frequency.setValueAtTime(baseFreq * 2, audioContext.currentTime);
+  audioNodes.resonatorFilter.Q.setValueAtTime(params.resonance ?? 7, audioContext.currentTime);
+  audioNodes.bodyFilter.type = 'peaking';
+  audioNodes.bodyFilter.frequency.setValueAtTime(baseFreq * 0.75, audioContext.currentTime);
+  audioNodes.bodyFilter.Q.setValueAtTime(1.4, audioContext.currentTime);
+  audioNodes.bodyFilter.gain.setValueAtTime(0, audioContext.currentTime);
+  audioNodes.motionGain.gain.setValueAtTime(0, audioContext.currentTime);
+  if (audioNodes.panner.pan) audioNodes.panner.pan.setValueAtTime(0, audioContext.currentTime);
+  audioNodes.gainNode.gain.setValueAtTime(params.volume ?? 0.85, audioContext.currentTime);
+
+  audioNodes.oscillator1.connect(audioNodes.resonatorFilter);
+  audioNodes.oscillator2.connect(audioNodes.resonatorFilter);
+  audioNodes.resonatorFilter.connect(audioNodes.bodyFilter);
+  audioNodes.bodyFilter.connect(audioNodes.motionGain);
+  audioNodes.motionGain.connect(audioNodes.panner);
+  audioNodes.panner.connect(audioNodes.gainNode);
+
+  if (isReverbReady && reverbPreDelayNode) {
+    audioNodes.reverbSendGain = audioContext.createGain();
+    audioNodes.reverbSendGain.gain.value = params.reverbSend ?? 0.35;
+    audioNodes.gainNode.connect(audioNodes.reverbSendGain);
+    audioNodes.reverbSendGain.connect(reverbPreDelayNode);
+  }
+  if (isDelayReady && masterDelaySendGain) {
+    audioNodes.delaySendGain = audioContext.createGain();
+    audioNodes.delaySendGain.gain.value = params.delaySend ?? 0.08;
+    audioNodes.gainNode.connect(audioNodes.delaySendGain);
+    audioNodes.delaySendGain.connect(masterDelaySendGain);
+  }
+
+  audioNodes.gainNode.connect(masterGain);
+  const startAt = audioContext.currentTime + 0.02;
+  audioNodes.oscillator1.start(startAt);
+  audioNodes.oscillator2.start(startAt);
+  return audioNodes;
+}
+
+function updateMotionResonatorFromMovement(node, dt) {
+  if (!node || node.type !== "sound" || node.audioParams?.engine !== "motion_resonator") return;
+  if (!node.audioNodes?.motionGain || !audioContext || dt <= 0) {
+    node.prevMotionX = node.x;
+    node.prevMotionY = node.y;
+    return;
+  }
+
+  const prevX = node.prevMotionX ?? node.x;
+  const prevY = node.prevMotionY ?? node.y;
+  const speed = Math.hypot(node.x - prevX, node.y - prevY) / dt;
+  const vx = (node.x - prevX) / dt;
+  const vy = (node.y - prevY) / dt;
+  node.prevMotionX = node.x;
+  node.prevMotionY = node.y;
+
+  const params = node.audioParams;
+  const threshold = params.motionThreshold ?? 8;
+  const sensitivity = Math.max(20, params.motionSensitivity ?? 190);
+  const amount = Math.max(0, Math.min(1, (speed - threshold) / sensitivity));
+  const smoothed = (node.motionResonanceAmount || 0) * 0.82 + amount * 0.18;
+  node.motionResonanceAmount = smoothed;
+
+  node.motionTrace = Array.isArray(node.motionTrace) ? node.motionTrace : [];
+  node.motionTrace.push({ x: node.x, y: node.y });
+  if (node.motionTrace.length > 90) node.motionTrace.shift();
+
+  let minX = node.x;
+  let maxX = node.x;
+  let minY = node.y;
+  let maxY = node.y;
+  node.motionTrace.forEach((p) => {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  });
+
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  const pathSpan = Math.max(width, height);
+  const ovalAmount = Math.max(0, Math.min(1, pathSpan / 180)) * Math.abs(width - height) / Math.max(width, height);
+  const horizontalBias = (width - height) / Math.max(width, height);
+  const velocityTotal = Math.abs(vx) + Math.abs(vy) + 0.001;
+  const horizontalMotion = vx / velocityTotal;
+  const verticalMotion = -vy / velocityTotal;
+  const curveEnergy = Math.max(0, Math.min(1, Math.abs(horizontalMotion * verticalMotion) * 4));
+
+  node.motionOvalAmount = (node.motionOvalAmount || 0) * 0.88 + ovalAmount * 0.12;
+  node.motionHorizontalBias = (node.motionHorizontalBias || 0) * 0.9 + horizontalBias * 0.1;
+  node.motionCurveEnergy = (node.motionCurveEnergy || 0) * 0.84 + curveEnergy * 0.16;
+
+  const now = audioContext.currentTime;
+  const baseFreq = sanitizeFrequency(params.pitch, A4_FREQ);
+  const brightness = params.motionBrightness ?? 1.7;
+  const shapeAmount = params.motionShapeAmount ?? 1.0;
+  const gain = (params.volume ?? 0.85) * smoothed;
+  const oval = node.motionOvalAmount * shapeAmount;
+  const bias = node.motionHorizontalBias;
+  const curve = node.motionCurveEnergy;
+  const pan = Math.max(-0.75, Math.min(0.75, horizontalMotion * smoothed * (0.35 + oval * 0.55)));
+  const pitchBend = 1 + verticalMotion * smoothed * (0.03 + oval * 0.08);
+  const harmonicStretch = 1.505 + bias * oval * 0.22 + curve * 0.08;
+  try {
+    node.audioNodes.motionGain.gain.setTargetAtTime(gain, now, 0.045);
+    node.audioNodes.panner?.pan?.setTargetAtTime(pan, now, 0.08);
+    node.audioNodes.resonatorFilter.frequency.setTargetAtTime(baseFreq * (1.35 + smoothed * brightness * (2.4 + oval * 2.2)), now, 0.06);
+    node.audioNodes.resonatorFilter.Q.setTargetAtTime((params.resonance ?? 7) + smoothed * 5 + oval * 9 + curve * 4, now, 0.08);
+    node.audioNodes.bodyFilter?.frequency.setTargetAtTime(baseFreq * (0.65 + (bias + 1) * 0.32 + curve * 0.45), now, 0.1);
+    node.audioNodes.bodyFilter?.gain.setTargetAtTime((oval * 8 + curve * 5) * smoothed, now, 0.12);
+    node.audioNodes.oscillator1.frequency.setTargetAtTime(baseFreq * pitchBend, now, 0.05);
+    node.audioNodes.oscillator2.frequency.setTargetAtTime(baseFreq * harmonicStretch * (1 + smoothed * 0.035), now, 0.05);
+  } catch {}
 }
 
   function makeParameterGroup() {
@@ -1822,7 +1958,7 @@ function findConnectionById(id) {
 function findNearestOrb(x, y, maxDist) {
   let nearest = null;
   let best = maxDist;
-  const orbTypes = ["sound", MIDI_ORB_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE];
+  const orbTypes = ["sound", MIDI_ORB_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE, BLACK_HOLE_ORB_TYPE];
   for (const n of nodes) {
     if (!orbTypes.includes(n.type)) continue;
     const d = distance(x, y, n.x, n.y);
@@ -2833,12 +2969,13 @@ export function createAudioNodesForNode(node) {
         node.type === CRANK_RADAR_TYPE ||
         node.type === CANVAS_SEND_ORB_TYPE ||
         node.type === CANVAS_RECEIVE_ORB_TYPE ||
-        node.type === CLOCKWORK_ORB_TYPE
+        node.type === CLOCKWORK_ORB_TYPE ||
+        node.type === BLACK_HOLE_ORB_TYPE
     ) {
         return null;
     }
     if (
-        ![PRORB_TYPE, "sound", "nebula", PORTAL_NEBULA_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE, "mind"].includes(node.type) &&
+        ![PRORB_TYPE, "sound", "nebula", PORTAL_NEBULA_TYPE, ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE, ARVO_DRONE_TYPE, FM_DRONE_TYPE, RESONAUTER_TYPE, RADIO_ORB_TYPE, MOTOR_ORB_TYPE, CLOCKWORK_ORB_TYPE, BLACK_HOLE_ORB_TYPE, "mind"].includes(node.type) &&
         !isDrumType(node.type)
     ) {
         return null;
@@ -3050,6 +3187,8 @@ export function createAudioNodesForNode(node) {
             }
 
             return audioNodes;
+        } else if (node.audioParams && node.audioParams.engine === 'motion_resonator') {
+            return createMotionResonatorAudioNodes(node);
         } else if (node.audioParams && node.audioParams.engine === 'etheraura') {
             const aura = new EtherAura({
               // Per-osc folders (fallback to legacy single set)
@@ -13254,6 +13393,16 @@ function animationLoop() {
         updateMotorOrb(node, deltaTime);
         return;
       }
+      if (node.type === BLACK_HOLE_ORB_TYPE) {
+        updateBlackHoleOrb(
+          node,
+          deltaTime,
+          nodes,
+          isPlayableNode,
+          { isGlobalSyncEnabled, globalBPM, subdivisionOptions },
+        );
+        return;
+      }
       if (node.type === GALACTIC_BLOOM_TYPE) {
         // Always update rotation every frame for smooth motion
         updateGalacticBloom(node, deltaTime, { findNodeById, triggerNodeEffect, MIN_SCALE_INDEX, MAX_SCALE_INDEX, DELAY_FACTOR, highlightCircleDegreeBars }, { audioActive: true, secondsPerBeat, isGlobalSyncEnabled, subdivisionOptions });
@@ -16016,6 +16165,10 @@ function drawNode(node) {
     fillColor = styles.getPropertyValue("--motor-orb-color").trim() || "grey";
     borderColor = styles.getPropertyValue("--motor-orb-border").trim() || "darkgrey";
     glowColor = borderColor;
+  } else if (node.type === BLACK_HOLE_ORB_TYPE) {
+    fillColor = "rgba(0,0,0,0.96)";
+    borderColor = "rgba(180,220,255,0.75)";
+    glowColor = "rgba(120,190,255,0.95)";
   } else {
     fillColor = "grey";
     borderColor = "darkgrey";
@@ -16653,6 +16806,12 @@ function drawNode(node) {
         border: borderColor,
         accent: accentColor || borderColor,
       },
+      motion_resonator: {
+        fill: hslToRgba(48, 70, 65, baseAlpha),
+        border: hslToRgba(190, 70, 72, 0.95),
+        ring: hslToRgba(48, 90, 78, 0.7),
+        glow: hslToRgba(185, 95, 78, 0.9),
+      },
     };
     const currentPlanetColors = planetColorsInternal[visualStyle];
     if (currentPlanetColors) {
@@ -16919,6 +17078,41 @@ function drawNode(node) {
             ctx.beginPath();
             ctx.moveTo(xPos, node.y - r * 1.1);
             ctx.lineTo(xPos, node.y + r * 1.1);
+            ctx.stroke();
+          }
+          ctx.restore();
+          break;
+        }
+        case "motion_resonator": {
+          const motion = Math.max(0, Math.min(1, node.motionResonanceAmount || 0));
+          const ringColor = currentPlanetColors.ring || borderColor;
+          const glow = currentPlanetColors.glow || borderColor;
+
+          ctx.save();
+          ctx.fillStyle = fillColor;
+          ctx.strokeStyle = borderColor;
+          ctx.lineWidth = Math.max(1 / viewScale, 1.3 / viewScale);
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.strokeStyle = ringColor;
+          for (let i = 0; i < 4; i++) {
+            const y = node.y + (i - 1.5) * r * 0.28;
+            const width = r * (1.55 - Math.abs(i - 1.5) * 0.18);
+            const wobble = Math.sin(now * (4 + motion * 8) + i) * r * 0.05 * motion;
+            ctx.beginPath();
+            ctx.ellipse(node.x, y + wobble, width * 0.5, r * 0.11, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          if (motion > 0.02) {
+            ctx.globalAlpha = motion;
+            ctx.strokeStyle = glow;
+            ctx.lineWidth = Math.max(1 / viewScale, (1 + motion * 2) / viewScale);
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, r * (1.15 + motion * 0.28), 0, Math.PI * 2);
             ctx.stroke();
           }
           ctx.restore();
@@ -17316,6 +17510,59 @@ function drawNode(node) {
     ctx.arc(px, py, r * 0.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  } else if (node.type === BLACK_HOLE_ORB_TYPE) {
+    const params = node.audioParams || DEFAULT_BLACK_HOLE_PARAMS;
+    const influenceRadius = Math.max(r * 2, params.radius ?? DEFAULT_BLACK_HOLE_PARAMS.radius);
+    const orbitAspect = Math.max(0.25, Math.min(2.5, params.orbitAspect ?? DEFAULT_BLACK_HOLE_PARAMS.orbitAspect));
+    const orbitRotation = params.orbitRotation ?? DEFAULT_BLACK_HOLE_PARAMS.orbitRotation;
+    const phase = node.accretionPhase || now * 0.55;
+    ctx.save();
+
+    const gradient = ctx.createRadialGradient(node.x, node.y, r * 0.1, node.x, node.y, r * 1.45);
+    gradient.addColorStop(0, "rgba(0,0,0,1)");
+    gradient.addColorStop(0.58, "rgba(0,0,0,0.98)");
+    gradient.addColorStop(0.75, "rgba(70,120,180,0.55)");
+    gradient.addColorStop(1, "rgba(180,220,255,0)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r * 1.45, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.translate(node.x, node.y);
+    for (let i = 0; i < 4; i++) {
+      const ringR = r * (1.15 + i * 0.24);
+      const alpha = 0.42 - i * 0.07;
+      ctx.save();
+      ctx.rotate(phase * (i % 2 === 0 ? 1 : -0.7) + i * 0.8);
+      ctx.strokeStyle = i % 2 === 0
+        ? `rgba(255,210,120,${alpha})`
+        : `rgba(120,210,255,${alpha})`;
+      ctx.lineWidth = Math.max(0.8 / viewScale, (2.2 - i * 0.25) / viewScale);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, ringR * 1.45, ringR * 0.38, 0, 0.15, Math.PI * 1.82);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.strokeStyle = "rgba(105,180,255,0.18)";
+    ctx.lineWidth = Math.max(0.5 / viewScale, 1 / viewScale);
+    ctx.setLineDash([6 / viewScale, 10 / viewScale]);
+    ctx.save();
+    ctx.rotate(orbitRotation);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, influenceRadius * orbitAspect, influenceRadius / orbitAspect, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "rgba(0,0,0,1)";
+    ctx.strokeStyle = "rgba(230,245,255,0.9)";
+    ctx.lineWidth = Math.max(1 / viewScale, 1.8 / viewScale);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.78, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   } else if (node.type === "mind" || node.type === QUEEN_MIND_TYPE) {
     // Draw Mind as a brain-like organic shape (Queens are bigger)
     const sizeMultiplier = node.type === QUEEN_MIND_TYPE ? (node.audioParams?.queenSize || 1.8) : 1.0;
@@ -18399,7 +18646,9 @@ function drawNode(node) {
         secondLineText = presetDef.label;
       }
       // EtherAura explicit label (dual folders)
-      if (node.type === "sound" && params.engine === 'etheraura') {
+      if (node.type === "sound" && params.engine === 'motion_resonator') {
+        secondLineText = "Motion Bowl";
+      } else if (node.type === "sound" && params.engine === 'etheraura') {
         const f1 = Math.max(1, Math.round(params.folds1 ?? params.folds ?? 3));
         const f2 = Math.max(1, Math.round(params.folds2 ?? params.folds ?? 3));
         secondLineText = `Fold ${f1}|${f2}x`;
@@ -18432,6 +18681,10 @@ function drawNode(node) {
   } else if (node.type === PORTAL_NEBULA_TYPE) {
       labelText = "Portal";
       labelYOffset = baseRadiusForLabel * 1.1 + fontSize / 1.5 + 2 / viewScale;
+  } else if (node.type === BLACK_HOLE_ORB_TYPE) {
+      labelText = "Black Hole";
+      secondLineText = "Orbital Motion";
+      labelYOffset = baseRadiusForLabel * 1.4 + fontSize / 1.5 + 2 / viewScale;
     } else if (isPulsarType(node.type)) {
       let typeLabel =
         pulsarTypes.find((pt) => pt.type === node.type)?.label || "Pulsar";
@@ -18906,6 +19159,7 @@ function draw() {
     }
 
     updateRopeConnections();
+    nodes.forEach((node) => updateMotionResonatorFromMovement(node, localDeltaTime));
     updateAllConnectionLengths();
     drawParamGroupLinks();
     connections.forEach(drawConnection);
@@ -26421,6 +26675,187 @@ function populateEditPanel() {
 
                 fragment.appendChild(section);
 
+            } else if (node && node.type === BLACK_HOLE_ORB_TYPE) {
+                const section = document.createElement("div");
+                section.classList.add("panel-section");
+                const params = Object.assign({}, DEFAULT_BLACK_HOLE_PARAMS, node.audioParams || {});
+
+                const setBlackHoleParam = (key, value) => {
+                    selectedArray.forEach((elData) => {
+                        const n = findNodeById(elData.id);
+                        if (n && n.type === BLACK_HOLE_ORB_TYPE) {
+                            n.audioParams = Object.assign({}, DEFAULT_BLACK_HOLE_PARAMS, n.audioParams || {});
+                            n.audioParams[key] = value;
+                        }
+                    });
+                };
+
+                if (isGlobalSyncEnabled) {
+                    const syncRow = document.createElement("div");
+                    syncRow.style.display = "flex";
+                    syncRow.style.alignItems = "center";
+                    syncRow.style.gap = "8px";
+
+                    const ignoreSyncLabel = document.createElement("label");
+                    ignoreSyncLabel.htmlFor = `edit-blackhole-ignore-sync-${node.id}`;
+                    ignoreSyncLabel.textContent = "Ignore Global Sync:";
+                    const ignoreSyncCheckbox = document.createElement("input");
+                    ignoreSyncCheckbox.type = "checkbox";
+                    ignoreSyncCheckbox.id = `edit-blackhole-ignore-sync-${node.id}`;
+                    ignoreSyncCheckbox.checked = !!params.ignoreGlobalSync;
+                    ignoreSyncCheckbox.addEventListener("change", (e) => {
+                        setBlackHoleParam("ignoreGlobalSync", e.target.checked);
+                        saveState();
+                        populateEditPanel();
+                    });
+                    syncRow.appendChild(ignoreSyncLabel);
+                    syncRow.appendChild(ignoreSyncCheckbox);
+                    section.appendChild(syncRow);
+
+                    if (!params.ignoreGlobalSync) {
+                        const subdivLabel = document.createElement("label");
+                        subdivLabel.htmlFor = `edit-blackhole-subdiv-${node.id}`;
+                        subdivLabel.textContent = "Orbit Length:";
+                        subdivLabel.style.marginRight = "6px";
+                        section.appendChild(subdivLabel);
+
+                        const subdivSelect = document.createElement("select");
+                        subdivSelect.id = `edit-blackhole-subdiv-${node.id}`;
+                        const currentIndex = params.syncSubdivisionIndex ?? DEFAULT_BLACK_HOLE_PARAMS.syncSubdivisionIndex;
+                        subdivisionOptions.forEach((opt, index) => {
+                            const option = document.createElement("option");
+                            option.value = index;
+                            option.textContent = opt.label;
+                            if (index === currentIndex) option.selected = true;
+                            subdivSelect.appendChild(option);
+                        });
+                        subdivSelect.addEventListener("change", (e) => {
+                            setBlackHoleParam("syncSubdivisionIndex", parseInt(e.target.value, 10));
+                            saveState();
+                        });
+                        section.appendChild(subdivSelect);
+                        section.appendChild(document.createElement("br"));
+                    }
+                }
+
+                if (!isGlobalSyncEnabled || params.ignoreGlobalSync) {
+                    const speedSlider = createSlider(
+                        `edit-blackhole-speed-${node.id}`,
+                        `Orbit Speed (${params.orbitSpeed.toFixed(2)} rps):`,
+                        -3,
+                        3,
+                        0.05,
+                        params.orbitSpeed,
+                        saveState,
+                        (e_input) => {
+                            const newVal = parseFloat(e_input.target.value);
+                            setBlackHoleParam("orbitSpeed", newVal);
+                            e_input.target.previousElementSibling.textContent = `Orbit Speed (${newVal.toFixed(2)} rps):`;
+                        },
+                    );
+                    section.appendChild(speedSlider);
+                }
+
+                const radiusSlider = createSlider(
+                    `edit-blackhole-radius-${node.id}`,
+                    `Influence Radius (${Math.round(params.radius)}):`,
+                    80,
+                    900,
+                    1,
+                    params.radius,
+                    saveState,
+                    (e_input) => {
+                        const newVal = parseFloat(e_input.target.value);
+                        setBlackHoleParam("radius", newVal);
+                        e_input.target.previousElementSibling.textContent = `Influence Radius (${Math.round(newVal)}):`;
+                    },
+                );
+                section.appendChild(radiusSlider);
+
+                const orbitAspect = params.orbitAspect ?? DEFAULT_BLACK_HOLE_PARAMS.orbitAspect;
+                const shapeSlider = createSlider(
+                    `edit-blackhole-aspect-${node.id}`,
+                    `Orbit Shape (${orbitAspect.toFixed(2)}):`,
+                    0.25,
+                    2.5,
+                    0.01,
+                    orbitAspect,
+                    saveState,
+                    (e_input) => {
+                        const newVal = parseFloat(e_input.target.value);
+                        setBlackHoleParam("orbitAspect", newVal);
+                        e_input.target.previousElementSibling.textContent = `Orbit Shape (${newVal.toFixed(2)}):`;
+                    },
+                );
+                section.appendChild(shapeSlider);
+
+                const shapeAngleDeg = ((params.orbitRotation ?? DEFAULT_BLACK_HOLE_PARAMS.orbitRotation) * 180) / Math.PI;
+                const shapeAngleSlider = createSlider(
+                    `edit-blackhole-angle-${node.id}`,
+                    `Shape Angle (${Math.round(shapeAngleDeg)}deg):`,
+                    -180,
+                    180,
+                    1,
+                    shapeAngleDeg,
+                    saveState,
+                    (e_input) => {
+                        const newVal = parseFloat(e_input.target.value);
+                        setBlackHoleParam("orbitRotation", (newVal * Math.PI) / 180);
+                        e_input.target.previousElementSibling.textContent = `Shape Angle (${Math.round(newVal)}deg):`;
+                    },
+                );
+                section.appendChild(shapeAngleSlider);
+
+                const forceSlider = createSlider(
+                    `edit-blackhole-pull-${node.id}`,
+                    `Gravity Force (${params.pull.toFixed(0)}):`,
+                    0,
+                    260,
+                    1,
+                    params.pull,
+                    saveState,
+                    (e_input) => {
+                        const newVal = parseFloat(e_input.target.value);
+                        setBlackHoleParam("pull", newVal);
+                        e_input.target.previousElementSibling.textContent = `Gravity Force (${newVal.toFixed(0)}):`;
+                    },
+                );
+                section.appendChild(forceSlider);
+
+                const dampingSlider = createSlider(
+                    `edit-blackhole-damping-${node.id}`,
+                    `Orbit Damping (${params.damping.toFixed(2)}):`,
+                    0.75,
+                    0.99,
+                    0.01,
+                    params.damping,
+                    saveState,
+                    (e_input) => {
+                        const newVal = parseFloat(e_input.target.value);
+                        setBlackHoleParam("damping", newVal);
+                        e_input.target.previousElementSibling.textContent = `Orbit Damping (${newVal.toFixed(2)}):`;
+                    },
+                );
+                section.appendChild(dampingSlider);
+
+                const maxSpeedSlider = createSlider(
+                    `edit-blackhole-maxspeed-${node.id}`,
+                    `Max Orb Speed (${Math.round(params.maxSpeed)}):`,
+                    60,
+                    900,
+                    10,
+                    params.maxSpeed,
+                    saveState,
+                    (e_input) => {
+                        const newVal = parseFloat(e_input.target.value);
+                        setBlackHoleParam("maxSpeed", newVal);
+                        e_input.target.previousElementSibling.textContent = `Max Orb Speed (${Math.round(newVal)}):`;
+                    },
+                );
+                section.appendChild(maxSpeedSlider);
+
+                fragment.appendChild(section);
+
             } else if (node && node.audioParams) {
                 let sectionCreatedForThisType = false;
                 let currentSection;
@@ -28323,6 +28758,16 @@ function populateInstrumentMenu() {
       },
     },
     {
+      icon: "◌",
+      label: "Motion Bowl",
+      nodeType: "sound",
+      handler: () => {
+        soundEngineToAdd = "motion_resonator";
+        waveformToAdd = "motion_resonator";
+        setupAddTool(null, "sound", false);
+      },
+    },
+    {
       icon: "🎶",
       label: "Analog Synth",
       nodeType: "sound",
@@ -28679,6 +29124,14 @@ function populateMotionMenu() {
       handler: () => {
         soundEngineToAdd = null;
         setupAddTool(null, CLOCKWORK_ORB_TYPE, false);
+      },
+    },
+    {
+      icon: "●",
+      label: "Black Hole",
+      handler: () => {
+        soundEngineToAdd = null;
+        setupAddTool(null, BLACK_HOLE_ORB_TYPE, false);
       },
     },
     {
@@ -32091,6 +32544,8 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     newNode.pulseDecay = CLOCKWORK_DECAY_DEFAULT;
     newNode.audioParams.pulseForce = newNode.pulseForce;
     newNode.audioParams.pulseDecay = newNode.pulseDecay;
+  } else if (type === BLACK_HOLE_ORB_TYPE) {
+    newNode.audioParams = Object.assign({}, DEFAULT_BLACK_HOLE_PARAMS);
   } else if (type === "mind") {
     newNode.audioParams = Object.assign({}, DEFAULT_MIND_PARAMS);
     newNode.audioParams.scaleIndex = 0;
@@ -32294,6 +32749,20 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
         };
         Object.assign(newNode.audioParams, DEFAULT_ETHER_AURA_PARAMS);
         Object.assign(newNode.audioParams, existing);
+      } else if (soundEngineToAdd === 'motion_resonator') {
+        Object.assign(newNode.audioParams, {
+          engine: 'motion_resonator',
+          waveform: 'motion_resonator',
+          visualStyle: 'motion_resonator',
+          volume: 0.85,
+          reverbSend: 0.35,
+          delaySend: 0.08,
+          resonance: 7,
+          motionThreshold: 8,
+          motionSensitivity: 190,
+          motionBrightness: 1.7,
+          motionShapeAmount: 1.0,
+        });
       }
     }
     // Inject FM drum defaults for Tone FM variants
@@ -32641,12 +33110,12 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
     }
   }
 
-  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== GALACTIC_BLOOM_TYPE && newNode.type !== TONNETZ_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== "global_key_setter") {
+  if (isAudioReady && newNode.type !== TIMELINE_GRID_TYPE && newNode.type !== GRID_SEQUENCER_TYPE && newNode.type !== CIRCLE_FIFTHS_TYPE && newNode.type !== GALACTIC_BLOOM_TYPE && newNode.type !== TONNETZ_TYPE && newNode.type !== SPACERADAR_TYPE && newNode.type !== CRANK_RADAR_TYPE && newNode.type !== BLACK_HOLE_ORB_TYPE && newNode.type !== "global_key_setter") {
     newNode.audioNodes = createAudioNodesForNode(newNode);
     if (newNode.audioNodes) {
       updateNodeAudioParams(newNode);
     }
-  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === GALACTIC_BLOOM_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === "global_key_setter") {
+  } else if (newNode.type === TIMELINE_GRID_TYPE || newNode.type === GRID_SEQUENCER_TYPE || newNode.type === CIRCLE_FIFTHS_TYPE || newNode.type === GALACTIC_BLOOM_TYPE || newNode.type === TONNETZ_TYPE || newNode.type === SPACERADAR_TYPE || newNode.type === CRANK_RADAR_TYPE || newNode.type === BLACK_HOLE_ORB_TYPE || newNode.type === "global_key_setter") {
     newNode.audioNodes = null;
   }
 
