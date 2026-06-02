@@ -30644,32 +30644,6 @@ function populateWandOptionsPanel() {
     },
   );
 
-  addWandSlider(
-    "wandTriggerRateSlider",
-    "Orb Gap",
-    0.03,
-    1.5,
-    0.01,
-    wandTriggerCooldown,
-    (v) => `${v.toFixed(2)}s`,
-    (v) => {
-      wandTriggerCooldown = Math.max(0.03, Math.min(1.5, v));
-    },
-  );
-
-  addWandSlider(
-    "wandIntensitySlider",
-    "Force",
-    0.1,
-    2.0,
-    0.05,
-    wandTriggerIntensity,
-    (v) => v.toFixed(2),
-    (v) => {
-      wandTriggerIntensity = Math.max(0.1, Math.min(2.0, v));
-    },
-  );
-
   const resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.classList.add("wand-reset-button");
