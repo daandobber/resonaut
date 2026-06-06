@@ -17,7 +17,7 @@ import { playWithToneSampler } from './samplerPlayer.js';
 import { createSamplerOrbAudioNodes } from './orbs/sampler-orb.js';
 import { sanitizeWaveformType } from './utils/oscillatorUtils.js';
 import { morphShape } from './utils/fmShapeMorph.js';
-import { DEFAULT_RESONAUTER_PARAMS, resonauterGranParams, createResonauterOrbAudioNodes, playResonauterSound } from './orbs/resonauter-orb.js';
+import { DEFAULT_RESONAUTER_PARAMS, resonauterGranParams, createResonauterOrbAudioNodes, playResonauterSound, applyResonauterSpatialParams } from './orbs/resonauter-orb.js';
 import { NOTE_NAMES, MIN_SCALE_INDEX, MAX_SCALE_INDEX } from './utils/musicConstants.js';
 import {
   hideAlienPanel,
@@ -71,8 +71,8 @@ import { createDailyTipManager } from './utils/dailyTips.js';
 import * as el from './utils/domElements.js';
 import { ONE_WAY_TYPE, drawArrow, getArrowPosition } from './connectors.js';
 import { CIRCLE_FIFTHS_TYPE, applyZodiacPresetToCircle, initCircleNode as initCircleFifthsNode, handleCirclePulse as handleCircleFifthsPulse, buildCenterInstrumentPanel as buildCircleCenterPanel } from './orbs/circle-fifths.js';
-import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGalacticDots, updateGalacticBloom, MELODIC_PATTERNS } from './orbs/galactic-bloom.js';
-import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS } from './orbs/tonnetz-sequencer.js';
+import { GALACTIC_BLOOM_TYPE, initGalacticNode, handleGalacticPulse, rebuildGalacticDots, updateGalacticBloom, MELODIC_PATTERNS, GALACTIC_PRESETS, applyGalacticPreset, mutateGalacticBloom } from './orbs/galactic-bloom.js';
+import { TONNETZ_TYPE, initTonnetzNode, handleTonnetzPulse, buildTonnetzCenterInstrumentPanel, TONNETZ_PRESETS, applyTonnetzPreset } from './orbs/tonnetz-sequencer.js';
 import { PULSE_BURST_TYPE, initPulseBurstNode, handlePulseBurstPulse, buildPulseBurstPanel } from './orbs/pulse-burst.js';
 import { createMindOrb, DEFAULT_MIND_PARAMS, DEFAULT_QUEEN_MIND_PARAMS } from './orbs/mind-orb.js';
 import { initStarfield, initNeuralBackground, drawBackground, backgroundMode, setBackgroundMode } from './utils/backgrounds.js';
@@ -471,8 +471,7 @@ const ZODIAC_GLYPHS = {
 };
 const ZODIAC_PRESETS = {
   Aries:        { sequenceMode:'step',   direction:'clockwise',       stepPattern:'2,1,1' },
-  // Taurus intentionally holds the root (repeats), as requested
-  Taurus:       { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1', holdRoot:true },
+  Taurus:       { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1,3,5,2' },
   Gemini:       { sequenceMode:'step',   direction:'clockwise',       stepPattern:'1,1,2' },
   Cancer:       { sequenceMode:'step',   direction:'counterclockwise',stepPattern:'2,1,2' },
   Leo:          { sequenceMode:'step',   direction:'clockwise',       stepPattern:'2,2,1' },
@@ -540,6 +539,43 @@ function colorWithAlpha(colorStr, alpha) {
     return `rgba(255,255,255,${alpha})`;
   }
 }
+
+function drawSequencerOuterLine(rectX, rectY, width, height, strokeColor, options = {}) {
+  if (!ctx) return;
+  const {
+    selected = false,
+  } = options;
+  const originalStrokeStyle = ctx.strokeStyle;
+  const originalLineWidth = ctx.lineWidth;
+  const originalShadowColor = ctx.shadowColor;
+  const originalShadowBlur = ctx.shadowBlur;
+
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
+  ctx.shadowColor = strokeColor;
+  ctx.shadowBlur = (selected ? 8 : 4) / viewScale;
+  ctx.strokeRect(rectX, rectY, width, height);
+
+  if (selected) {
+    const outlineOffset = 3 / viewScale;
+    ctx.strokeStyle = "rgba(255, 255, 0, 0.9)";
+    ctx.lineWidth = Math.max(0.5 / viewScale, 1.5 / viewScale);
+    ctx.shadowColor = "rgba(255, 255, 0, 0.7)";
+    ctx.shadowBlur = 10 / viewScale;
+    ctx.strokeRect(
+      rectX - outlineOffset,
+      rectY - outlineOffset,
+      width + outlineOffset * 2,
+      height + outlineOffset * 2,
+    );
+  }
+
+  ctx.strokeStyle = originalStrokeStyle;
+  ctx.lineWidth = originalLineWidth;
+  ctx.shadowColor = originalShadowColor;
+  ctx.shadowBlur = originalShadowBlur;
+}
+
 function calcGridSequencerWidth(
   cols,
   height = GRID_SEQUENCER_DEFAULT_HEIGHT,
@@ -1036,6 +1072,7 @@ initPatchEffects({
   getFogWetGain: () => fogWetGain,
   getScreenCoords,
   getWorldCoords,
+  getViewScale: () => viewScale,
   saveState,
 });
 let currentGlobalPulseId = 0;
@@ -1139,19 +1176,217 @@ let userGroupIdCounter = 0;
 let paramGroups = [];
 let paramGroupIdCounter = 0;
 const paramGroupMap = new WeakMap();
-function makeUserDefinedGroup() {
+const PARAM_GROUP_EXCLUDED_KEYS = new Set([
+  "pitch",
+  "scaleIndex",
+  "buffer",
+  "waveformPath",
+  "activeRetriggers",
+  "triggeredInThisSweep",
+]);
+
+function cloneParamValue(value) {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(cloneParamValue);
+  if (typeof AudioBuffer !== "undefined" && value instanceof AudioBuffer) return undefined;
+  const clone = {};
+  Object.entries(value).forEach(([key, childValue]) => {
+    const clonedChild = cloneParamValue(childValue);
+    if (clonedChild !== undefined) clone[key] = clonedChild;
+  });
+  return clone;
+}
+
+function cloneAudioParamsForLinking(params = {}) {
+  const clone = {};
+  Object.entries(params).forEach(([key, value]) => {
+    if (PARAM_GROUP_EXCLUDED_KEYS.has(key)) return;
+    const clonedValue = cloneParamValue(value);
+    if (clonedValue !== undefined) clone[key] = clonedValue;
+  });
+  return clone;
+}
+
+function getLinkableParamKeys(nodesToInspect) {
+  if (!Array.isArray(nodesToInspect) || nodesToInspect.length === 0) return [];
+  const keySets = nodesToInspect.map((node) => {
+    const params = cloneAudioParamsForLinking(node.audioParams || {});
+    return new Set(Object.keys(params));
+  });
+  const [firstSet, ...restSets] = keySets;
+  return Array.from(firstSet)
+    .filter((key) => restSets.every((set) => set.has(key)))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function getPlayableParamNodesFromSelection() {
+  return Array.from(selectedElements)
+    .filter((el) => el.type === "node")
+    .map((el) => findNodeById(el.id))
+    .filter(
+      (n) =>
+        n &&
+        isPlayableNode(n) &&
+        n.audioParams &&
+        n.audioNodes &&
+        n.type !== TIMELINE_GRID_TYPE
+    );
+}
+
+function getNodeKindLabel(node) {
+  if (!node) return "Unknown";
+  const engine = node.audioParams?.engine || node.audioParams?.waveform;
+  return engine ? `${node.type}: ${engine}` : node.type;
+}
+
+function getNodeKindName(node) {
+  if (!node) return "Unknown";
+  const rawKind = String(node.audioParams?.engine || node.audioParams?.waveform || node.type || "orb");
+  const kindMap = {
+    tonefm: "FM",
+    tonepluck: "Pluck",
+    tone: "Analog",
+    pulse: "Pulse",
+    etheraura: "Ether Aura",
+    fmDrone: "FM Drone",
+    motion_resonator: "Motion Resonator",
+  };
+  if (kindMap[rawKind]) return kindMap[rawKind];
+  if (rawKind.startsWith("sampler_")) return "Sampler";
+  return rawKind
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getNodeTypeName(node) {
+  if (!node) return "Orbs";
+  return String(node.type || "orb")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function categorizeParamKey(key) {
+  const lower = String(key).toLowerCase();
+  if (lower.includes("env") || lower.includes("attack") || lower.includes("decay") || lower.includes("sustain") || lower.includes("release")) return "Envelope";
+  if (lower.includes("filter") || lower.includes("cutoff") || lower === "q" || lower.includes("resonance")) return "Filter";
+  if (lower.includes("osc") || lower.includes("wave") || lower.includes("detune") || lower.includes("harmonic") || lower.includes("modulation")) return "Oscillator";
+  if (lower.includes("orbitone") || lower.includes("interval")) return "Orbitones";
+  if (lower.includes("sync") || lower.includes("rate") || lower.includes("speed") || lower.includes("time") || lower.includes("duration")) return "Timing";
+  if (lower.includes("volume") || lower.includes("gain") || lower.includes("level") || lower.includes("pan") || lower.includes("mix")) return "Level";
+  if (lower.includes("delay") || lower.includes("reverb") || lower.includes("distortion") || lower.includes("feedback")) return "FX";
+  return "Other";
+}
+
+function materializeLinkedNodeParams(node) {
+  if (!node || !node.audioParams) return {};
+  return {
+    ...cloneAudioParamsForLinking(node.audioParams),
+    pitch: node.audioParams.pitch,
+    scaleIndex: node.audioParams.scaleIndex,
+  };
+}
+
+function detachNodesFromParamGroups(nodeIds) {
+  const ids = new Set(nodeIds);
+  paramGroups.forEach((group) => {
+    ids.forEach((id) => {
+      if (!group.nodeIds.has(id)) return;
+      const node = findNodeById(id);
+      if (node) node.audioParams = materializeLinkedNodeParams(node);
+      group.nodeIds.delete(id);
+      group.nodeParamTargets?.delete(id);
+    });
+  });
+  paramGroups = paramGroups.filter((group) => group.nodeIds.size > 0);
+}
+
+function createLinkedParamProxy(node, group, initialParams) {
+  const target = {
+    ...(node.audioParams || {}),
+    ...cloneAudioParamsForLinking(initialParams),
+    pitch: node.audioParams?.pitch,
+    scaleIndex: node.audioParams?.scaleIndex,
+  };
+  group.nodeParamTargets.set(node.id, target);
+  const proxy = new Proxy(target, {
+    set(localTarget, prop, value) {
+      localTarget[prop] = value;
+      if (typeof prop === "symbol" || !group.paramKeys.has(prop) || group.syncing) {
+        if (node.audioNodes) refreshNodeAudio(node);
+        return true;
+      }
+      group.syncing = true;
+      group.nodeIds.forEach((id) => {
+        const linkedNode = findNodeById(id);
+        const linkedTarget = group.nodeParamTargets.get(id);
+        if (!linkedNode || !linkedTarget) return;
+        linkedTarget[prop] = cloneParamValue(value);
+        if (linkedNode.audioNodes) refreshNodeAudio(linkedNode);
+      });
+      group.syncing = false;
+      return true;
+    },
+    deleteProperty(localTarget, prop) {
+      delete localTarget[prop];
+      group.paramKeys.delete(prop);
+      return true;
+    },
+  });
+  paramGroupMap.set(proxy, group);
+  return proxy;
+}
+
+function createParameterGroupFromNodes(selectedNodes, paramKeys = null) {
+  if (!Array.isArray(selectedNodes) || selectedNodes.length < 2) {
+    alert("Select at least two compatible nodes to link.");
+    return null;
+  }
+  const firstNodeType = selectedNodes[0].type;
+  if (!selectedNodes.every((n) => n.type === firstNodeType)) {
+    alert("Select nodes of the same type to link.");
+    return null;
+  }
+  const keys = Array.isArray(paramKeys) && paramKeys.length > 0
+    ? paramKeys.filter((key) => !PARAM_GROUP_EXCLUDED_KEYS.has(key))
+    : getLinkableParamKeys(selectedNodes);
+  if (keys.length === 0) {
+    alert("No shared parameters found to link.");
+    return null;
+  }
+  detachNodesFromParamGroups(selectedNodes.map((n) => n.id));
+  const baseParams = cloneAudioParamsForLinking(selectedNodes[0].audioParams || {});
+  const group = {
+    id: `paramGroup_${paramGroupIdCounter++}`,
+    nodeType: firstNodeType,
+    nodeIds: new Set(selectedNodes.map((n) => n.id)),
+    paramKeys: new Set(keys),
+    nodeParamTargets: new Map(),
+    syncing: false,
+  };
+  selectedNodes.forEach((node) => {
+    const initialParams = { ...(node.audioParams || {}) };
+    keys.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(baseParams, key)) {
+        initialParams[key] = cloneParamValue(baseParams[key]);
+      }
+    });
+    node.audioParams = createLinkedParamProxy(node, group, initialParams);
+    refreshNodeAudio(node);
+  });
+  paramGroups.push(group);
+  return group;
+}
+
+function createUserDefinedGroupFromNodeIds(selectedNodeIds) {
   if (!isAudioReady || !audioContext) {
       alert("Audio context not ready.");
-      return;
+      return null;
   }
-
-  const selectedNodeIds = Array.from(selectedElements)
-      .filter(el => el.type === 'node')
-      .map(el => el.id);
 
   if (selectedNodeIds.length === 0) {
       alert("Select some nodes to group first.");
-      return;
+      return null;
   }
 
   userDefinedGroups.forEach(group => {
@@ -1173,7 +1408,7 @@ function makeUserDefinedGroup() {
   groupReverbSendGain.gain.value = DEFAULT_REVERB_SEND;
 
   const newNodeIdSet = new Set(selectedNodeIds);
-  userDefinedGroups.push({
+  const group = {
       id: newGroupId,
       nodeIds: newNodeIdSet,
       gainNode: newMainGroupGainNode, 
@@ -1184,11 +1419,20 @@ function makeUserDefinedGroup() {
       delaySendLevel: DEFAULT_DELAY_SEND,
       reverbSendLevel: DEFAULT_REVERB_SEND,
       userDefined: true
-  });
+  };
+  userDefinedGroups.push(group);
 
   identifyAndRouteAllGroups();
   updateMixerGUI();
   saveState();
+  return group;
+}
+
+function makeUserDefinedGroup() {
+  const selectedNodeIds = Array.from(selectedElements)
+      .filter(el => el.type === 'node')
+      .map(el => el.id);
+  createUserDefinedGroupFromNodeIds(selectedNodeIds);
 }
 
 function refreshNodeAudio(node) {
@@ -1196,12 +1440,111 @@ function refreshNodeAudio(node) {
   updateNodeAudioParams(node);
 }
 
+function ensurePatchEffectSendsForNode(node) {
+  if (!node || !node.audioNodes || !audioContext) return;
+  const outputNode =
+    node.audioNodes.gainNode ||
+    node.audioNodes.mainGain ||
+    node.audioNodes.output ||
+    node.audioNodes.mix;
+  if (!outputNode || typeof outputNode.connect !== "function") return;
+
+  const ensureSend = (key, inputNode, flag) => {
+    if (!inputNode) return;
+    try {
+      if (!node.audioNodes[key]) {
+        const sendGain = audioContext.createGain();
+        sendGain.gain.value = 0;
+        outputNode.connect(sendGain);
+        node.audioNodes[key] = sendGain;
+      }
+      const sendGain = node.audioNodes[key];
+      if (sendGain && !sendGain[flag] && typeof sendGain.connect === "function") {
+        sendGain.connect(inputNode);
+        sendGain[flag] = true;
+      }
+    } catch {}
+  };
+
+  ensureSend("mistSendGain", mistEffectInput, "__mistConnected");
+  ensureSend("crushSendGain", crushEffectInput, "__crushConnected");
+  ensureSend("fogSendGain", fogEffectInput, "__fogConnected");
+}
+
+function updatePatchEffectWetness() {
+  nodes.forEach(ensurePatchEffectSendsForNode);
+  updateMistWetness();
+  updateCrushWetness();
+  updateFogWetness();
+}
+
+const DEFAULT_MOTION_BOWL_PARAMS = {
+  volume: 0.85,
+  reverbSend: 0.35,
+  delaySend: 0.08,
+  resonance: 7,
+  motionThreshold: 8,
+  motionSensitivity: 190,
+  motionBrightness: 1.7,
+  motionShapeAmount: 1.0,
+  motionSpace: 0.35,
+  motionRoomSize: 0.45,
+  motionRoomDamp: 0.35,
+  motionWidth: 0.65,
+};
+
+function applyMotionBowlAudioParams(node, time = audioContext?.currentTime ?? 0) {
+  if (!node?.audioNodes || node.audioParams?.engine !== "motion_resonator") return;
+  const p = { ...DEFAULT_MOTION_BOWL_PARAMS, ...(node.audioParams || {}) };
+  const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+  const space = clamp01(p.motionSpace ?? p.reverbSend ?? DEFAULT_MOTION_BOWL_PARAMS.motionSpace);
+  const roomSize = clamp01(p.motionRoomSize ?? DEFAULT_MOTION_BOWL_PARAMS.motionRoomSize);
+  const roomDamp = clamp01(p.motionRoomDamp ?? DEFAULT_MOTION_BOWL_PARAMS.motionRoomDamp);
+  const width = clamp01(p.motionWidth ?? DEFAULT_MOTION_BOWL_PARAMS.motionWidth);
+  const tau = 0.05;
+  const {
+    gainNode,
+    reverbSendGain,
+    delaySendGain,
+    roomInput,
+    roomLeftDelay,
+    roomRightDelay,
+    roomLeftFilter,
+    roomRightFilter,
+    roomLeftGain,
+    roomRightGain,
+    roomLeftPan,
+    roomRightPan,
+  } = node.audioNodes;
+
+  gainNode?.gain?.setTargetAtTime(p.volume ?? DEFAULT_MOTION_BOWL_PARAMS.volume, time, tau);
+  reverbSendGain?.gain?.setTargetAtTime(p.reverbSend ?? space, time, tau);
+  delaySendGain?.gain?.setTargetAtTime(p.delaySend ?? DEFAULT_MOTION_BOWL_PARAMS.delaySend, time, tau);
+  if (!roomInput) return;
+
+  roomInput.gain.setTargetAtTime(space * 0.7, time, tau);
+  roomLeftDelay.delayTime.setTargetAtTime(0.015 + roomSize * 0.07, time, tau);
+  roomRightDelay.delayTime.setTargetAtTime(0.026 + roomSize * 0.11, time, tau);
+  const cutoff = 1400 + (1 - roomDamp) * 9500;
+  roomLeftFilter.type = "lowpass";
+  roomRightFilter.type = "lowpass";
+  roomLeftFilter.frequency.setTargetAtTime(cutoff, time, tau);
+  roomRightFilter.frequency.setTargetAtTime(cutoff * 0.82, time, tau);
+  roomLeftFilter.Q.setTargetAtTime(0.65 + roomSize * 1.4, time, tau);
+  roomRightFilter.Q.setTargetAtTime(0.65 + roomSize * 1.2, time, tau);
+  roomLeftGain.gain.setTargetAtTime(0.32 + roomSize * 0.34, time, tau);
+  roomRightGain.gain.setTargetAtTime(0.28 + roomSize * 0.38, time, tau);
+  roomLeftPan.pan?.setTargetAtTime(-width, time, tau);
+  roomRightPan.pan?.setTargetAtTime(width, time, tau);
+}
+
 function createMotionResonatorAudioNodes(node) {
   const params = node.audioParams || {};
   const baseFreq = sanitizeFrequency(params.pitch, A4_FREQ);
-  const pannerNode = typeof audioContext.createStereoPanner === 'function'
+  const createPanNode = () => typeof audioContext.createStereoPanner === 'function'
     ? audioContext.createStereoPanner()
     : audioContext.createGain();
+  const pannerNode = createPanNode();
   const audioNodes = {
     oscillator1: audioContext.createOscillator(),
     oscillator2: audioContext.createOscillator(),
@@ -1210,6 +1553,15 @@ function createMotionResonatorAudioNodes(node) {
     motionGain: audioContext.createGain(),
     panner: pannerNode,
     gainNode: audioContext.createGain(),
+    roomInput: audioContext.createGain(),
+    roomLeftDelay: audioContext.createDelay(0.25),
+    roomRightDelay: audioContext.createDelay(0.25),
+    roomLeftFilter: audioContext.createBiquadFilter(),
+    roomRightFilter: audioContext.createBiquadFilter(),
+    roomLeftGain: audioContext.createGain(),
+    roomRightGain: audioContext.createGain(),
+    roomLeftPan: createPanNode(),
+    roomRightPan: createPanNode(),
   };
 
   audioNodes.oscillator1.type = 'sine';
@@ -1234,6 +1586,18 @@ function createMotionResonatorAudioNodes(node) {
   audioNodes.bodyFilter.connect(audioNodes.motionGain);
   audioNodes.motionGain.connect(audioNodes.panner);
   audioNodes.panner.connect(audioNodes.gainNode);
+  audioNodes.motionGain.connect(audioNodes.roomInput);
+  audioNodes.roomInput.connect(audioNodes.roomLeftDelay);
+  audioNodes.roomInput.connect(audioNodes.roomRightDelay);
+  audioNodes.roomLeftDelay.connect(audioNodes.roomLeftFilter);
+  audioNodes.roomRightDelay.connect(audioNodes.roomRightFilter);
+  audioNodes.roomLeftFilter.connect(audioNodes.roomLeftGain);
+  audioNodes.roomRightFilter.connect(audioNodes.roomRightGain);
+  audioNodes.roomLeftGain.connect(audioNodes.roomLeftPan);
+  audioNodes.roomRightGain.connect(audioNodes.roomRightPan);
+  audioNodes.roomLeftPan.connect(audioNodes.gainNode);
+  audioNodes.roomRightPan.connect(audioNodes.gainNode);
+  applyMotionBowlAudioParams({ ...node, audioNodes });
 
   if (isReverbReady && reverbPreDelayNode) {
     audioNodes.reverbSendGain = audioContext.createGain();
@@ -1246,6 +1610,24 @@ function createMotionResonatorAudioNodes(node) {
     audioNodes.delaySendGain.gain.value = params.delaySend ?? 0.08;
     audioNodes.gainNode.connect(audioNodes.delaySendGain);
     audioNodes.delaySendGain.connect(masterDelaySendGain);
+  }
+  if (mistEffectInput) {
+    audioNodes.mistSendGain = audioContext.createGain();
+    audioNodes.mistSendGain.gain.value = 0;
+    audioNodes.gainNode.connect(audioNodes.mistSendGain);
+    audioNodes.mistSendGain.connect(mistEffectInput);
+  }
+  if (crushEffectInput) {
+    audioNodes.crushSendGain = audioContext.createGain();
+    audioNodes.crushSendGain.gain.value = 0;
+    audioNodes.gainNode.connect(audioNodes.crushSendGain);
+    audioNodes.crushSendGain.connect(crushEffectInput);
+  }
+  if (fogEffectInput) {
+    audioNodes.fogSendGain = audioContext.createGain();
+    audioNodes.fogSendGain.gain.value = 0;
+    audioNodes.gainNode.connect(audioNodes.fogSendGain);
+    audioNodes.fogSendGain.connect(fogEffectInput);
   }
 
   audioNodes.gainNode.connect(masterGain);
@@ -1311,11 +1693,12 @@ function updateMotionResonatorFromMovement(node, dt) {
   const baseFreq = sanitizeFrequency(params.pitch, A4_FREQ);
   const brightness = params.motionBrightness ?? 1.7;
   const shapeAmount = params.motionShapeAmount ?? 1.0;
+  const widthAmount = Math.max(0, Math.min(1, params.motionWidth ?? DEFAULT_MOTION_BOWL_PARAMS.motionWidth));
   const gain = (params.volume ?? 0.85) * smoothed;
   const oval = node.motionOvalAmount * shapeAmount;
   const bias = node.motionHorizontalBias;
   const curve = node.motionCurveEnergy;
-  const pan = Math.max(-0.75, Math.min(0.75, horizontalMotion * smoothed * (0.35 + oval * 0.55)));
+  const pan = Math.max(-1, Math.min(1, horizontalMotion * smoothed * widthAmount * (0.45 + oval * 0.75)));
   const pitchBend = 1 + verticalMotion * smoothed * (0.03 + oval * 0.08);
   const harmonicStretch = 1.505 + bias * oval * 0.22 + curve * 0.08;
   try {
@@ -1405,127 +1788,275 @@ function applyBlackHoleShapeDrag(node, handleType, x, y) {
   node.audioParams.orbitRotation = rotation;
 }
 
-  function makeParameterGroup() {
-    const selectedNodes = Array.from(selectedElements)
-      .filter((el) => el.type === "node")
-      .map((el) => findNodeById(el.id))
-      .filter(
-        (n) =>
-          n &&
-          isPlayableNode(n) &&
-          n.audioParams &&
-          n.audioNodes &&
-          n.type !== TIMELINE_GRID_TYPE
-      );
-
-    if (selectedNodes.length < 2) {
-      alert("Select at least two compatible nodes to link.");
-      return;
-    }
-    const firstNodeType = selectedNodes[0].type;
-    if (!selectedNodes.every((n) => n.type === firstNodeType)) {
-      alert("Select nodes of the same type to link.");
-      return;
-    }
-  paramGroups.forEach((g) => {
-    selectedNodes.forEach((n) => g.nodeIds.delete(n.id));
-  });
-  paramGroups = paramGroups.filter((g) => g.nodeIds.size > 0);
-
-  const firstNode = selectedNodes[0];
-  if (!firstNode || !firstNode.audioParams) {
-    alert("Selected node has no parameters.");
-    return;
-  }
-  const baseParams = JSON.parse(JSON.stringify(firstNode.audioParams));
-  delete baseParams.pitch;
-  delete baseParams.scaleIndex;
-  const group = {
-    id: `paramGroup_${paramGroupIdCounter++}`,
-    nodeIds: new Set(selectedNodes.map((n) => n.id)),
-    params: null,
-    nodeParamTargets: new Map(),
-  };
-  const proxy = new Proxy(baseParams, {
-    set(target, prop, value) {
-      if (prop === "pitch" || prop === "scaleIndex") {
-        return true;
-      }
-      target[prop] = value;
-      const g = paramGroupMap.get(proxy);
-      if (g) {
-        g.nodeIds.forEach((id) => {
-          const n = findNodeById(id);
-          const nodeTarget = g.nodeParamTargets.get(id);
-          // Ensure each linked node's parameter object reflects the latest
-          // value so audio updates propagate immediately without triggering
-          // recursive proxy writes.
-          if (nodeTarget) {
-            if (Object.prototype.hasOwnProperty.call(nodeTarget, prop)) {
-              nodeTarget[prop] = value;
-            } else {
-              Object.defineProperty(nodeTarget, prop, {
-                value,
-                writable: true,
-                enumerable: true,
-                configurable: true,
-              });
-            }
-          }
-          if (n && n.audioNodes) refreshNodeAudio(n);
-        });
-      }
-      return true;
-    },
-  });
-  group.params = proxy;
-  paramGroupMap.set(proxy, group);
-  paramGroups.push(group);
-  group.nodeIds.forEach((id) => {
-    const n = findNodeById(id);
-    if (n) {
-      const nodeParams = { pitch: n.audioParams.pitch, scaleIndex: n.audioParams.scaleIndex };
-      Object.setPrototypeOf(nodeParams, proxy);
-      const paramProxy = new Proxy(nodeParams, {
-        get(target, prop) {
-          if (prop in target) return target[prop];
-          return proxy[prop];
-        },
-        set(target, prop, value) {
-          if (prop === "pitch" || prop === "scaleIndex") {
-            target[prop] = value;
-            refreshNodeAudio(n);
-          } else {
-            proxy[prop] = value;
-          }
-          return true;
-        },
-      });
-      group.nodeParamTargets.set(id, nodeParams);
-      n.audioParams = paramProxy;
-      refreshNodeAudio(n);
-    }
-  });
-  saveState();
+function makeParameterGroup() {
+  const group = createParameterGroupFromNodes(getPlayableParamNodesFromSelection());
+  if (group) saveState();
 }
 
 function removeNodeFromParamGroups(nodeId) {
   paramGroups.forEach((g) => {
     if (g.nodeIds.delete(nodeId)) {
-      g.nodeParamTargets.delete(nodeId);
+      g.nodeParamTargets?.delete(nodeId);
       const n = findNodeById(nodeId);
       if (n) {
-        const params = {
-          ...JSON.parse(JSON.stringify(g.params)),
-          pitch: n.audioParams.pitch,
-          scaleIndex: n.audioParams.scaleIndex,
-        };
-        n.audioParams = params;
+        n.audioParams = materializeLinkedNodeParams(n);
         refreshNodeAudio(n);
       }
     }
   });
   paramGroups = paramGroups.filter((g) => g.nodeIds.size > 0);
+}
+
+function restoreParamGroupsFromState(savedGroups) {
+  paramGroups = [];
+  if (!Array.isArray(savedGroups)) return;
+  savedGroups.forEach((groupData) => {
+    const selectedNodes = Array.isArray(groupData.nodeIds)
+      ? groupData.nodeIds.map((id) => findNodeById(id)).filter(Boolean)
+      : [];
+    const keys = Array.isArray(groupData.paramKeys) ? groupData.paramKeys : [];
+    if (selectedNodes.length < 2 || keys.length === 0) return;
+    const group = createParameterGroupFromNodes(selectedNodes, keys);
+    if (group && typeof groupData.id === "string") group.id = groupData.id;
+  });
+}
+
+function serializeParamGroups() {
+  return paramGroups.map((group) => ({
+    id: group.id,
+    nodeType: group.nodeType,
+    nodeIds: Array.from(group.nodeIds),
+    paramKeys: Array.from(group.paramKeys || []),
+  }));
+}
+
+function ensureParameterGroupDialog() {
+  let overlay = document.getElementById("parameterGroupOverlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "parameterGroupOverlay";
+  overlay.className = "modal-overlay hidden";
+  overlay.innerHTML = `
+    <div class="parameter-group-dialog" role="dialog" aria-modal="true" aria-labelledby="parameterGroupTitle">
+      <div class="parameter-group-header">
+        <h3 id="parameterGroupTitle">Parameter Groups</h3>
+        <button id="parameterGroupCloseBtn" class="close-panel-button" title="Close">&times;</button>
+      </div>
+      <div class="parameter-group-actions">
+        <button id="parameterGroupSameKindBtn" class="panel-button-like">Select Same Kind</button>
+        <button id="parameterGroupAllNodesBtn" class="panel-button-like">All Compatible</button>
+        <button id="parameterGroupClearNodesBtn" class="panel-button-like">Clear Nodes</button>
+      </div>
+      <div class="parameter-group-body">
+        <section>
+          <h4>Nodes</h4>
+          <div id="parameterGroupNodeList" class="parameter-group-list"></div>
+        </section>
+        <section>
+          <h4>Parameters</h4>
+          <div id="parameterGroupCategoryButtons" class="parameter-group-categories"></div>
+          <div id="parameterGroupParamList" class="parameter-group-list"></div>
+        </section>
+      </div>
+      <div id="parameterGroupStatus" class="parameter-group-status"></div>
+      <div class="parameter-group-footer">
+        <button id="audioGroupCreateBtn" class="panel-button-like">Create Audio Group</button>
+        <button id="parameterGroupCreateBtn" class="panel-button-like primary">Create Parameter Group</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeParameterGroupDialog();
+  });
+  overlay.querySelector("#parameterGroupCloseBtn")?.addEventListener("click", closeParameterGroupDialog);
+  return overlay;
+}
+
+function getParameterGroupCandidateNodes() {
+  return nodes.filter(
+    (node) =>
+      node &&
+      isPlayableNode(node) &&
+      node.audioParams &&
+      node.audioNodes &&
+      node.type !== TIMELINE_GRID_TYPE
+  );
+}
+
+function setParameterGroupStatus(message) {
+  const status = document.getElementById("parameterGroupStatus");
+  if (status) status.textContent = message || "";
+}
+
+function getCheckedParameterGroupNodes() {
+  return Array.from(document.querySelectorAll("#parameterGroupNodeList input[type='checkbox']:checked"))
+    .map((input) => findNodeById(parseInt(input.value, 10)))
+    .filter(Boolean);
+}
+
+function renderParameterGroupParamChoices(selectedNodesForDialog) {
+  const paramList = document.getElementById("parameterGroupParamList");
+  const categoryButtons = document.getElementById("parameterGroupCategoryButtons");
+  if (!paramList || !categoryButtons) return;
+  paramList.innerHTML = "";
+  categoryButtons.innerHTML = "";
+  const keys = getLinkableParamKeys(selectedNodesForDialog);
+  if (selectedNodesForDialog.length < 2) {
+    setParameterGroupStatus("Select at least two nodes.");
+    return;
+  }
+  if (keys.length === 0) {
+    setParameterGroupStatus("No shared parameters for this selection.");
+    return;
+  }
+  setParameterGroupStatus(`${selectedNodesForDialog.length} nodes, ${keys.length} shared parameters.`);
+  const categories = new Map();
+  keys.forEach((key) => {
+    const category = categorizeParamKey(key);
+    if (!categories.has(category)) categories.set(category, []);
+    categories.get(category).push(key);
+  });
+  Array.from(categories.keys()).sort().forEach((category) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "parameter-category-btn";
+    button.textContent = category;
+    button.addEventListener("click", () => {
+      const categoryKeys = new Set(categories.get(category));
+      paramList.querySelectorAll("input[type='checkbox']").forEach((input) => {
+        if (categoryKeys.has(input.value)) input.checked = true;
+      });
+    });
+    categoryButtons.appendChild(button);
+  });
+  keys.forEach((key) => {
+    const label = document.createElement("label");
+    label.className = "parameter-check-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = key;
+    checkbox.checked = true;
+    const text = document.createElement("span");
+    text.textContent = `${key} (${categorizeParamKey(key)})`;
+    label.append(checkbox, text);
+    paramList.appendChild(label);
+  });
+}
+
+function updateParameterGroupActionLabels(selectedNodesForDialog) {
+  const sameKindBtn = document.getElementById("parameterGroupSameKindBtn");
+  const allNodesBtn = document.getElementById("parameterGroupAllNodesBtn");
+  const audioGroupBtn = document.getElementById("audioGroupCreateBtn");
+  const reference = selectedNodesForDialog[0] || getPlayableParamNodesFromSelection()[0] || getParameterGroupCandidateNodes()[0];
+  if (sameKindBtn) sameKindBtn.textContent = reference ? `Select All ${getNodeKindName(reference)}` : "Select Same Kind";
+  if (allNodesBtn) allNodesBtn.textContent = reference ? `Select All ${getNodeTypeName(reference)}` : "All Compatible";
+  if (audioGroupBtn) {
+    audioGroupBtn.textContent = selectedNodesForDialog.length > 0
+      ? `Create Audio Group (${selectedNodesForDialog.length})`
+      : "Create Audio Group";
+  }
+}
+
+function updateParameterGroupDialogSelectionState() {
+  const selectedNodesForDialog = getCheckedParameterGroupNodes();
+  updateParameterGroupActionLabels(selectedNodesForDialog);
+  renderParameterGroupParamChoices(selectedNodesForDialog);
+}
+
+function refreshParameterGroupDialog() {
+  const nodeList = document.getElementById("parameterGroupNodeList");
+  if (!nodeList) return;
+  nodeList.innerHTML = "";
+  const selectedNodeIds = new Set(getPlayableParamNodesFromSelection().map((node) => node.id));
+  const candidates = getParameterGroupCandidateNodes();
+  candidates.forEach((node) => {
+    const label = document.createElement("label");
+    label.className = "parameter-check-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = String(node.id);
+    checkbox.checked = selectedNodeIds.has(node.id);
+    checkbox.addEventListener("change", updateParameterGroupDialogSelectionState);
+    const text = document.createElement("span");
+    text.textContent = `#${node.id} ${getNodeKindLabel(node)}`;
+    label.append(checkbox, text);
+    nodeList.appendChild(label);
+  });
+  const sameKindBtn = document.getElementById("parameterGroupSameKindBtn");
+  const allNodesBtn = document.getElementById("parameterGroupAllNodesBtn");
+  const clearNodesBtn = document.getElementById("parameterGroupClearNodesBtn");
+  const createBtn = document.getElementById("parameterGroupCreateBtn");
+  const audioGroupBtn = document.getElementById("audioGroupCreateBtn");
+  if (sameKindBtn) sameKindBtn.onclick = () => {
+    const reference = getCheckedParameterGroupNodes()[0] || getPlayableParamNodesFromSelection()[0] || candidates[0];
+    const kind = getNodeKindLabel(reference);
+    nodeList.querySelectorAll("input[type='checkbox']").forEach((input) => {
+      const node = findNodeById(parseInt(input.value, 10));
+      input.checked = !!node && getNodeKindLabel(node) === kind;
+    });
+    updateParameterGroupDialogSelectionState();
+  };
+  if (allNodesBtn) allNodesBtn.onclick = () => {
+    const reference = getCheckedParameterGroupNodes()[0] || getPlayableParamNodesFromSelection()[0] || candidates[0];
+    const type = reference?.type;
+    nodeList.querySelectorAll("input[type='checkbox']").forEach((input) => {
+      const node = findNodeById(parseInt(input.value, 10));
+      input.checked = !!node && node.type === type;
+    });
+    updateParameterGroupDialogSelectionState();
+  };
+  if (clearNodesBtn) clearNodesBtn.onclick = () => {
+    nodeList.querySelectorAll("input[type='checkbox']").forEach((input) => { input.checked = false; });
+    updateParameterGroupDialogSelectionState();
+  };
+  if (createBtn) createBtn.onclick = () => {
+    const selectedNodesForGroup = getCheckedParameterGroupNodes();
+    const selectedKeys = Array.from(document.querySelectorAll("#parameterGroupParamList input[type='checkbox']:checked"))
+      .map((input) => input.value);
+    const group = createParameterGroupFromNodes(selectedNodesForGroup, selectedKeys);
+    if (group) {
+      saveState();
+      populateEditPanel();
+      closeParameterGroupDialog();
+    }
+  };
+  if (audioGroupBtn) audioGroupBtn.onclick = () => {
+    const selectedNodesForGroup = getCheckedParameterGroupNodes();
+    const group = createUserDefinedGroupFromNodeIds(selectedNodesForGroup.map((node) => node.id));
+    if (group) {
+      populateEditPanel();
+      closeParameterGroupDialog();
+    }
+  };
+  updateParameterGroupDialogSelectionState();
+}
+
+function openParameterGroupDialog() {
+  const overlay = ensureParameterGroupDialog();
+  overlay.classList.remove("hidden");
+  refreshParameterGroupDialog();
+}
+
+function closeParameterGroupDialog() {
+  document.getElementById("parameterGroupOverlay")?.classList.add("hidden");
+}
+
+function initAdvancedParameterGroupMenuItem() {
+  const fallbackUfoItem = document.getElementById("app-menu-enter-ufo-mode");
+  const advancedMenu = typeof appMenuEnterUfoMode?.closest === "function"
+    ? appMenuEnterUfoMode.closest(".app-menu-content")
+    : (typeof fallbackUfoItem?.closest === "function" ? fallbackUfoItem.closest(".app-menu-content") : null);
+  if (!advancedMenu || document.getElementById("app-menu-parameter-groups")) return;
+  const item = document.createElement("a");
+  item.href = "#";
+  item.id = "app-menu-parameter-groups";
+  item.textContent = "Parameter Groups";
+  item.addEventListener("click", (event) => {
+    event.preventDefault();
+    openParameterGroupDialog();
+  });
+  advancedMenu.appendChild(item);
 }
 
 let currentScaleKey = "major";
@@ -1550,7 +2081,7 @@ let isGridVisible = false;
 const GRID_OPACITY_LEVELS = [0, 0.1, 0.25, 0.5, 0.75, 1];
 let gridOpacityIndex = 0;
 let gridType = "lines";
-let isSnapEnabled = false;
+let isSnapEnabled = true;
 const DEFAULT_GRID_SIZE_PX = 50;
 const REFERENCE_BPM = 120;
 const PIXELS_PER_SIXTEENTH_AT_REF_BPM = 50;
@@ -2029,6 +2560,100 @@ function findNodeById(id) {
 
 function findConnectionById(id) {
   return connections.find((c) => c.id === id);
+}
+
+function isOneWayConnection(connection) {
+  return (
+    connection?.type === ONE_WAY_TYPE ||
+    (connection?.type == null && connection?.directional === true)
+  );
+}
+
+function normalizeConnectionDirection(connection) {
+  if (!connection) return connection;
+  if (!connection.type) {
+    connection.type = connection.directional ? ONE_WAY_TYPE : "standard";
+  }
+  connection.directional = isOneWayConnection(connection);
+  return connection;
+}
+
+function canPulseTravel(connection, fromNodeId, toNodeId) {
+  if (!connection) return false;
+  if (connection.nodeAId === fromNodeId && connection.nodeBId === toNodeId) {
+    return true;
+  }
+  if (connection.nodeBId === fromNodeId && connection.nodeAId === toNodeId) {
+    return !isOneWayConnection(connection);
+  }
+  return false;
+}
+
+function canPulseLeaveHandle(connection, fromNodeId, handle) {
+  if (!connection) return false;
+  if (connection.nodeAId === fromNodeId && connection.nodeAHandle === handle) {
+    return true;
+  }
+  if (connection.nodeBId === fromNodeId && connection.nodeBHandle === handle) {
+    return !isOneWayConnection(connection);
+  }
+  return false;
+}
+
+function findPulseConnection(fromNodeId, toNodeId) {
+  return connections.find((c) => canPulseTravel(c, fromNodeId, toNodeId));
+}
+
+function resetNodeRuntimeState(node) {
+  if (!node) return node;
+  node.lastTriggerPulseId = -1;
+  node.isTriggered = false;
+  node.animationState = 0;
+  node.activeRetriggers = [];
+  node.currentRetriggerVisualIndex = -1;
+  return node;
+}
+
+function normalizeLoadedNodeState(node) {
+  resetNodeRuntimeState(node);
+  if (!node?.audioParams) return node;
+  if (node.type === CIRCLE_FIFTHS_TYPE) {
+    if (
+      node.audioParams.randomChordProbability === undefined ||
+      node.audioParams.randomChordProbability === 0.6
+    ) {
+      node.audioParams.randomChordProbability = 0;
+    }
+    if (
+      node.audioParams.velocityJitter === undefined ||
+      node.audioParams.velocityJitter === 0.2
+    ) {
+      node.audioParams.velocityJitter = 0;
+    }
+    if (node.audioParams.chordSpreadProb === undefined) {
+      node.audioParams.chordSpreadProb = 0;
+    }
+  } else if (node.type === TONNETZ_TYPE) {
+    if (
+      node.audioParams.chordProbability === undefined ||
+      [0.4, 0.7, 0.8, 0.9].includes(node.audioParams.chordProbability)
+    ) {
+      node.audioParams.chordProbability = 0;
+    }
+    if (
+      node.audioParams.velocityJitter === undefined ||
+      [0.05, 0.1, 0.2, 0.3].includes(node.audioParams.velocityJitter)
+    ) {
+      node.audioParams.velocityJitter = 0;
+    }
+    if (
+      node.audioParams.harmonicSpread === undefined ||
+      [0.1, 0.3, 0.6].includes(node.audioParams.harmonicSpread)
+    ) {
+      node.audioParams.harmonicSpread = 0;
+    }
+  }
+  return node;
 }
 
 function findNearestOrb(x, y, maxDist) {
@@ -5051,6 +5676,9 @@ export function updateNodeAudioParams(node) {
   const sanitizedPitch = sanitizeFrequency(params.pitch, A4_FREQ);
   const pitchUpdateTimeConstant = 0.05;
   const generalUpdateTimeConstant = 0.02;
+  if (node.type === "sound" && params?.engine === "motion_resonator") {
+    applyMotionBowlAudioParams(node, now);
+  }
   const {
     oscillator1,
     osc1Gain,
@@ -5794,6 +6422,7 @@ export function updateNodeAudioParams(node) {
       if (isDelayReady && resDelay)
         resDelay.gain.setTargetAtTime(params.delaySend ?? 0.1, now, generalUpdateTimeConstant);
       resonauterGranParams.gMix = params.gMix ?? 0;
+      applyResonauterSpatialParams(node, now);
       const {
         combDelay,
         combFeedback,
@@ -8065,8 +8694,7 @@ function propagateTrigger(
         if (currentNode.grid && currentNode.grid[r] && currentNode.grid[r][currentNode.column]) {
           connections.forEach((c) => {
             if (
-              (c.nodeAId === currentNode.id && c.nodeAHandle === r) ||
-              (!c.directional && c.nodeBId === currentNode.id && c.nodeBHandle === r)
+              canPulseLeaveHandle(c, currentNode.id, r)
             ) {
               const targetId = c.nodeAId === currentNode.id ? c.nodeBId : c.nodeAId;
               const neighborNode = findNodeById(targetId);
@@ -8107,8 +8735,7 @@ function propagateTrigger(
         const columnHandle = 1000 + currentNode.column;
         connections.forEach((c) => {
           if (
-            (c.nodeAId === currentNode.id && c.nodeAHandle === columnHandle) ||
-            (!c.directional && c.nodeBId === currentNode.id && c.nodeBHandle === columnHandle)
+            canPulseLeaveHandle(c, currentNode.id, columnHandle)
           ) {
             const targetId = c.nodeAId === currentNode.id ? c.nodeBId : c.nodeAId;
             const neighborNode = findNodeById(targetId);
@@ -8153,6 +8780,10 @@ function propagateTrigger(
         createVisualPulse,
         connections,
         highlightCircleDegreeBars,
+        SAMPLER_DEFINITIONS,
+        addNode,
+        createAudioNodesForNode,
+        updateNodeAudioParams,
       });
     } else if (
       currentNode.type === GALACTIC_BLOOM_TYPE
@@ -8184,6 +8815,10 @@ function propagateTrigger(
         createVisualPulse,
         connections,
         highlightTonnetzPosition,
+        SAMPLER_DEFINITIONS,
+        addNode,
+        createAudioNodesForNode,
+        updateNodeAudioParams,
       });
     } else if (
       currentNode.type === PULSE_BURST_TYPE
@@ -8419,13 +9054,7 @@ function propagateTrigger(
         currentNode.connections.forEach((neighborId) => {
           if (neighborId === sourceNodeId) return;
           const neighborNode = findNodeById(neighborId);
-          const connection = connections.find(
-            (c) =>
-              (c.nodeAId === currentNode.id && c.nodeBId === neighborId) ||
-              (!c.directional &&
-                c.nodeAId === neighborId &&
-                c.nodeBId === currentNode.id),
-          );
+          const connection = findPulseConnection(currentNode.id, neighborId);
 
           if (
             neighborNode &&
@@ -10576,6 +11205,7 @@ export function saveState() {
       mrfaEnabled: mrfaEnabled,
       mrfaBandValues: mrfaGains.map(g => g.gain.value),
       userDefinedGroups: userDefinedGroups.map(group => ({...group, nodeIds: Array.from(group.nodeIds) })),
+      paramGroups: serializeParamGroups(),
       mistGroups: patchState.mistGroups.map(g => ({
           patches: g.patches.map(p => ({ x: p.x, y: p.y, size: p.size }))
       })),
@@ -10589,7 +11219,17 @@ export function saveState() {
 
 
   const replacer = (key, value) => {
-      if (key === "audioNodes" || key === "buffer" || key === "waveformPath" || key === "activeRetriggers" || key === "triggeredInThisSweep") {
+      if (
+          key === "audioNodes" ||
+          key === "buffer" ||
+          key === "waveformPath" ||
+          key === "activeRetriggers" ||
+          key === "currentRetriggerVisualIndex" ||
+          key === "lastTriggerPulseId" ||
+          key === "isTriggered" ||
+          key === "animationState" ||
+          key === "triggeredInThisSweep"
+      ) {
           return undefined;
       }
       // Exclude circular references from Queen Mind hive system
@@ -10737,11 +11377,11 @@ async function loadState(stateToLoad) {
         !removedIds.has(c.nodeAId) && !removedIds.has(c.nodeBId)
     );
 
-    nodes = filteredNodes;
+    nodes = filteredNodes.map(normalizeLoadedNodeState);
     if (typeof window !== 'undefined') {
         window.nodes = nodes;
     }
-    connections = filteredConnections;
+    connections = filteredConnections.map(normalizeConnectionDirection);
     nodeIdCounter = stateToLoad.nodeIdCounter;
     connectionIdCounter = stateToLoad.connectionIdCounter;
 
@@ -10926,6 +11566,7 @@ async function loadState(stateToLoad) {
         identifyAndRouteAllGroups();
         updateMixerGUI();
         initializeGlobalEffectSliders();
+        restoreParamGroupsFromState(stateToLoad.paramGroups);
     }
 
     // Restore patch effects (mist, crush, and fog)
@@ -11639,7 +12280,7 @@ function connectNodes(nodeA, nodeB, type = "standard", options = {}) {
     id: connectionIdCounter++,
     nodeAId: nodeA.id,
     nodeBId: nodeB.id,
-    directional: type === ONE_WAY_TYPE,
+    directional: isOneWayConnection({ type }),
     length: len,
     controlPointOffsetX: ctrlOffsetX,
     controlPointOffsetY: ctrlOffsetY,
@@ -13455,10 +14096,6 @@ function animationLoop() {
     }
   });
 
-  updateMistWetness();
-  updateCrushWetness();
-  updateFogWetness();
-
   try {
     const blackHoleNodes = nodes.filter((node) => node.type === BLACK_HOLE_ORB_TYPE);
     updateBlackHoleOrbs(
@@ -14235,8 +14872,7 @@ function animationLoop() {
                     if (node.grid && node.grid[r] && node.grid[r][node.column]) {
                         connections.forEach((c) => {
                             if (
-                                (c.nodeAId === node.id && c.nodeAHandle === r) ||
-                                (!c.directional && c.nodeBId === node.id && c.nodeBHandle === r)
+                                canPulseLeaveHandle(c, node.id, r)
                             ) {
                                 const targetId = c.nodeAId === node.id ? c.nodeBId : c.nodeAId;
                                 const neighborNode = findNodeById(targetId);
@@ -14277,8 +14913,7 @@ function animationLoop() {
                     const columnHandle = 1000 + node.column;
                     connections.forEach((c) => {
                         if (
-                            (c.nodeAId === node.id && c.nodeAHandle === columnHandle) ||
-                            (!c.directional && c.nodeBId === node.id && c.nodeBHandle === columnHandle)
+                            canPulseLeaveHandle(c, node.id, columnHandle)
                         ) {
                             const targetId = c.nodeAId === node.id ? c.nodeBId : c.nodeAId;
                             const neighborNode = findNodeById(targetId);
@@ -14333,19 +14968,14 @@ function animationLoop() {
                 } else {
                     node.connections.forEach((neighborId) => {
                     const neighborNode = findNodeById(neighborId);
-                    const connection = connections.find(
-                        (c) =>
-                        (c.nodeAId === node.id && c.nodeBId === neighborId) ||
-                        (!c.directional && c.nodeAId === neighborId && c.nodeBId === node.id),
-                    );
+                    const connection = findPulseConnection(node.id, neighborId);
 
                     if (
                         neighborNode &&
                         neighborNode.type !== "nebula" &&
                         neighborNode.type !== PORTAL_NEBULA_TYPE &&
                         connection &&
-                        connection.type !== "rope" &&
-                        neighborNode.lastTriggerPulseId !== currentGlobalPulseId
+                        connection.type !== "rope"
                     ) {
                         const travelTime = connection.length * DELAY_FACTOR;
                         try {
@@ -14939,6 +15569,7 @@ function animationLoop() {
         tapeReelRight.style.transform = `rotate(${tapeReelAngle}deg)`;
       }
     }
+    updatePatchEffectWetness();
     draw();
   } catch (loopError) {
     console.error('animationLoop error', loopError);
@@ -15445,6 +16076,10 @@ function drawNode(node) {
       currentStyles
         .getPropertyValue("--timeline-grid-default-border-color")
         .trim() || "rgba(220, 220, 220, 0.8)";
+    const radarOuterStroke =
+      currentStyles
+        .getPropertyValue("--spaceradar-border-color")
+        .trim() || gridStroke;
     const internalColor =
       currentStyles
         .getPropertyValue("--timeline-grid-internal-lines-color")
@@ -15565,10 +16200,9 @@ function drawNode(node) {
     ctx.fillStyle = scanFill;
     ctx.fillRect(scanX, innerY, cellW, innerH);
 
-    // Outer border
-    ctx.strokeStyle = gridStroke;
-    ctx.lineWidth = Math.max(1 / viewScale, 2 / viewScale);
-    ctx.strokeRect(rectX, rectY, node.width, node.height);
+    drawSequencerOuterLine(rectX, rectY, node.width, node.height, radarOuterStroke, {
+      selected: isSelectedAndOutlineNeeded,
+    });
 
     const connectorRadius = 5 / viewScale;
     ctx.fillStyle = gridStroke;
@@ -16396,6 +17030,10 @@ function drawNode(node) {
         : currentStylesTimeline
             .getPropertyValue("--timeline-grid-default-border-color")
             .trim() || "rgba(120, 220, 120, 0.7)";
+    const radarOuterStroke =
+      currentStylesTimeline
+        .getPropertyValue("--spaceradar-border-color")
+        .trim() || gridBoxStrokeActual;
     const gridBoxFillActual = "rgba(0, 0, 0, 0)";
     const scanlineColor =
       currentStylesTimeline
@@ -16412,28 +17050,9 @@ function drawNode(node) {
     let currentDefaultLineWidth = Math.max(0.8 / viewScale, 2 / viewScale);
     ctx.lineWidth = currentDefaultLineWidth;
 
-    if (isSelectedAndOutlineNeeded || node.isInResizeMode) {
-      const originalStrokeStyle = ctx.strokeStyle;
-      const originalLineWidth = ctx.lineWidth;
-      const originalShadowColor = ctx.shadowColor;
-      const originalShadowBlur = ctx.shadowBlur;
-
-      ctx.strokeStyle = "rgba(255, 255, 0, 0.9)";
-      ctx.lineWidth = Math.max(
-        0.5 / viewScale,
-        (baseLineWidth + 2) / viewScale,
-      );
-      ctx.shadowColor = "rgba(255, 255, 0, 0.7)";
-      ctx.shadowBlur = 10 / viewScale;
-      ctx.strokeRect(rectX, rectY, node.width, node.height);
-
-      ctx.strokeStyle = originalStrokeStyle;
-      ctx.lineWidth = originalLineWidth;
-      ctx.shadowColor = originalShadowColor;
-      ctx.shadowBlur = originalShadowBlur;
-    } else {
-      ctx.strokeRect(rectX, rectY, node.width, node.height);
-    }
+    drawSequencerOuterLine(rectX, rectY, node.width, node.height, radarOuterStroke, {
+      selected: isSelectedAndOutlineNeeded || node.isInResizeMode,
+    });
     if (
       (node.type !== TIMELINE_GRID_TYPE && node.type !== GRID_SEQUENCER_TYPE && node.type !== SPACERADAR_TYPE && node.type !== CRANK_RADAR_TYPE) ||
       ((node.type === TIMELINE_GRID_TYPE || node.type === GRID_SEQUENCER_TYPE || node.type === SPACERADAR_TYPE || node.type === CRANK_RADAR_TYPE) &&
@@ -19211,11 +19830,18 @@ function drawAddPreview() {
 
 function drawParamGroupLinks() {
   if (paramGroups.length === 0) return;
+  const selectedNodeIds = new Set(
+    Array.from(selectedElements)
+      .filter((el) => el.type === "node")
+      .map((el) => el.id)
+  );
+  if (selectedNodeIds.size === 0) return;
   ctx.save();
   ctx.strokeStyle = "rgba(180,220,255,0.4)";
   ctx.lineWidth = 1 / viewScale;
   paramGroups.forEach((group) => {
     const ids = Array.from(group.nodeIds);
+    if (!ids.some((id) => selectedNodeIds.has(id))) return;
     for (let i = 0; i < ids.length; i++) {
       const nA = findNodeById(ids[i]);
       if (!nA) continue;
@@ -21562,6 +22188,7 @@ function handleMouseMove(event) {
     viewOffsetY += dy;
     panStart = { ...screenMousePos };
     canvas.style.cursor = "grabbing";
+    draw();
   } else if (isResizingTimelineGrid && resizingTimelineGridNode && didDrag) {
     const dx = mousePos.x - resizeStartMousePos.x;
     const dy = mousePos.y - resizeStartMousePos.y;
@@ -23311,6 +23938,7 @@ function handleWheel(event) {
   if (oldScale !== viewScale) {
     viewOffsetX = event.clientX - worldCoords.x * viewScale;
     viewOffsetY = event.clientY - worldCoords.y * viewScale;
+    draw();
   }
 }
 
@@ -24254,6 +24882,57 @@ function populateEditPanel() {
     if (allSameLogicalType) {
         if (firstElementData.type === "node") {
             const node = findNodeById(firstElementData.id);
+
+            if (node && node.type === "sound" && node.audioParams?.engine === "motion_resonator") {
+                const section = document.createElement("div");
+                section.classList.add("panel-section");
+                section.innerHTML = "<p><strong>Motion Bowl:</strong></p>";
+                const motionNodes = selectedArray
+                    .filter((elData) => elData.type === "node")
+                    .map((elData) => findNodeById(elData.id))
+                    .filter((n) => n && n.type === "sound" && n.audioParams?.engine === "motion_resonator");
+                const addMotionSlider = (prop, label, min, max, step, fallback, format = (v) => v.toFixed(2)) => {
+                    const initial = node.audioParams[prop] ?? fallback;
+                    const slider = createSlider(
+                        `edit-motion-bowl-${prop}-${node.id}`,
+                        `${label} (${format(initial)}):`,
+                        min,
+                        max,
+                        step,
+                        initial,
+                        () => {
+                            motionNodes.forEach((n) => {
+                                if (n.audioNodes) updateNodeAudioParams(n);
+                            });
+                            saveState();
+                        },
+                        (e) => {
+                            const v = parseFloat(e.target.value);
+                            motionNodes.forEach((n) => {
+                                n.audioParams[prop] = v;
+                                if (prop === "motionSpace") {
+                                    n.audioParams.reverbSend = Math.max(n.audioParams.reverbSend ?? 0, v * 0.75);
+                                }
+                                if (n.audioNodes) updateNodeAudioParams(n);
+                            });
+                            e.target.previousElementSibling.textContent = `${label} (${format(v)}):`;
+                        },
+                    );
+                    section.appendChild(slider);
+                };
+                addMotionSlider("volume", "Volume", 0, 1.5, 0.01, DEFAULT_MOTION_BOWL_PARAMS.volume);
+                addMotionSlider("resonance", "Resonance", 0.5, 18, 0.1, DEFAULT_MOTION_BOWL_PARAMS.resonance, (v) => v.toFixed(1));
+                addMotionSlider("motionThreshold", "Motion Threshold", 0, 80, 1, DEFAULT_MOTION_BOWL_PARAMS.motionThreshold, (v) => `${Math.round(v)}px/s`);
+                addMotionSlider("motionSensitivity", "Motion Sensitivity", 20, 520, 5, DEFAULT_MOTION_BOWL_PARAMS.motionSensitivity, (v) => `${Math.round(v)}px/s`);
+                addMotionSlider("motionBrightness", "Motion Brightness", 0.2, 4, 0.01, DEFAULT_MOTION_BOWL_PARAMS.motionBrightness);
+                addMotionSlider("motionShapeAmount", "Path Shape", 0, 2, 0.01, DEFAULT_MOTION_BOWL_PARAMS.motionShapeAmount);
+                addMotionSlider("motionWidth", "Stereo Width", 0, 1, 0.01, DEFAULT_MOTION_BOWL_PARAMS.motionWidth);
+                addMotionSlider("motionSpace", "Space", 0, 1, 0.01, DEFAULT_MOTION_BOWL_PARAMS.motionSpace);
+                addMotionSlider("motionRoomSize", "Room Size", 0, 1, 0.01, DEFAULT_MOTION_BOWL_PARAMS.motionRoomSize);
+                addMotionSlider("motionRoomDamp", "Room Damping", 0, 1, 0.01, DEFAULT_MOTION_BOWL_PARAMS.motionRoomDamp);
+                addMotionSlider("delaySend", "Delay Send", 0, 1, 0.01, DEFAULT_MOTION_BOWL_PARAMS.delaySend);
+                fragment.appendChild(section);
+            }
 
             if (node && node.type === TIMELINE_GRID_TYPE) {
                 const section = document.createElement("div");
@@ -25287,7 +25966,7 @@ function populateEditPanel() {
                 // Keep it tight; skip extra line breaks
 
                 // Add remaining harmony controls as dials
-                const curVelJitter = node.audioParams?.velocityJitter ?? 0.2;
+                const curVelJitter = node.audioParams?.velocityJitter ?? 0;
                 const curSpread = node.audioParams?.chordSpreadProb ?? 0.0;
                 const addDialToExistingGrid = (label, min, max, step, initValue, onChange) => {
                   const wrap = document.createElement('div');
@@ -25530,6 +26209,163 @@ function populateEditPanel() {
                 const section = document.createElement('div');
                 section.classList.add('panel-section');
 
+                const presetWrap = document.createElement('div');
+                presetWrap.style.display = 'grid';
+                presetWrap.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+                presetWrap.style.gap = '4px';
+                presetWrap.style.marginBottom = '8px';
+                const currentPreset = node.audioParams?.galacticPreset || 'bloom';
+                Object.entries(GALACTIC_PRESETS).forEach(([presetKey, preset]) => {
+                  const btn = document.createElement('button');
+                  btn.className = 'themed-button';
+                  btn.textContent = preset.label || presetKey;
+                  btn.style.padding = '4px 6px';
+                  btn.style.fontSize = '11px';
+                  if (presetKey === currentPreset) btn.style.outline = '1px solid currentColor';
+                  btn.addEventListener('click', () => {
+                    selectedArray.forEach(el => {
+                      const n = findNodeById(el.id);
+                      if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                        applyGalacticPreset(n, presetKey, { randomize: true });
+                      }
+                    });
+                    saveState();
+                    populateEditPanel();
+                    draw();
+                  });
+                  presetWrap.appendChild(btn);
+                });
+                const mutateBtn = document.createElement('button');
+                mutateBtn.className = 'themed-button';
+                mutateBtn.textContent = 'New Constellation';
+                mutateBtn.style.gridColumn = '1 / -1';
+                mutateBtn.style.padding = '5px 6px';
+                mutateBtn.addEventListener('click', () => {
+                  selectedArray.forEach(el => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                      mutateGalacticBloom(n, n.audioParams?.mutationAmount ?? 0.75);
+                    }
+                  });
+                  saveState();
+                  draw();
+                });
+                presetWrap.appendChild(mutateBtn);
+                section.appendChild(presetWrap);
+
+                const simpleGalacticSlider = (id, label, min, max, step, value, onValue) => {
+                  const slider = createSlider(
+                    `edit-gal-${id}-${node.id}`,
+                    `${label} (${typeof value === 'number' && step < 1 ? Math.round(value * 100) + '%' : value}):`,
+                    min,
+                    max,
+                    step,
+                    value,
+                    saveState,
+                    (e_input) => {
+                      const raw = step < 1 ? parseFloat(e_input.target.value) : parseInt(e_input.target.value, 10);
+                      const newVal = Math.max(min, Math.min(max, Number.isFinite(raw) ? raw : value));
+                      onValue(newVal);
+                      e_input.target.previousElementSibling.textContent = `${label} (${step < 1 ? Math.round(newVal * 100) + '%' : newVal}):`;
+                    }
+                  );
+                  section.appendChild(slider);
+                };
+
+                simpleGalacticSlider('density', 'Star Notes', 2, 16, 1, Math.min(16, node.audioParams?.numDots ?? 11), (newVal) => {
+                  selectedArray.forEach(el => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.numDots = newVal;
+                      if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n);
+                    }
+                  });
+                });
+
+                simpleGalacticSlider('activity', 'Meteor Hits', 0, 1, 0.01, node.audioParams?.noteProbability ?? 0.72, (newVal) => {
+                  selectedArray.forEach(el => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.noteProbability = newVal;
+                    }
+                  });
+                });
+
+                simpleGalacticSlider('variation-simple', 'Nebula Drift', 0, 1, 0.01, node.audioParams?.mutationAmount ?? 0.65, (newVal) => {
+                  selectedArray.forEach(el => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.mutationAmount = newVal;
+                      if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n);
+                    }
+                  });
+                });
+
+                const tempoIsSynced = isGlobalSyncEnabled && !node.audioParams?.ignoreGlobalSync;
+                if (tempoIsSynced) {
+                  const orbitSyncOptions = [
+                    { label: '4 bars', index: 9 },
+                    { label: '2 bars', index: 7 },
+                    { label: '1 bar', index: 6 },
+                    { label: '1/2 bar', index: 5 },
+                    { label: '1 beat', index: 3 },
+                    { label: '1/8 note', index: 1 },
+                    { label: '1/16 note', index: 0 },
+                  ];
+                  const currentRotationIndex = node.audioParams?.galacticRotationIndex ?? 5;
+                  const currentTempoSlot = Math.max(0, orbitSyncOptions.findIndex((opt) => opt.index === currentRotationIndex));
+                  const tempoSlider = createSlider(
+                    `edit-gal-orbit-sync-${node.id}`,
+                    `Orbit Tempo (${orbitSyncOptions[currentTempoSlot]?.label || '1/2 bar'}):`,
+                    0,
+                    orbitSyncOptions.length - 1,
+                    1,
+                    currentTempoSlot,
+                    saveState,
+                    (e_input) => {
+                      const slot = Math.max(0, Math.min(orbitSyncOptions.length - 1, parseInt(e_input.target.value, 10) || 0));
+                      const opt = orbitSyncOptions[slot];
+                      selectedArray.forEach(el => {
+                        const n = findNodeById(el.id);
+                        if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                          if (!n.audioParams) n.audioParams = {};
+                          n.audioParams.galacticRotationIndex = opt.index;
+                          n.audioParams.spinSpeedScale = 1;
+                        }
+                      });
+                      e_input.target.previousElementSibling.textContent = `Orbit Tempo (${opt.label}):`;
+                    }
+                  );
+                  section.appendChild(tempoSlider);
+                } else {
+                  simpleGalacticSlider('speed-simple', 'Orbit Tempo', 0.25, 2, 0.01, node.audioParams?.spinSpeedScale ?? 0.9, (newVal) => {
+                    selectedArray.forEach(el => {
+                      const n = findNodeById(el.id);
+                      if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                        if (!n.audioParams) n.audioParams = {};
+                        n.audioParams.spinSpeedScale = newVal;
+                      }
+                    });
+                  });
+                }
+
+                const gravityValue = 18 - Math.min(16, Math.max(2, node.audioParams?.maxNotesPerSecond ?? 10));
+                simpleGalacticSlider('gravity-simple', 'Gravity Gate', 2, 16, 1, gravityValue, (newVal) => {
+                  selectedArray.forEach(el => {
+                    const n = findNodeById(el.id);
+                    if (n && n.type === GALACTIC_BLOOM_TYPE) {
+                      if (!n.audioParams) n.audioParams = {};
+                      n.audioParams.maxNotesPerSecond = 18 - newVal;
+                    }
+                  });
+                });
+
+                const showAdvancedGalacticControls = false;
+                if (showAdvancedGalacticControls) {
+
                 // Sync controls at the top (visible only when project sync is ON)
                 if (isGlobalSyncEnabled) {
                   const syncRow = document.createElement('div');
@@ -25614,6 +26450,51 @@ function populateEditPanel() {
                   }
                 );
                 section.appendChild(probSlider);
+
+                const variation = node.audioParams?.mutationAmount ?? 0.65;
+                const variationSlider = createSlider(
+                  `edit-gal-variation-${node.id}`,
+                  `Variation (${Math.round(variation*100)}%):`,
+                  0, 1, 0.01,
+                  variation,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.mutationAmount = newVal; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
+                    e_input.target.previousElementSibling.textContent = `Variation (${Math.round(newVal*100)}%):`;
+                  }
+                );
+                section.appendChild(variationSlider);
+
+                const burst = node.audioParams?.burstChance ?? 0.16;
+                const burstSlider = createSlider(
+                  `edit-gal-burst-${node.id}`,
+                  `Bursts (${Math.round(burst*100)}%):`,
+                  0, 1, 0.01,
+                  burst,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(0, Math.min(1, parseFloat(e_input.target.value)));
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.burstChance = newVal; }});
+                    e_input.target.previousElementSibling.textContent = `Bursts (${Math.round(newVal*100)}%):`;
+                  }
+                );
+                section.appendChild(burstSlider);
+
+                const voiceCap = node.audioParams?.maxNotesPerSecond ?? 10;
+                const voiceCapSlider = createSlider(
+                  `edit-gal-voicecap-${node.id}`,
+                  `Voice Cap (${voiceCap}/s):`,
+                  2, 32, 1,
+                  voiceCap,
+                  saveState,
+                  (e_input) => {
+                    const newVal = Math.max(2, Math.min(32, parseInt(e_input.target.value, 10) || 10));
+                    selectedArray.forEach(el => { const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.maxNotesPerSecond = newVal; }});
+                    e_input.target.previousElementSibling.textContent = `Voice Cap (${newVal}/s):`;
+                  }
+                );
+                section.appendChild(voiceCapSlider);
 
                 // Velocity range (min/max)
                 const vmin = node.audioParams?.velMin ?? 0.6;
@@ -25739,8 +26620,8 @@ function populateEditPanel() {
                   spokes,
                   saveState,
                   (e_input) => {
-                    const v = Math.max(3, parseInt(e_input.target.value,10)||12);
-                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.numSpokes = v; }});
+                    const v = Math.max(1, parseInt(e_input.target.value,10)||5);
+                    selectedArray.forEach(el=>{ const n=findNodeById(el.id); if(n && n.type===GALACTIC_BLOOM_TYPE){ if(!n.audioParams) n.audioParams={}; n.audioParams.numSpokes = v; n.audioParams.spokeAngles = null; n.audioParams.spokeEnabled = null; if (typeof rebuildGalacticDots === 'function') rebuildGalacticDots(n); }});
                     e_input.target.previousElementSibling.textContent = `Number Lines (${v}):`;
                   }
                 );
@@ -25856,6 +26737,7 @@ function populateEditPanel() {
                 if (!(isGlobalSyncEnabled && !node.audioParams?.ignoreGlobalSync)) {
                   section.appendChild(rpsSlider);
                 }
+                }
 
                 // Center Instrument UI (reuse Circle-of-Fifths panel)
                 const centerSec = buildCircleCenterPanel(node, {
@@ -25918,11 +26800,7 @@ function populateEditPanel() {
                         selectedArray.forEach(elData => {
                             const n = findNodeById(elData.id);
                             if (n && n.type === TONNETZ_TYPE) {
-                                if (!n.audioParams) n.audioParams = {};
-                                n.audioParams.preset = presetName;
-                                // Apply preset values
-                                const preset = TONNETZ_PRESETS[presetName];
-                                Object.assign(n.audioParams, preset);
+                                applyTonnetzPreset(n, presetName);
                             }
                         });
                         Object.values(presetButtons).forEach(b => b.classList.remove('selected'));
@@ -25951,7 +26829,7 @@ function populateEditPanel() {
                     { v: 'hexagon_walk', t: 'Hexagon Walk' },
                     { v: 'random_walk', t: 'Random Walk' },
                 ];
-                const curMode = node.audioParams?.sequencingMode || 'triad';
+                const curMode = node.audioParams?.sequenceMode || node.audioParams?.sequencingMode || 'triad';
                 modes.forEach(opt => {
                     const o = document.createElement('option');
                     o.value = opt.v; o.textContent = opt.t;
@@ -25963,7 +26841,11 @@ function populateEditPanel() {
                         const n = findNodeById(elData.id);
                         if (n && n.type === TONNETZ_TYPE) {
                             if (!n.audioParams) n.audioParams = {};
+                            n.audioParams.sequenceMode = e.target.value;
                             n.audioParams.sequencingMode = e.target.value;
+                            n.patternIndex = 0;
+                            n.currentPos = n.initialPos ? { ...n.initialPos } : { x: 0, y: 0 };
+                            n.audioParams.currentPosition = { ...n.currentPos };
                         }
                     });
                     saveState();
@@ -26058,9 +26940,9 @@ function populateEditPanel() {
                 };
 
                 // Add harmonic parameter dials
-                addTonnetzDial('chordProb', 'Chord', 0, 1, 0.01, 'chordProbability', 0.7);
-                addTonnetzDial('spread', 'Spread', 0, 2, 0.1, 'harmonicSpread', 1.0);
-                addTonnetzDial('velocity', 'Vel', 0, 1, 0.01, 'velocityJitter', 0.2);
+                addTonnetzDial('chordProb', 'Chord', 0, 1, 0.01, 'chordProbability', 0);
+                addTonnetzDial('spread', 'Spread', 0, 2, 0.1, 'harmonicSpread', 0);
+                addTonnetzDial('velocity', 'Vel', 0, 1, 0.01, 'velocityJitter', 0);
                 addTonnetzDial('drift', 'Drift', 0, 1, 0.01, 'harmonicDrift', 0.1);
 
                 // Movement parameters section
@@ -28351,7 +29233,7 @@ function populateEditPanel() {
                     noneOpt.textContent = "None (Set on next pulse)";
                     select.appendChild(noneOpt);
                     node.connections.forEach(neighborId => {
-                        const conn = connections.find(c => (c.nodeAId === node.id && c.nodeBId === neighborId) || (!c.directional && c.nodeAId === neighborId && c.nodeBId === node.id));
+                        const conn = findPulseConnection(node.id, neighborId);
                         if (conn) {
                             const otherNode = findNodeById(neighborId);
                             const option = document.createElement("option");
@@ -30467,6 +31349,9 @@ function showResonauterOrbMenu(node) {
                         node.audioNodes.reverbSendGain.gain.setTargetAtTime(newVal, audioContext.currentTime, 0.05);
                     }
                 }
+                if (['space', 'roomSize', 'roomDamp', 'spatialWidth', 'earlyReflections'].includes(p)) {
+                    applyResonauterSpatialParams(node, audioContext.currentTime);
+                }
                 if (p.startsWith('g')) {
                     resonauterGranParams[p] = newVal;
                 }
@@ -30498,10 +31383,10 @@ function showResonauterOrbMenu(node) {
     const excLabels = { bow: 'BOW', blow: 'BLW', strike: 'STRK', mallet: 'MAL', hammer: 'HAM' };
     const matParams = ['brightness', 'damping', 'geometry', 'material'];
     const matLabels = { brightness: 'BRI', damping: 'DMP', geometry: 'GEO', material: 'MAT' };
-    const motParams = ['strength', 'contour', 'length', 'repeat', 'strum', 'position'];
-    const motLabels = { strength: 'STR', contour: 'CNT', length: 'LEN', repeat: 'RPT', strum: 'STRM', position: 'POS' };
-    const fxParams = ['release', 'space', 'gSize', 'gPitch', 'gPos', 'gDensity', 'gTexture', 'gMix'];
-    const fxLabels = { release: 'REL', space: 'SPC', gSize: 'SIZE', gPitch: 'PIT', gPos: 'POS', gDensity: 'DEN', gTexture: 'TEX', gMix: 'MIX' };
+    const motParams = ['strength', 'contour', 'length', 'repeat', 'strum', 'position', 'spatialWidth'];
+    const motLabels = { strength: 'STR', contour: 'CNT', length: 'LEN', repeat: 'RPT', strum: 'STRM', position: 'POS', spatialWidth: 'WID' };
+    const fxParams = ['release', 'space', 'roomSize', 'roomDamp', 'earlyReflections', 'gSize', 'gPitch', 'gMix'];
+    const fxLabels = { release: 'REL', space: 'SPC', roomSize: 'ROOM', roomDamp: 'DAMP', earlyReflections: 'ERLY', gSize: 'SIZE', gPitch: 'PIT', gMix: 'MIX' };
 
     const rowExc = createRow(excParams, excLabels);
     const rowMat = createRow(matParams, matLabels);
@@ -30781,6 +31666,8 @@ export function handleNewWorkspace(skipConfirm = false) {
   selectedElements.clear();
   currentConstellationGroup.clear();
   fluctuatingGroupNodeIDs.clear();
+  paramGroups = [];
+  paramGroupIdCounter = 0;
   nodeIdCounter = 0;
   connectionIdCounter = 0;
   pulseIdCounter = 0;
@@ -32936,14 +33823,7 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
           engine: 'motion_resonator',
           waveform: 'motion_resonator',
           visualStyle: 'motion_resonator',
-          volume: 0.85,
-          reverbSend: 0.35,
-          delaySend: 0.08,
-          resonance: 7,
-          motionThreshold: 8,
-          motionSensitivity: 190,
-          motionBrightness: 1.7,
-          motionShapeAmount: 1.0,
+          ...DEFAULT_MOTION_BOWL_PARAMS,
         });
       }
     }
@@ -33604,6 +34484,7 @@ if (appMenuEnterUfoMode)
     e.preventDefault();
     toggleUfoMode();
   });
+initAdvancedParameterGroupMenuItem();
 if (appMenuUndoBtn) appMenuUndoBtn.addEventListener("click", undo);
 if (appMenuRedoBtn) appMenuRedoBtn.addEventListener("click", redo);
 if (appMenuCut)
@@ -33760,6 +34641,7 @@ if (appMenuGridToggleBtn) {
   });
 }
 if (appMenuGridSnapBtn) {
+  appMenuGridSnapBtn.classList.toggle("active", isSnapEnabled);
   appMenuGridSnapBtn.addEventListener("click", () => {
     isSnapEnabled = !isSnapEnabled;
     appMenuGridSnapBtn.classList.toggle("active", isSnapEnabled);
@@ -34333,6 +35215,7 @@ window.addEventListener("keydown", (e) => {
   if (panX !== 0 || panY !== 0) {
     viewOffsetX += panX;
     viewOffsetY += panY;
+    draw();
     e.preventDefault();
   } else if (undoKeyPressed) {
     e.preventDefault();
@@ -35542,18 +36425,13 @@ function triggerManualPulsar(node) {
 
   node.connections.forEach((neighborId) => {
     const neighborNode = findNodeById(neighborId);
-    const connection = connections.find(
-      (c) =>
-        (c.nodeAId === node.id && c.nodeBId === neighborId) ||
-        (!c.directional && c.nodeAId === neighborId && c.nodeBId === node.id),
-    );
+    const connection = findPulseConnection(node.id, neighborId);
 
     if (
       neighborNode &&
       neighborNode.type !== "nebula" &&
       connection &&
-      connection.type !== "rope" &&
-      neighborNode.lastTriggerPulseId !== currentGlobalPulseId
+      connection.type !== "rope"
     ) {
       const travelTime = connection.length * DELAY_FACTOR;
       createVisualPulse(
@@ -35599,19 +36477,14 @@ function triggerPulsarOnce(node) {
 
   node.connections.forEach((neighborId) => {
     const neighborNode = findNodeById(neighborId);
-    const connection = connections.find(
-      (c) =>
-        (c.nodeAId === node.id && c.nodeBId === neighborId) ||
-        (!c.directional && c.nodeAId === neighborId && c.nodeBId === node.id)
-    );
+    const connection = findPulseConnection(node.id, neighborId);
 
     if (
       neighborNode &&
       neighborNode.type !== "nebula" &&
       neighborNode.type !== PORTAL_NEBULA_TYPE &&
       connection &&
-      connection.type !== "rope" &&
-      neighborNode.lastTriggerPulseId !== currentGlobalPulseId
+      connection.type !== "rope"
     ) {
       const travelTime = connection.length * DELAY_FACTOR;
       createVisualPulse(
@@ -35659,6 +36532,7 @@ function triggerSave() {
       delaySend: masterDelaySendGain?.gain.value ?? 0.3,
       delayTime: delayNode?.delayTime.value ?? 0.25,
       delayFeedback: delayFeedbackGain?.gain.value ?? 0.4,
+      paramGroups: serializeParamGroups(),
     };
     const stateString = JSON.stringify(
       state,
@@ -35673,7 +36547,14 @@ function triggerSave() {
         ) {
           value.pulseIntensity = parseFloat(value.pulseIntensity.toFixed(3));
         }
-        if (key === "audioNodes") return undefined;
+        if (
+          key === "audioNodes" ||
+          key === "activeRetriggers" ||
+          key === "currentRetriggerVisualIndex" ||
+          key === "lastTriggerPulseId" ||
+          key === "isTriggered" ||
+          key === "animationState"
+        ) return undefined;
         return value;
       },
       2,

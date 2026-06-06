@@ -7,6 +7,10 @@ import { pluckSynthPresets } from './pluck-synth-orb.js';
 import { showTonePluckSynthMenu } from './tone-pluck-synth-ui.js';
 import { showEtherAuraMenu } from './ether-aura-ui.js';
 
+function isOneWayConnection(connection) {
+  return connection?.type === 'one_way' || (connection?.type == null && connection?.directional === true);
+}
+
 export const TONNETZ_TYPE = 'tonnetz_sequencer';
 
 // Define the Tonnetz grid structure - hexagonal layout with triangular cells
@@ -58,27 +62,27 @@ export const TONNETZ_TRIADS = [
 export const TONNETZ_PRESETS = {
   'Classical': { 
     sequencingMode: 'triad', 
-    chordProbability: 0.8,
-    harmonicSpread: 0.3,
-    velocityJitter: 0.1,
+    chordProbability: 0,
+    harmonicSpread: 0,
+    velocityJitter: 0,
     stepSize: 1,
     transformProbability: 0.2,
     returnProbability: 0.1
   },
   'Jazz': { 
     sequencingMode: 'neo_riemannian', 
-    chordProbability: 0.9,
-    harmonicSpread: 0.6,
-    velocityJitter: 0.3,
+    chordProbability: 0,
+    harmonicSpread: 0,
+    velocityJitter: 0,
     stepSize: 2,
     transformProbability: 0.6,
     returnProbability: 0.2
   },
   'Minimal': { 
     sequencingMode: 'hexagon_walk', 
-    chordProbability: 0.4,
-    harmonicSpread: 0.1,
-    velocityJitter: 0.05,
+    chordProbability: 0,
+    harmonicSpread: 0,
+    velocityJitter: 0,
     stepSize: 1,
     transformProbability: 0.1,
     returnProbability: 0.3
@@ -94,6 +98,121 @@ export const TONNETZ_PRESETS = {
   },
 };
 
+function samplerIdFromType(type) {
+  return String(type || '').replace(/^sampler_/, '');
+}
+
+function isPitchedSamplerType(type, samplerDefinitions) {
+  const id = samplerIdFromType(type);
+  const def = Array.isArray(samplerDefinitions) ? samplerDefinitions.find((s) => s.id === id) : null;
+  return !!(def && Number.isFinite(def.baseFreq) && def.baseFreq > 0 && !def.loadFailed);
+}
+
+function choosePitchedSamplerType(samplerDefinitions) {
+  const pitched = Array.isArray(samplerDefinitions)
+    ? samplerDefinitions.filter((s) => Number.isFinite(s.baseFreq) && s.baseFreq > 0 && !s.loadFailed)
+    : [];
+  if (!pitched.length) return 'sampler_marimba';
+  return 'sampler_' + pitched[Math.floor(Math.random() * pitched.length)].id;
+}
+
+function ensurePitchedCenterSampler(node, samplerDefinitions) {
+  if (!node || node.type !== 'sound' || !node.audioParams) return;
+  const wf = node.audioParams.waveform;
+  if (!String(wf || '').startsWith('sampler_')) return;
+  if (isPitchedSamplerType(wf, samplerDefinitions)) return;
+  node.audioParams.waveform = 'sampler_marimba';
+  delete node.audioParams.engine;
+}
+
+function ensurePlayableCenterInstrument(currentNode, deps) {
+  if (!currentNode) return null;
+  const {
+    findNodeById,
+    addNode,
+    createAudioNodesForNode,
+    updateNodeAudioParams,
+    SAMPLER_DEFINITIONS,
+  } = deps || {};
+  const ap = (currentNode.audioParams = currentNode.audioParams || {});
+  let target = ap.centerAttachedNodeId && typeof findNodeById === 'function'
+    ? findNodeById(ap.centerAttachedNodeId)
+    : null;
+
+  if (!target && typeof addNode === 'function') {
+    const subtype = choosePitchedSamplerType(SAMPLER_DEFINITIONS);
+    target = addNode(currentNode.x, currentNode.y, 'sound', subtype, null);
+    if (target) {
+      ap.centerAttachedNodeId = target.id;
+      target.isEmbeddedInTonnetzId = currentNode.id;
+    }
+  }
+
+  if (!target) return null;
+  target.audioParams = target.audioParams || {};
+  if (target.type === 'sound') {
+    ensurePitchedCenterSampler(target, SAMPLER_DEFINITIONS);
+  }
+  if (Number.isFinite(currentNode.x)) target.x = currentNode.x;
+  if (Number.isFinite(currentNode.y)) target.y = currentNode.y;
+  const missingPlayableAudio = !target.audioNodes || (target.type === 'sound' && !target.audioNodes.gainNode);
+  if (missingPlayableAudio && typeof createAudioNodesForNode === 'function') {
+    const created = createAudioNodesForNode(target);
+    if (created) target.audioNodes = created;
+  }
+  if (target.audioNodes && typeof updateNodeAudioParams === 'function') {
+    updateNodeAudioParams(target);
+  }
+  return target;
+}
+
+function isTonnetzPosition(pos) {
+  return pos && Number.isFinite(pos.x) && Number.isFinite(pos.y);
+}
+
+function cloneTonnetzPosition(pos, fallback = { x: 0, y: 0 }) {
+  const source = isTonnetzPosition(pos) ? pos : fallback;
+  return { x: source.x, y: source.y };
+}
+
+function syncTonnetzMode(ap) {
+  const mode = ap.sequenceMode || ap.sequencingMode || 'triad';
+  ap.sequenceMode = mode;
+  ap.sequencingMode = mode;
+  return mode;
+}
+
+export function applyTonnetzPreset(node, presetName) {
+  if (!node || node.type !== TONNETZ_TYPE) return;
+  const preset = TONNETZ_PRESETS[presetName];
+  if (!preset) return;
+  const ap = (node.audioParams = node.audioParams || {});
+  Object.assign(ap, preset);
+  ap.preset = presetName;
+  if (preset.sequencingMode) ap.sequenceMode = preset.sequencingMode;
+  syncTonnetzMode(ap);
+  node.patternIndex = 0;
+  node.currentPos = cloneTonnetzPosition(node.initialPos || ap.initialPosition || { x: 0, y: 0 });
+  node.initialPos = cloneTonnetzPosition(node.currentPos);
+  ap.currentPosition = cloneTonnetzPosition(node.currentPos);
+  ap.initialPosition = cloneTonnetzPosition(node.initialPos);
+}
+
+function ensureTonnetzState(node, ap) {
+  if (!node.audioParams) node.audioParams = ap || {};
+  const params = node.audioParams;
+  syncTonnetzMode(params);
+  if (!isTonnetzPosition(node.initialPos)) {
+    node.initialPos = cloneTonnetzPosition(params.initialPosition || { x: 0, y: 0 });
+  }
+  if (!isTonnetzPosition(node.currentPos)) {
+    node.currentPos = cloneTonnetzPosition(params.currentPosition || node.initialPos);
+  }
+  params.currentPosition = cloneTonnetzPosition(node.currentPos);
+  params.initialPosition = cloneTonnetzPosition(node.initialPos);
+  if (!Number.isFinite(node.patternIndex)) node.patternIndex = Number.isFinite(params.patternIndex) ? params.patternIndex : 0;
+}
+
 // Initialize Tonnetz sequencer node
 export function initTonnetzNode(newNode, deps) {
   const {
@@ -106,9 +225,9 @@ export function initTonnetzNode(newNode, deps) {
   } = deps;
 
   newNode.gridSize = 5; // 5x5 hexagonal grid
-  newNode.currentPos = { x: 0, y: 0 }; // Start at center (C)
-  newNode.initialPos = { x: 0, y: 0 }; // Remember starting position for sequence restart
-  newNode.patternIndex = 0;
+  newNode.currentPos = cloneTonnetzPosition(newNode.currentPos || newNode.audioParams?.currentPosition); // Start at center (C)
+  newNode.initialPos = cloneTonnetzPosition(newNode.initialPos || newNode.audioParams?.initialPosition); // Remember starting position for sequence restart
+  newNode.patternIndex = Number.isFinite(newNode.patternIndex) ? newNode.patternIndex : 0;
   newNode.sequenceStartTime = Date.now(); // Track sequence timing
   newNode.audioParams = newNode.audioParams || {};
   
@@ -119,15 +238,16 @@ export function initTonnetzNode(newNode, deps) {
   ap.triggerInterval = DEFAULT_TRIGGER_INTERVAL;
   
   // Tonnetz-specific parameters
-  ap.sequenceMode = ap.sequenceMode || 'triad';
+  ap.sequenceMode = ap.sequenceMode || ap.sequencingMode || 'triad';
+  ap.sequencingMode = ap.sequenceMode;
   ap.direction = ap.direction || 'chromatic_mediant';
   ap.triadPattern = ap.triadPattern || 'major,minor';
   ap.stepPattern = ap.stepPattern || '1';
   ap.transformations = ap.transformations || 'P,L,R'; // Neo-Riemannian
-  ap.chordProbability = ap.chordProbability ?? 0.7;
+  ap.chordProbability = ap.chordProbability ?? 0;
   ap.chordSize = ap.chordSize || 3;
-  ap.velocityJitter = ap.velocityJitter ?? 0.2;
-  ap.harmonicSpread = ap.harmonicSpread ?? 0.3;
+  ap.velocityJitter = ap.velocityJitter ?? 0;
+  ap.harmonicSpread = ap.harmonicSpread ?? 0;
   ap.preset = ap.preset || 'Classical';
   // Visuals
   ap.tonnetzShowLabels = ap.tonnetzShowLabels ?? false; // default off
@@ -137,23 +257,18 @@ export function initTonnetzNode(newNode, deps) {
   
   // Apply preset if set
   if (TONNETZ_PRESETS[ap.preset]) {
-    Object.assign(ap, TONNETZ_PRESETS[ap.preset]);
-    // Map sequencingMode to sequenceMode for compatibility
-    if (ap.sequencingMode) {
-      ap.sequenceMode = ap.sequencingMode;
-    }
+    applyTonnetzPreset(newNode, ap.preset);
   }
+  ensureTonnetzState(newNode, ap);
 
   // Embed a center instrument (similar to circle of fifths)
   let subtype = null;
   try {
-    if (samplerWaveformTypes && samplerWaveformTypes.length) {
+    subtype = choosePitchedSamplerType(SAMPLER_DEFINITIONS);
+    if (!subtype && samplerWaveformTypes && samplerWaveformTypes.length) {
       const arr = samplerWaveformTypes.filter((s) => String(s.type || '').startsWith('sampler_'));
-      if (arr.length) subtype = arr[Math.floor(Math.random() * arr.length)].type;
-    }
-    if (!subtype && SAMPLER_DEFINITIONS && SAMPLER_DEFINITIONS.length) {
-      const def = SAMPLER_DEFINITIONS[Math.floor(Math.random() * SAMPLER_DEFINITIONS.length)];
-      subtype = 'sampler_' + def.id;
+      const pitched = arr.filter((s) => isPitchedSamplerType(s.type, SAMPLER_DEFINITIONS));
+      if (pitched.length) subtype = pitched[Math.floor(Math.random() * pitched.length)].type;
     }
   } catch {}
   
@@ -171,7 +286,6 @@ export function initTonnetzNode(newNode, deps) {
 
 // Handle pulse to Tonnetz sequencer
 export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
-  // console.log('🎵 handleTonnetzPulse called for node', currentNode.id);
   const {
     findNodeById,
     triggerNodeEffect,
@@ -181,29 +295,25 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
     propagateTrigger,
     createVisualPulse,
     connections,
+    SAMPLER_DEFINITIONS,
   } = deps;
 
   // Accept pulse input from any handle (more flexible)
   if (!incomingConnection) {
-    console.log('Tonnetz: No incoming connection');
     return true;
   }
-  const isTargetSideA = incomingConnection.nodeAId === currentNode.id;
-  const handleAtSequencer = isTargetSideA ? incomingConnection.nodeAHandle : incomingConnection.nodeBHandle;
-  console.log('Tonnetz pulse: received on handle', handleAtSequencer, '- processing...');
 
   currentNode.animationState = 1;
   const ap = currentNode.audioParams || {};
-  console.log('Tonnetz audioParams:', ap);
+  ensureTonnetzState(currentNode, ap);
+  advanceTonnetzPosition(currentNode, ap);
   
   // Get current position and calculate note/chord
-  const pos = currentNode.currentPos || { x: 0, y: 0 };
-  console.log('Tonnetz current position:', pos);
+  const pos = cloneTonnetzPosition(currentNode.currentPos);
   const noteClass = getTonnetzNote(pos.x, pos.y);
-  console.log('Calculated note class:', noteClass);
   
   // Determine if chord or single note
-  const chordProb = ap.chordProbability ?? 0.7;
+  const chordProb = ap.chordProbability ?? 0;
   const isChord = Math.random() < chordProb;
   
   let notes = [];
@@ -305,17 +415,9 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
   };
 
   // Fire to embedded instrument
-  const targetId = ap.centerAttachedNodeId || null;
-  console.log('Looking for embedded instrument:', targetId);
-  if (targetId) {
-    const neighbor = findNodeById(targetId);
-    console.log('Found embedded instrument:', neighbor ? neighbor.id : 'null');
-    if (neighbor) {
-      console.log('Firing to instrument with notes:', scaleIndices);
-      fire(neighbor);
-    }
-  } else {
-    console.log('No embedded instrument found!');
+  const neighbor = ensurePlayableCenterInstrument(currentNode, deps);
+  if (neighbor) {
+    fire(neighbor);
   }
 
   // Forward pulse to other connected nodes (pass-through)
@@ -336,7 +438,7 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
         const conn = connections.find(
           (c) =>
             (c.nodeAId === currentNode.id && c.nodeBId === neighborId) ||
-            (!c.directional && c.nodeAId === neighborId && c.nodeBId === currentNode.id),
+            (!isOneWayConnection(c) && c.nodeAId === neighborId && c.nodeBId === currentNode.id),
         );
         if (!conn) return;
         const neighbor = findNodeById(neighborId);
@@ -360,11 +462,6 @@ export function handleTonnetzPulse(currentNode, incomingConnection, deps) {
     }
   } catch {}
 
-  // Update position based on sequence mode
-  const oldPos = { ...currentNode.currentPos };
-  advanceTonnetzPosition(currentNode, ap);
-  console.log('Tonnetz position moved from', oldPos, 'to', currentNode.currentPos);
-  
   return true;
 }
 
@@ -384,30 +481,29 @@ function findTriadAtPosition(x, y) {
 
 // Advance position based on sequence mode
 function advanceTonnetzPosition(node, ap) {
-  const mode = ap.sequenceMode || 'triad';
+  ensureTonnetzState(node, ap);
+  const mode = syncTonnetzMode(ap);
   const dir = ap.direction || 'chromatic_mediant';
   const pIndex = Number.isFinite(node.patternIndex) ? node.patternIndex : 0;
-  
-  console.log('advanceTonnetzPosition called:', { mode, dir, pIndex, currentPos: node.currentPos });
-  
-  let newPos = { ...node.currentPos };
+  const pos = cloneTonnetzPosition(node.currentPos);
+  let newPos = cloneTonnetzPosition(pos);
   
   switch (mode) {
     case 'triad':
-      newPos = advanceTriadMode(node.currentPos, dir, pIndex, ap);
+      newPos = advanceTriadMode(pos, dir, pIndex, ap);
       break;
     case 'neo_riemannian':
-      newPos = advanceNeoRiemannian(node.currentPos, ap.transformations, pIndex);
+      newPos = advanceNeoRiemannian(pos, ap.transformations, pIndex);
       break;
     case 'hexagon_walk':
-      newPos = advanceHexagonWalk(node.currentPos, dir, pIndex, ap);
+      newPos = advanceHexagonWalk(pos, dir, pIndex, ap);
       break;
     case 'random_walk':
-      newPos = advanceRandomWalk(node.currentPos, ap);
+      newPos = advanceRandomWalk(pos, ap);
       break;
     default:
       // Default to simple chromatic_mediant
-      newPos = advanceTriadMode(node.currentPos, dir, pIndex, ap);
+      newPos = advanceTriadMode(pos, dir, pIndex, ap);
   }
   
   // Bounds checking with wrapping - keep movement interesting
@@ -422,8 +518,6 @@ function advanceTonnetzPosition(node, ap) {
   if (newPos.x < -gridLimit) newPos.x += gridSize;
   if (newPos.y < -gridLimit) newPos.y += gridSize;
   
-  console.log('Position after bounds checking:', newPos);
-  
   node.currentPos = newPos;
   
   // Handle sequence length and restart
@@ -432,8 +526,7 @@ function advanceTonnetzPosition(node, ap) {
   
   // If we've completed a full sequence, restart from initial position
   if (newPatternIndex === 0) {
-    console.log('Sequence complete! Restarting from initial position');
-    node.currentPos = node.initialPos || { x: 0, y: 0 };
+    node.currentPos = cloneTonnetzPosition(node.initialPos);
     node.sequenceStartTime = Date.now(); // Track when sequence started for tempo
   }
   
@@ -441,15 +534,15 @@ function advanceTonnetzPosition(node, ap) {
   
   // Also store in audioParams for UI consistency
   if (!node.audioParams) node.audioParams = {};
-  node.audioParams.currentPosition = node.currentPos;
+  node.audioParams.currentPosition = cloneTonnetzPosition(node.currentPos);
+  node.audioParams.initialPosition = cloneTonnetzPosition(node.initialPos);
+  node.audioParams.patternIndex = node.patternIndex;
 }
 
 // Movement algorithms
 function advanceTriadMode(pos, direction, patternIndex, ap) {
   const pattern = (ap.triadPattern || 'major,minor').split(',');
   const currentTriadType = pattern[patternIndex % pattern.length];
-  
-  console.log('advanceTriadMode:', { pos, direction, patternIndex, currentTriadType, pattern });
   
   // Move to adjacent triad of specified type
   let newPos;
@@ -474,8 +567,6 @@ function advanceTriadMode(pos, direction, patternIndex, ap) {
       ];
       newPos = moves[patternIndex % moves.length];
   }
-  
-  console.log('advanceTriadMode result:', newPos);
   return newPos;
 }
 
@@ -511,7 +602,8 @@ function advanceHexagonWalk(pos, direction, patternIndex, ap) {
     { x: 0, y: 1 },   // Southeast
   ];
   
-  const dirIndex = (patternIndex + (clockwise ? step : -step)) % directions.length;
+  const rawDirIndex = patternIndex + (clockwise ? step : -step);
+  const dirIndex = ((rawDirIndex % directions.length) + directions.length) % directions.length;
   const delta = directions[dirIndex];
   
   return { x: pos.x + delta.x, y: pos.y + delta.y };
@@ -609,9 +701,15 @@ export function buildTonnetzCenterInstrumentPanel(node, deps) {
     presetSelect.innerHTML = '';
     let list = [];
     if (engine === 'sampler') {
-      if (samplerWaveformTypes && samplerWaveformTypes.length)
-        list = samplerWaveformTypes.map((s) => s.type).filter((t) => String(t || '').startsWith('sampler_'));
-      else if (SAMPLER_DEFINITIONS) list = SAMPLER_DEFINITIONS.map((d) => 'sampler_' + d.id);
+      if (SAMPLER_DEFINITIONS) {
+        list = SAMPLER_DEFINITIONS
+          .filter((d) => Number.isFinite(d.baseFreq) && d.baseFreq > 0 && !d.loadFailed)
+          .map((d) => 'sampler_' + d.id);
+      } else if (samplerWaveformTypes && samplerWaveformTypes.length) {
+        list = samplerWaveformTypes
+          .map((s) => s.type)
+          .filter((t) => String(t || '').startsWith('sampler_'));
+      }
     } else if (engine === 'fm') {
       list = (fmSynthPresets || []).map((p) => p.type);
     } else if (engine === 'analog') {

@@ -802,6 +802,108 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 #groupControls.hidden { display: none; }
 #groupControls label[for="groupFluctuateAmount"], #groupControls #groupFluctuateAmount { margin-left: 20px; width: calc(100% - 20px); }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.modal-overlay.hidden { display: none; }
+.parameter-group-dialog {
+  width: min(780px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--panel-border-color, rgba(255,255,255,0.25));
+  border-radius: 8px;
+  background: var(--panel-bg, rgba(22, 24, 32, 0.96));
+  color: var(--text-color);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+}
+.parameter-group-header,
+.parameter-group-footer,
+.parameter-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.parameter-group-header { justify-content: space-between; }
+.parameter-group-header h3 { margin: 0; font-size: 1rem; }
+.parameter-group-actions { flex-wrap: wrap; }
+.parameter-group-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 14px;
+}
+.parameter-group-body section {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.parameter-group-body h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.parameter-group-list {
+  min-height: 180px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.18);
+}
+.parameter-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  font-size: 0.86rem;
+}
+.parameter-check-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.parameter-group-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.parameter-category-btn {
+  padding: 4px 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  background: var(--button-bg, #444);
+  color: var(--text-color);
+  cursor: pointer;
+}
+.parameter-category-btn:hover,
+.parameter-group-dialog .panel-button-like:hover {
+  filter: brightness(1.12);
+}
+.parameter-group-status {
+  min-height: 1.2em;
+  font-size: 0.82rem;
+  opacity: 0.85;
+}
+.parameter-group-footer { justify-content: flex-end; }
+.parameter-group-dialog .panel-button-like.primary {
+  font-weight: 700;
+  border-color: rgba(125, 220, 255, 0.6);
+}
+
+@media (max-width: 720px) {
+  .parameter-group-body { grid-template-columns: 1fr; }
+  .parameter-group-list { max-height: 260px; }
+}
+
 #transportControls { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 6; background-color: var(--panel-bg); border: 1px solid rgba(100,130,180,0.4); border-radius: 25px; padding: 5px 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: auto; max-width: calc(100% - 40px); display: flex; justify-content: center; align-items: center; gap: 10px; height: 90px; overflow: visible; white-space: nowrap; }
 #transportControls button, #transportControls select { flex-shrink: 0; margin: 0; background: var(--button-bg); color: var(--text-color); border: none; padding: 6px 12px; cursor: pointer; border-radius: 15px; font-size: 0.85em; transition: background-color 0.2s ease; }
 #transportControls button:hover, #transportControls select:hover { background-color: var(--button-hover); }

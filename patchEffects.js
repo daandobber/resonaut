@@ -42,6 +42,7 @@ let getFogLowpass = () => null;
 let getFogWetGain = () => null;
 let getScreenCoords = () => ({ x: 0, y: 0 });
 let getWorldCoords = () => ({ x: 0, y: 0 });
+let getViewScale = () => 1;
 let saveState = () => {};
 
 export function initPatchEffects(deps = {}) {
@@ -78,9 +79,30 @@ export function initPatchEffects(deps = {}) {
   if (typeof deps.getWorldCoords === 'function') {
     getWorldCoords = deps.getWorldCoords;
   }
+  if (typeof deps.getViewScale === 'function') {
+    getViewScale = deps.getViewScale;
+  }
   if (typeof deps.saveState === 'function') {
     saveState = deps.saveState;
   }
+}
+
+function positionPatchElement(patch) {
+  if (!patch || !patch.element) return;
+  const coords = getScreenCoords(patch.x, patch.y);
+  const worldSize =
+    patch.size ||
+    parseFloat(patch.element.dataset.worldSize) ||
+    parseFloat(patch.element.style.width) ||
+    200;
+  const scale = Math.max(0.001, Number(getViewScale()) || 1);
+  const screenSize = worldSize * scale;
+  patch.size = worldSize;
+  patch.element.dataset.worldSize = String(worldSize);
+  patch.element.style.width = `${screenSize}px`;
+  patch.element.style.height = `${screenSize}px`;
+  patch.element.style.left = `${coords.x - screenSize / 2}px`;
+  patch.element.style.top = `${coords.y - screenSize / 2}px`;
 }
 
 
@@ -111,11 +133,6 @@ export function createCrushPatch(worldX, worldY) {
   const patch = document.createElement('div');
   patch.className = 'crush-patch';
   const size = 200;
-  patch.style.width = size + 'px';
-  patch.style.height = size + 'px';
-  const coords = getScreenCoords(worldX, worldY);
-  patch.style.left = coords.x - size / 2 + 'px';
-  patch.style.top = coords.y - size / 2 + 'px';
   const gradientString = 'radial-gradient(circle at 50% 50%, rgba(255,100,150,0.35) 0%, transparent 70%)';
   patch.style.backgroundImage = gradientString;
   patch.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
@@ -125,7 +142,9 @@ export function createCrushPatch(worldX, worldY) {
   patch.dataset.x = worldX;
   patch.dataset.y = worldY;
   patchState.currentCrushGroup.container.appendChild(patch);
-  patchState.currentCrushGroup.patches.push({ element: patch, x: worldX, y: worldY, size });
+  const patchEntry = { element: patch, x: worldX, y: worldY, size };
+  patchState.currentCrushGroup.patches.push(patchEntry);
+  positionPatchElement(patchEntry);
   updateCrushWetness();
   dbg('CRUSH patch created', { worldX, worldY, groups: patchState.crushGroups.length });
 }
@@ -134,10 +153,7 @@ export function updateCrushPatchPositions() {
   if (!crushLayer) return;
   for (const group of patchState.crushGroups) {
     for (const patch of group.patches) {
-      const coords = getScreenCoords(patch.x, patch.y);
-      const size = patch.size || parseFloat(patch.element.style.width) || 200;
-      patch.element.style.left = `${coords.x - size / 2}px`;
-      patch.element.style.top = `${coords.y - size / 2}px`;
+      positionPatchElement(patch);
     }
   }
 }
@@ -310,11 +326,6 @@ export function createMistPatch(worldX, worldY) {
   const patch = document.createElement('div');
   patch.className = 'mist-patch';
   const size = 200;
-  patch.style.width = size + 'px';
-  patch.style.height = size + 'px';
-  const coords = getScreenCoords(worldX, worldY);
-  patch.style.left = coords.x - size / 2 + 'px';
-  patch.style.top = coords.y - size / 2 + 'px';
   const gradientString = 'radial-gradient(circle at 50% 50%, rgba(150,100,255,0.35) 0%, transparent 70%)';
   patch.style.backgroundImage = gradientString;
   patch.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
@@ -324,7 +335,9 @@ export function createMistPatch(worldX, worldY) {
   patch.dataset.x = worldX;
   patch.dataset.y = worldY;
   patchState.currentMistGroup.container.appendChild(patch);
-  patchState.currentMistGroup.patches.push({ element: patch, x: worldX, y: worldY, size });
+  const patchEntry = { element: patch, x: worldX, y: worldY, size };
+  patchState.currentMistGroup.patches.push(patchEntry);
+  positionPatchElement(patchEntry);
   updateMistWetness();
   dbg('MIST patch created', { worldX, worldY, groups: patchState.mistGroups.length });
 }
@@ -381,11 +394,6 @@ export function createFogPatch(worldX, worldY) {
   const patch = document.createElement('div');
   patch.className = 'fog-patch';
   const size = 200;
-  patch.style.width = size + 'px';
-  patch.style.height = size + 'px';
-  const coords = getScreenCoords(worldX, worldY);
-  patch.style.left = coords.x - size / 2 + 'px';
-  patch.style.top = coords.y - size / 2 + 'px';
   patch.style.backgroundImage = 'radial-gradient(circle at 50% 50%, rgba(80,200,255,0.3) 0%, transparent 70%)';
   patch.style.setProperty('--dx', `${Math.random() * 20 - 10}px`);
   patch.style.setProperty('--dy', `${Math.random() * 20 - 10}px`);
@@ -394,7 +402,9 @@ export function createFogPatch(worldX, worldY) {
   patch.dataset.x = worldX;
   patch.dataset.y = worldY;
   patchState.currentFogGroup.container.appendChild(patch);
-  patchState.currentFogGroup.patches.push({ element: patch, x: worldX, y: worldY, size });
+  const patchEntry = { element: patch, x: worldX, y: worldY, size };
+  patchState.currentFogGroup.patches.push(patchEntry);
+  positionPatchElement(patchEntry);
   updateFogWetness();
   dbg('FOG patch created', { worldX, worldY, groups: patchState.fogGroups.length });
 }
@@ -411,10 +421,7 @@ export function updateFogPatchPositions() {
   if (!fogLayer) return;
   for (const group of patchState.fogGroups) {
     for (const patch of group.patches) {
-      const coords = getScreenCoords(patch.x, patch.y);
-      const size = patch.size || parseFloat(patch.element.style.width) || 200;
-      patch.element.style.left = `${coords.x - size / 2}px`;
-      patch.element.style.top = `${coords.y - size / 2}px`;
+      positionPatchElement(patch);
     }
   }
 }
@@ -502,10 +509,7 @@ export function updateMistPatchPositions() {
   if (!mistLayer) return;
   for (const group of patchState.mistGroups) {
     for (const patch of group.patches) {
-      const coords = getScreenCoords(patch.x, patch.y);
-      const size = patch.size || parseFloat(patch.element.style.width) || 200;
-      patch.element.style.left = `${coords.x - size / 2}px`;
-      patch.element.style.top = `${coords.y - size / 2}px`;
+      positionPatchElement(patch);
     }
   }
 }

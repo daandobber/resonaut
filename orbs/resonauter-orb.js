@@ -21,6 +21,10 @@ export const DEFAULT_RESONAUTER_PARAMS = {
   hammer: 0.4,
   release: 0.5,
   space: 0.2,
+  roomSize: 0.35,
+  roomDamp: 0.45,
+  spatialWidth: 0.55,
+  earlyReflections: 0.35,
   gSize: 0.3,
   gPitch: 0.5,
   gPos: 0.0,
@@ -108,18 +112,43 @@ export function createResonauterGranularNode() {
 }
 
 export function createResonauterOrbAudioNodes(node) {
+  const ctx = globalThis.audioContext;
   const audioNodes = {
-    output: globalThis.audioContext.createGain(),
-    reverbSendGain: globalThis.audioContext.createGain(),
-    delaySendGain: globalThis.audioContext.createGain(),
-    effectInput: globalThis.audioContext.createGain(),
+    output: ctx.createGain(),
+    reverbSendGain: ctx.createGain(),
+    delaySendGain: ctx.createGain(),
+    effectInput: ctx.createGain(),
     gran: createResonauterGranularNode(),
-    mistSendGain: globalThis.audioContext.createGain(),
-    crushSendGain: globalThis.audioContext.createGain(),
+    drySpatialGain: ctx.createGain(),
+    reflectionInput: ctx.createGain(),
+    reflectionLeftDelay: ctx.createDelay(0.25),
+    reflectionRightDelay: ctx.createDelay(0.25),
+    reflectionLeftFilter: ctx.createBiquadFilter(),
+    reflectionRightFilter: ctx.createBiquadFilter(),
+    reflectionLeftGain: ctx.createGain(),
+    reflectionRightGain: ctx.createGain(),
+    reflectionLeftPan: ctx.createStereoPanner(),
+    reflectionRightPan: ctx.createStereoPanner(),
+    mistSendGain: ctx.createGain(),
+    crushSendGain: ctx.createGain(),
   };
 
   audioNodes.effectInput.connect(audioNodes.gran);
-  audioNodes.gran.connect(audioNodes.output);
+  audioNodes.gran.connect(audioNodes.drySpatialGain);
+  audioNodes.drySpatialGain.connect(audioNodes.output);
+  audioNodes.gran.connect(audioNodes.reflectionInput);
+  audioNodes.reflectionInput.connect(audioNodes.reflectionLeftDelay);
+  audioNodes.reflectionInput.connect(audioNodes.reflectionRightDelay);
+  audioNodes.reflectionLeftDelay.connect(audioNodes.reflectionLeftFilter);
+  audioNodes.reflectionRightDelay.connect(audioNodes.reflectionRightFilter);
+  audioNodes.reflectionLeftFilter.connect(audioNodes.reflectionLeftGain);
+  audioNodes.reflectionRightFilter.connect(audioNodes.reflectionRightGain);
+  audioNodes.reflectionLeftGain.connect(audioNodes.reflectionLeftPan);
+  audioNodes.reflectionRightGain.connect(audioNodes.reflectionRightPan);
+  audioNodes.reflectionLeftPan.connect(audioNodes.output);
+  audioNodes.reflectionRightPan.connect(audioNodes.output);
+
+  applyResonauterSpatialParams({ ...node, audioNodes });
 
   audioNodes.output.connect(audioNodes.reverbSendGain);
   audioNodes.output.connect(audioNodes.delaySendGain);
@@ -148,8 +177,53 @@ export function createResonauterOrbAudioNodes(node) {
   return audioNodes;
 }
 
+export function applyResonauterSpatialParams(node, time = globalThis.audioContext?.currentTime ?? 0) {
+  if (!node?.audioNodes) return;
+  const p = { ...DEFAULT_RESONAUTER_PARAMS, ...(node.audioParams || {}) };
+  const {
+    drySpatialGain,
+    reflectionInput,
+    reflectionLeftDelay,
+    reflectionRightDelay,
+    reflectionLeftFilter,
+    reflectionRightFilter,
+    reflectionLeftGain,
+    reflectionRightGain,
+    reflectionLeftPan,
+    reflectionRightPan,
+    reverbSendGain,
+  } = node.audioNodes;
+  if (!reflectionInput) return;
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const space = clamp(p.space ?? 0.2, 0, 1);
+  const roomSize = clamp(p.roomSize ?? 0.35, 0, 1);
+  const roomDamp = clamp(p.roomDamp ?? 0.45, 0, 1);
+  const width = clamp(p.spatialWidth ?? 0.55, 0, 1);
+  const early = clamp(p.earlyReflections ?? 0.35, 0, 1);
+  const tau = 0.04;
+
+  drySpatialGain?.gain.setTargetAtTime(clamp(1 - space * 0.18, 0.72, 1), time, tau);
+  reflectionInput.gain.setTargetAtTime(space * early * 0.75, time, tau);
+  reflectionLeftDelay.delayTime.setTargetAtTime(0.012 + roomSize * 0.055, time, tau);
+  reflectionRightDelay.delayTime.setTargetAtTime(0.018 + roomSize * 0.085, time, tau);
+  const cutoff = 1200 + (1 - roomDamp) * 10500;
+  reflectionLeftFilter.type = 'lowpass';
+  reflectionRightFilter.type = 'lowpass';
+  reflectionLeftFilter.frequency.setTargetAtTime(cutoff, time, tau);
+  reflectionRightFilter.frequency.setTargetAtTime(cutoff * 0.88, time, tau);
+  reflectionLeftFilter.Q.setTargetAtTime(0.7 + roomSize * 1.8, time, tau);
+  reflectionRightFilter.Q.setTargetAtTime(0.7 + roomSize * 1.5, time, tau);
+  reflectionLeftGain.gain.setTargetAtTime(0.42 + roomSize * 0.25, time, tau);
+  reflectionRightGain.gain.setTargetAtTime(0.38 + roomSize * 0.3, time, tau);
+  reflectionLeftPan.pan.setTargetAtTime(-width, time, tau);
+  reflectionRightPan.pan.setTargetAtTime(width, time, tau);
+  reverbSendGain?.gain.setTargetAtTime(p.reverbSend ?? space, time, tau);
+}
+
 export function playResonauterSound(node, pitch, intensity = 1) {
   const p = node.audioParams || {};
+  applyResonauterSpatialParams(node);
   globalThis.resonauterSpinSpeed += 4 * intensity;
   const baseTime = globalThis.audioContext.currentTime;
   const sVal = p.strum ?? 0;
@@ -270,7 +344,10 @@ export function playResonauterSound(node, pitch, intensity = 1) {
     outGain.connect(limiter);
 
     const pan = globalThis.audioContext.createStereoPanner();
-    pan.pan.value = (p.position ?? 0.5) * 2 - 1;
+    const width = Math.max(0, Math.min(1, p.spatialWidth ?? DEFAULT_RESONAUTER_PARAMS.spatialWidth));
+    const roomSize = Math.max(0, Math.min(1, p.roomSize ?? DEFAULT_RESONAUTER_PARAMS.roomSize));
+    const hitScatter = ((h / Math.max(1, hits - 1)) - 0.5) * width * (0.35 + roomSize * 0.45);
+    pan.pan.value = Math.max(-1, Math.min(1, ((p.position ?? 0.5) * 2 - 1) + hitScatter));
     limiter.connect(pan);
     pan.connect(node.audioNodes.effectInput);
 
