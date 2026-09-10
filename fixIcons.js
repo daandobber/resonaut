@@ -30,6 +30,10 @@ const LABELS = {
   'addCircleFifthsBtn':             '',
   'addTonnetzBtn':                  '',
   'addGalacticBloomBtn':            '',
+  'addNoteLoomBtn':                 '',
+  'addChordGardenBtn':              '',
+  'addArpOrbitBtn':                 '',
+  'addAcidMyceliumBtn':             '',
   'tapeLoopRecordBtn':              '',
   'tapeLoopPlayBtn':                '',
   'tapeLoopStopBtn':                '',
@@ -216,6 +220,16 @@ const ICONS = {
     + '<circle cx="8"  cy="10" r="1.4" fill="currentColor"/>'
     + '<circle cx="16" cy="10" r="1.4" fill="currentColor"/>',
 
+  'addNoteLoomBtn':
+    '<path d="M12 22V3M12 17C3 17 3 11 4 11c5 0 8 6 8 6Zm0-4c9 0 9-6 8-6-5 0-8 6-8 6Zm0-4C7 9 6 4 7 4c3 0 5 5 5 5Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
+  'addChordGardenBtn':
+    '<path d="M12 22V10m0 10C5 16 5 10 5 7m7 12c7-4 7-9 7-12M12 10C7 7 9 3 12 2c3 1 5 5 0 8ZM5 7C1 5 3 2 5 2c3 0 4 4 0 5Zm14 0c-4-2-2-5 0-5 3 0 4 4 0 5Z" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  'addArpOrbitBtn':
+    '<path d="M10 22c-6-5 9-7 4-12S9 5 13 2M12 17c6 1 9-2 8-5-4-1-8 5-8 5Zm0-7C6 12 3 8 4 5c4-1 8 5 8 5Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
+
+  'addAcidMyceliumBtn':
+    '<path d="M3 10C3 0 21 0 21 10Q12 14 3 10ZM12 11v7m-4-7 2 7m6-7-2 7M12 18l-7 4m7-4 7 4m-7-4v5M6 10l3-4m3 4V4m6 6-3-4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
+
   // Galactic Bloom (kept custom — specific sequencer concept)
   'addGalacticBloomBtn':
     '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/>'
@@ -261,14 +275,22 @@ function injectIcons() {
   Object.entries(LABELS).forEach(([id, label]) => {
     const el = document.getElementById(id);
     if (!el) return;
-    // Set plain text label
-    el.textContent = label;
-    el.classList.add('icon-svg');
+    if (el.dataset.dynamicLabel === 'true') return;
+    // Preserve existing SVG children. Replacing them here made our own observer
+    // schedule another full rebuild on every animation frame.
+    const textNodes = [...el.childNodes].filter(node => node.nodeType === Node.TEXT_NODE);
+    const currentLabel = textNodes.map(node => node.textContent).join('');
+    if (currentLabel !== label) {
+      textNodes.forEach(node => node.remove());
+      if (label) el.append(document.createTextNode(label));
+    }
+    if (!el.classList.contains('icon-svg')) el.classList.add('icon-svg');
   });
 
   Object.entries(ICONS).forEach(([id, innerSVG]) => {
     const el = document.getElementById(id);
     if (!el) return;
+    if (el.dataset.dynamicLabel === 'true') return;
     if (el.querySelector('span.svg-icon')) return; // already injected
 
     const span = document.createElement('span');

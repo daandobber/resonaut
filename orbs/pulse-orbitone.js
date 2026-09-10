@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { getFrequency } from '../audioUtils.js';
+import { getPlaybackTuning } from '../utils/playbackTuning.js';
 import { scaleState } from '../utils/scaleConstants.js';
 import { dbgOrbitone } from '../utils/debug.js';
 
@@ -58,7 +59,8 @@ export function triggerPulseOrbitones(node, now, intensity = 1, externalPlayback
     try { return an.oscillator1?.frequency?.value ?? ap.pitch; } catch { return ap.pitch; }
   })();
 
-  const scaleDef = scaleState.currentScale || { notes: [0], baseFreq: baseFreq };
+  const tuning = getPlaybackTuning(an);
+  const scaleDef = tuning?.scale || scaleState.currentScale || { notes: [0], baseFreq: baseFreq };
   const baseIdx = ap.scaleIndex ?? 0;
   const intervals = ap.orbitoneIntervals || [];
 
@@ -69,8 +71,8 @@ export function triggerPulseOrbitones(node, now, intensity = 1, externalPlayback
       scaleDef,
       baseIdx + step,
       0,
-      scaleState.currentRootNote || 0,
-      scaleState.globalTransposeOffset || 0,
+      tuning?.root ?? scaleState.currentRootNote ?? 0,
+      tuning?.transpose ?? scaleState.globalTransposeOffset ?? 0,
     );
     if (!Number.isFinite(f) || f <= 0) {
       f = baseFreq * Math.pow(2, ((i + 1) * 3) / 12);

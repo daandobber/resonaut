@@ -1,5 +1,6 @@
 export const FM_DRONE_TYPE = 'fm_drone';
 import { tonePanelContent } from '../utils/domElements.js';
+import { getPlaybackTuning } from '../utils/playbackTuning.js';
 import { updateNodeAudioParams, nodes } from '../main.js';
 import { showTonePanel, hideAnalogOrbMenu } from './analog-orb-ui.js';
 
@@ -137,7 +138,7 @@ export function updateFmDroneParams(audioNodes) {
   if (!p) return;
   const ctx = globalThis.audioContext;
   const now = ctx.currentTime;
-  const baseFreq = p.pitch ?? p.baseFreq ?? 110;
+  const baseFreq = getPlaybackTuning(audioNodes)?.pitch ?? p.pitch ?? p.baseFreq ?? 110;
   audioNodes.carriers.forEach((osc) => {
     osc.frequency.cancelScheduledValues(now);
     osc.frequency.setValueAtTime(baseFreq, now);

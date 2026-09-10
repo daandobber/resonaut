@@ -2,7 +2,7 @@ import { ALIEN_ORB_TYPE, ALIEN_DRONE_TYPE } from "../orbs/alien-orb.js";
 import { ARVO_DRONE_TYPE } from "../orbs/arvo-drone-orb.js";
 import { RESONAUTER_TYPE } from "../orbs/resonauter-orb.js";
 
-export const HUE_STEP = 30;
+export { HUE_STEP } from './paletteConstants.js';
 
 export const scales = {
   major_pentatonic: {

@@ -1,3 +1,4 @@
+import { getSharedAudioContext } from './utils/realtimeAudio.js';
 const STATIONS = [
   { name: 'NPO Radio 1',  url: 'https://icecast.omroep.nl/radio1-bb-mp3',     freq: 0 },
   { name: 'NPO Radio 2',  url: 'https://icecast.omroep.nl/radio2-bb-mp3',     freq: 1 },
@@ -69,7 +70,7 @@ function initRadioSampler() {
   const waveCtx = waveformCanvas.getContext('2d');
 
   // --- Audio context ---
-  const audioCtx = window.audioContext || (window.audioContext = new (window.AudioContext || window.webkitAudioContext)());
+  const audioCtx = getSharedAudioContext();
 
   // Radio stream gain/analyser (for radio volume control + mixer)
   if (!window.radioGainNode) {

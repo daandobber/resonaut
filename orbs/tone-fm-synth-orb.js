@@ -170,17 +170,19 @@ export function createToneFmSynthOrb(node) {
     
     let isActive = false;
     let currentFreq = null;
+    let availableAt = 0;
 
     const voiceMasterGain = new Tone.Gain(1);
 
     return {
       operators: voiceOperators,
       voiceMasterGain,
-      isActive: () => isActive,
+      isActive: (time = Tone.getContext().currentTime) => isActive && time < availableAt,
       getCurrentFreq: () => currentFreq,
       triggerStart: (time, frequency, velocity = 1) => {
         currentFreq = frequency;
         isActive = true;
+        availableAt = Infinity;
 
         // Restore master gain in case this voice was killed
         voiceMasterGain.gain.cancelScheduledValues(time);
@@ -197,8 +199,10 @@ export function createToneFmSynthOrb(node) {
         voiceOp4.env.triggerAttack(time);
       },
       triggerStop: (time) => {
-        isActive = false;
-        currentFreq = null;
+        availableAt = time + Math.max(
+          p.carrierEnvRelease ?? 0.3, p.modulatorEnvRelease ?? 0.3,
+          p.modulator2EnvRelease ?? 0.3, p.modulator3EnvRelease ?? 0.3,
+        ) + 0.05;
 
         voiceOp1.env.triggerRelease(time);
         voiceOp2.env.triggerRelease(time);
@@ -216,10 +220,12 @@ export function createToneFmSynthOrb(node) {
 
   // Create voice pool
   const voices = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < (node.isChordVoice ? 1 : p.orbitonesEnabled ? 4 : 8); i++) {
     voices.push(createVoice());
   }
   let currentVoiceIndex = 0;
+  let lastVoice = null;
+  let nextFrequency = p.pitch ?? 440;
 
   // Shared filter and effects chain
   const filter = new Tone.Filter(p.filterCutoff ?? 20000, p.filterType ?? 'lowpass');
@@ -310,27 +316,25 @@ export function createToneFmSynthOrb(node) {
       velocity = maybeVelocity;
     } else {
       velocity = freqOrVelocity;
-      currentFreq = firstVoice.operators[1].osc.frequency.value;
+      currentFreq = nextFrequency;
     }
 
     // Find an available voice (inactive) or use round-robin
-    let selectedVoice = voices.find(voice => !voice.isActive());
+    let selectedVoice = voices.find(voice => !voice.isActive(time));
     if (!selectedVoice) {
       selectedVoice = voices[currentVoiceIndex];
       currentVoiceIndex = (currentVoiceIndex + 1) % voices.length;
     }
 
     // Trigger the selected voice with the provided/current frequency
-    selectedVoice.triggerStart(time, currentFreq, velocity);
+    const sounding = voices.filter(voice => voice.isActive(time)).length;
+    selectedVoice.triggerStart(time, currentFreq, velocity / Math.sqrt(1 + sounding));
+    lastVoice = selectedVoice;
   };
 
   const triggerStop = (time) => {
-    // Stop all active voices (for backward compatibility with monophonic behavior)
-    voices.forEach(voice => {
-      if (voice.isActive()) {
-        voice.triggerStop(time);
-      }
-    });
+    // Release only the note just started, preserving other voices' tails.
+    lastVoice?.triggerStop(time);
   };
 
   function createOrbitone(freq) {
@@ -541,8 +545,7 @@ export function createToneFmSynthOrb(node) {
     
     // Parameter broadcasting methods for UI compatibility
     setCarrierFrequency: (freq) => {
-      firstVoice.operators[1].osc.frequency.value = freq;
-      // Note: Don't sync this across voices as each voice needs its own frequency
+      nextFrequency = freq;
     },
     setModulatorRatio: (ratio) => {
       voices.forEach(voice => {

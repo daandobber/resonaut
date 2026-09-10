@@ -30,7 +30,7 @@ export const SAMPLER_DEFINITIONS = [
   createSampler("glockenspiel", resolveSamplePath("audio/Glockenspiel-C5.mp3"), 523.25, "Glockenspiel", "B", "Mallets"),
   createSampler("tubular_bell", resolveSamplePath("audio/Tubular-Bell-C6.mp3"), 1046.5, "Tubular Bell", "B", "Bells"),
   createSampler("celesta", resolveSamplePath("audio/Celesta-C4.mp3"), 261.63, "Celesta", "K", "Keys"),
-  createSampler("piano", resolveSamplePath("audio/Grand-Piano-C4.mp3"), 261.63, "Piano", "K", "Keys"),
+  createSampler("piano", resolveSamplePath("audio/Grand-Piano-C3.mp3"), 130.81, "Piano", "K", "Keys"),
   createSampler("piano_low", resolveSamplePath("audio/Grand-Piano-C1.mp3"), 32.7, "Piano Low", "K", "Keys"),
   createSampler("harpsichord", resolveSamplePath("audio/Harpsichord-C4.mp3"), 261.63, "Harpsichord", "K", "Keys"),
   createSampler("organ", resolveSamplePath("audio/Percussive-Organ-C3.mp3"), 130.81, "Organ", "K", "Keys"),
@@ -159,4 +159,3 @@ export const SAMPLER_DEFINITIONS = [
 if (typeof window !== "undefined") {
   window.SAMPLER_DEFINITIONS = SAMPLER_DEFINITIONS;
 }
-

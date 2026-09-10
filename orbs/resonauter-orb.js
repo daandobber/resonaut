@@ -1,3 +1,4 @@
+import { createRealtimeDSP } from '../utils/realtimeAudio.js';
 
 export const RESONAUTER_TYPE = 'resonauter';
 
@@ -47,68 +48,8 @@ export const resonauterGranParams = {
 };
 
 
-export function createResonauterGranularNode() {
-  const proc = globalThis.audioContext.createScriptProcessor(512, 2, 2);
-  const sr = globalThis.audioContext.sampleRate;
-  const bufLen = sr * 2;
-  const ringL = new Float32Array(bufLen);
-  const ringR = new Float32Array(bufLen);
-  let write = 0;
-  const grains = [];
-  let counter = 0;
-  proc.onaudioprocess = (e) => {
-    const inpL = e.inputBuffer.getChannelData(0);
-    const inpR = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : inpL;
-    const outL = e.outputBuffer.getChannelData(0);
-    const outR = e.outputBuffer.getChannelData(1);
-    const p = resonauterGranParams;
-    const gDur = 0.02 + p.gSize * 0.28;
-    const gDurS = Math.max(1, Math.floor(gDur * sr));
-    const pitch = Math.pow(2, (p.gPitch - 0.5) * 4);
-    const posOff = Math.floor(p.gPos * bufLen);
-    const dens = 1 + p.gDensity * 50;
-    const interval = sr / dens;
-    const texPow = 1 + p.gTexture * 3;
-    const mix = p.gMix;
-    for (let i = 0; i < inpL.length; i++) {
-      ringL[write] = inpL[i];
-      ringR[write] = inpR[i];
-      if (counter >= interval) {
-        const jitter = p.gTexture;
-        const posJitter = (Math.random() - 0.5) * bufLen * 0.05 * jitter;
-        const pitchJitter = 1 + (Math.random() - 0.5) * 0.3 * jitter;
-        const amp = 0.7 + Math.random() * 0.6 * jitter;
-        counter -= interval;
-        grains.push({
-          pos: (write - posOff + posJitter + bufLen) % bufLen,
-          age: 0,
-          pitch: pitch * pitchJitter,
-          amp,
-        });
-      }
-      let wetL = 0, wetR = 0;
-      for (let g = grains.length - 1; g >= 0; g--) {
-        const gr = grains[g];
-        if (gr.age >= gDurS) { grains.splice(g, 1); continue; }
-        const idx = Math.floor(gr.pos) % bufLen;
-        const frac = gr.pos - idx;
-        const nIdx = (idx + 1) % bufLen;
-        const sL = ringL[idx] * (1 - frac) + ringL[nIdx] * frac;
-        const sR = ringR[idx] * (1 - frac) + ringR[nIdx] * frac;
-        const t = gr.age / gDurS;
-        const env = (Math.sin(Math.PI * t) ** texPow) * (gr.amp || 1);
-        wetL += sL * env;
-        wetR += sR * env;
-        gr.pos += gr.pitch || pitch;
-        gr.age++;
-      }
-      outL[i] = inpL[i] * (1 - mix) + wetL * mix;
-      outR[i] = inpR[i] * (1 - mix) + wetR * mix;
-      write = (write + 1) % bufLen;
-      counter++;
-    }
-  };
-  return proc;
+export function createResonauterGranularNode(params = resonauterGranParams) {
+  return createRealtimeDSP(globalThis.audioContext, { kind: 'granular', params });
 }
 
 export function createResonauterOrbAudioNodes(node) {
@@ -118,7 +59,7 @@ export function createResonauterOrbAudioNodes(node) {
     reverbSendGain: ctx.createGain(),
     delaySendGain: ctx.createGain(),
     effectInput: ctx.createGain(),
-    gran: createResonauterGranularNode(),
+    gran: createResonauterGranularNode(node.audioParams),
     drySpatialGain: ctx.createGain(),
     reflectionInput: ctx.createGain(),
     reflectionLeftDelay: ctx.createDelay(0.25),
@@ -232,10 +173,10 @@ export function playResonauterSound(node, pitch, intensity = 1) {
   for (let h = 0; h < hits; h++) {
     const hitPitch = pitch * (1 + (h / hits - 0.5) * 0.08 * sVal);
     const hitGain = intensity * (1 - h / hits * 0.3 * sVal);
-    createStrike(baseTime + h * gap, hitPitch, hitGain);
+    createStrike(baseTime + h * gap, hitPitch, hitGain, h);
   }
 
-  function createStrike(now, hitPitch, hitGain) {
+  function createStrike(now, hitPitch, hitGain, hitIndex) {
     const noiseSrc = globalThis.audioContext.createBufferSource();
     const bufDur = 0.2;
     const buf = globalThis.audioContext.createBuffer(1, globalThis.audioContext.sampleRate * bufDur, globalThis.audioContext.sampleRate);
@@ -312,6 +253,10 @@ export function playResonauterSound(node, pitch, intensity = 1) {
     cross1.gain.value = clamp((p.geometry ?? 0.5) * 0.5 + (p.repeat ?? 0.5) * 0.3,0,0.95);
     const cross2 = globalThis.audioContext.createGain();
     cross2.gain.value = cross1.gain.value;
+    // Bound the combined feedback, including the cross-coupled delay paths.
+    const feedbackScale = Math.min(1, 0.98 / Math.max(
+      fb1.gain.value + cross2.gain.value, fb2.gain.value + cross1.gain.value));
+    [fb1, fb2, cross1, cross2].forEach(gain => { gain.gain.value *= feedbackScale; });
     delay1.connect(cross1); cross1.connect(delay2);
     delay2.connect(cross2); cross2.connect(delay1);
 
@@ -346,7 +291,7 @@ export function playResonauterSound(node, pitch, intensity = 1) {
     const pan = globalThis.audioContext.createStereoPanner();
     const width = Math.max(0, Math.min(1, p.spatialWidth ?? DEFAULT_RESONAUTER_PARAMS.spatialWidth));
     const roomSize = Math.max(0, Math.min(1, p.roomSize ?? DEFAULT_RESONAUTER_PARAMS.roomSize));
-    const hitScatter = ((h / Math.max(1, hits - 1)) - 0.5) * width * (0.35 + roomSize * 0.45);
+    const hitScatter = (hits > 1 ? hitIndex / (hits - 1) - 0.5 : 0) * width * (0.35 + roomSize * 0.45);
     pan.pan.value = Math.max(-1, Math.min(1, ((p.position ?? 0.5) * 2 - 1) + hitScatter));
     limiter.connect(pan);
     pan.connect(node.audioNodes.effectInput);

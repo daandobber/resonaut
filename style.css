@@ -1037,8 +1037,80 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 .close-panel-button:hover { opacity: 1; }
 #tapeLooperPanel.cassette-panel { position: fixed; bottom: 20px; right: -350px; width: 320px; padding: 15px; background-color: #3c3c4c; border: 2px solid #2a2a3a; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); z-index: 1050; transition: right 0.4s ease-in-out; color: #ddd; font-family: 'Courier New',Courier,monospace; }
 #tapeLooperPanel.cassette-panel:not(.hidden) { right: 20px; }
+#tapeLooperPanel.cassette-panel { width: min(380px, calc(100vw - 32px)); box-sizing: border-box; max-height: calc(100dvh - 70px); overflow-y: auto; padding: 20px; background: linear-gradient(145deg, #252a31, #15191f); border: 1px solid #59616c; border-radius: 16px; color: #e7e9ec; box-shadow: 0 18px 65px #0009; font-family: system-ui, sans-serif; }
+#tapeLooperPanel .cassette-top-label { color: #e5bb7c; background: transparent; font-size: 12px; letter-spacing: 2px; border: 0; padding: 8px 0 14px; }
+#tapeLooperPanel .cassette-main-body { background: #1b2027; border-color: #424a55; border-radius: 10px; }
+#tapeLooperPanel .cassette-status-display { font-size: 10px; color: #ebbc7a; }
+#tapeLooperPanel .cassette-timer-display { color: #f5dfbd; font-variant-numeric: tabular-nums; }
+#tapeLooperPanel .cassette-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+#tapeLooperPanel .cassette-controls button { min-height: 36px; font: 600 12px system-ui, sans-serif; border-radius: 7px; }
+#tapeLooperPanel #tapeLoopRecordBtn { color: #ffd4ce; background: #593330; border-color: #86524c; }
+#tapeLooperPanel #tapeLoopRecordBtn.active { background: #a43d35; color: white; }
+#tapeLooperPanel .tape-track-controls { display: flex; align-items: center; gap: 7px; margin: 12px 0 4px; }
+#tapeLooperPanel .tape-track-btn { flex: 1; padding: 7px; border: 1px solid #4b535d; border-radius: 6px; background: #292f37; color: #d4d9e0; }
+#tapeLooperPanel .tape-track-btn.has-take::after { content: ' •'; color: #89caa8; }
+#tapeLooperPanel .tape-track-btn.active { border-color: #e5bb7c; background: #504537; color: #ffe2b5; }
+#tapeLooperPanel input { accent-color: #e5bb7c; }
+#tapeLooperPanel .cassette-tape-visual-container { height: 56px; background: #111820; border: 1px solid #424a55; border-radius: 5px; }
+#tapeLooperPanel .tape-visual-loop-region { background: #e5bb7c22; border-color: #e5bb7c; }
+.tape-studio { border-top: 1px solid #424a55; margin-top: 16px; padding-top: 16px; }
+.tape-studio-heading { display: flex; justify-content: space-between; gap: 10px; font-size: 9px; letter-spacing: 1.1px; color: #a8b0bb; }
+.tape-presets { display: flex; gap: 6px; margin: 12px 0; }
+.tape-presets button { flex: 1; background: #2a3039; border: 1px solid #4c5562; color: #dce1e8; padding: 8px; border-radius: 6px; cursor: pointer; }
+.tape-presets button[aria-pressed="true"] { background: #e5bb7c; border-color: #e5bb7c; color: #211e19; }
+.tape-studio > label { display: grid; grid-template-columns: 58px 1fr 36px; gap: 10px; align-items: center; margin: 11px 0; font-size: 12px; }
+.tape-studio input { width: 100%; min-width: 0; }
+.tape-studio output { text-align: right; color: #c9ac84; font-size: 11px; font-variant-numeric: tabular-nums; }
+.tape-studio > .tape-length-choice { grid-template-columns: 90px 1fr; border-top: 1px solid #424a55; padding-top: 12px; }
+.tape-length-choice select { width: 100%; min-width: 0; background: #292f37; color: #e7e9ec; border: 1px solid #4b535d; padding: 7px; border-radius: 5px; }
+.tape-studio-hint { color: #a8b0bb; font-size: 11px; line-height: 1.6; margin: 12px 0 0; }
+#tapeLooperPanel button:focus-visible, #tapeLooperPanel input:focus-visible, #tapeLooperPanel select:focus-visible { outline: 2px solid #e5bb7c; outline-offset: 3px; }
+@media (max-width: 440px) { #tapeLooperPanel.cassette-panel:not(.hidden) { right: 16px; bottom: 12px; } }
 #tapeLooperPanel .close-panel-button { top: 5px; right: 5px; color: #888; font-size: 1.4em; }
 #tapeLooperPanel .close-panel-button:hover { color: #fff; }
+#tapeLooperPanel.cassette-panel { --tape-line: var(--text-color, #ddeeff); --tape-accent: #dc92b4; padding: 22px 14px 14px; border: 1px solid var(--button-hover); border-radius: 7px; background: #0c111c; color: var(--tape-line); box-shadow: 0 8px 30px #0005; }
+#tapeLooperPanel .cassette-main-body { position: relative; padding: 0; min-height: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+#tapeLooperPanel .cassette-top-label { position: absolute; z-index: 2; inset: 0 0 auto; padding: 0; margin: 0; border: 0; background: transparent; color: var(--tape-line); text-align: left; pointer-events: none; }
+.cassette-side { position: absolute; left: 2px; top: 2px; width: 26px; height: 28px; border: 1.5px solid currentColor; text-align: center; font: 26px/28px monospace; }
+.cassette-model { position: absolute; top: 9px; right: 3px; font: 9px monospace; letter-spacing: 2px; color: var(--tape-accent); }
+#tapeLooperPanel .cassette-window-area { display: block; padding: 0; margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+#tapeLooperPanel .cassette-reels { position: relative; display: block; width: 100%; aspect-ratio: 340 / 210; }
+#tapeLooperPanel .reel { position: absolute; z-index: 1; top: 18.095%; width: 32.941%; height: auto; aspect-ratio: 1; display: block; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--tape-line); }
+#tapeLooperPanel #tapeReelLeft { left: 7.059%; }
+#tapeLooperPanel #tapeReelRight { right: 7.059%; }
+#tapeLooperPanel .reel svg { display: block; width: 100%; height: 100%; stroke: currentColor; stroke-width: 1.5; }
+#tapeLooperPanel .cassette-status-container { position: absolute; top: 0; left: 20%; width: 60%; min-width: 0; padding: 0; }
+#tapeLooperPanel #tapeLoopTimer { order: -1; font: 25px/1.2 monospace; letter-spacing: -1px; color: var(--tape-line); margin: 0; }
+#tapeLooperPanel #tapeLoopStatusLabel { margin-top: 3px; font: 8px monospace; letter-spacing: 2px; color: var(--tape-accent); }
+.tape-line-path { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--tape-line); pointer-events: none; }
+.tape-line-guide { stroke: var(--button-hover); }
+.tape-line-accent { stroke: var(--tape-accent); }
+#tapeLooperPanel .tape-export-button { grid-column: 1 / -1; }
+#tapeLooperPanel :is(.cassette-controls button, .tape-track-btn, .tape-presets button) { background: transparent; border: 1px solid var(--button-hover); border-radius: 3px; color: var(--tape-line); box-shadow: none; }
+#tapeLooperPanel :is(.tape-track-btn.active, .tape-presets button[aria-pressed="true"]) { background: #ddeeff0b; color: var(--tape-line); border-color: var(--tape-line); }
+#tapeLooperPanel #tapeLoopRecordBtn { background: transparent; color: var(--tape-accent); border-color: #dc92b455; }
+#tapeLooperPanel #tapeLoopRecordBtn.active { background: #dc92b41a; border-color: var(--tape-accent); }
+#tapeLooperPanel .cassette-controls button:disabled { opacity: .35; }
+#tapeLooperPanel .cassette-tape-visual-container { height: 40px; border-color: var(--button-hover); border-radius: 2px; background: transparent; }
+#tapeLooperPanel .tape-visual-loop-region { background: #ddeeff0c; border-color: var(--tape-line); }
+#tapeLooperPanel .tape-visual-playhead { background: var(--tape-accent); box-shadow: none; }
+#tapeLooperPanel input { accent-color: var(--tape-line); }
+#tapeLooperPanel .cassette-speed-controls { display: grid; grid-template-columns: 40px 1fr auto; gap: 8px; padding: 10px 5px; margin-top: 10px; background: transparent; border-top: 1px solid var(--button-hover); border-bottom: 1px solid var(--button-hover); border-radius: 0; }
+#tapeLooperPanel .cassette-speed-controls label { grid-column: 1; grid-row: 1; }
+#tapeLooperPanel #tapeLoopSpeedSlider { grid-column: 1 / -1; grid-row: 2; width: 100%; height: 24px; margin: 0; background: linear-gradient(90deg, transparent calc(50% - .5px), var(--tape-line) calc(50% - .5px) calc(50% + .5px), transparent calc(50% + .5px)); }
+#tapeLooperPanel #tapeLoopSpeedValue { grid-column: 2; grid-row: 1; width: auto; text-align: center; color: var(--tape-line); font: 12px monospace; }
+#tapeLooperPanel #tapeLoopResetSpeedBtn { grid-column: 3; grid-row: 1; background: transparent; border-color: var(--button-hover); border-radius: 3px; }
+#tapeLooperPanel #tapeLoopSpeedSlider::-webkit-slider-runnable-track { height: 1px; border: 0; background: var(--button-hover); }
+#tapeLooperPanel #tapeLoopSpeedSlider::-webkit-slider-thumb { height: 16px; width: 6px; margin-top: -7px; border: 1px solid var(--tape-accent); border-radius: 1px; background: var(--tape-accent); }
+#tapeLooperPanel #tapeLoopSpeedSlider::-moz-range-track { height: 1px; border: 0; background: var(--button-hover); }
+#tapeLooperPanel #tapeLoopSpeedSlider::-moz-range-thumb { height: 16px; width: 6px; border: 1px solid var(--tape-accent); border-radius: 1px; background: var(--tape-accent); }
+.tape-speed-ticks { grid-column: 1 / -1; display: flex; justify-content: space-between; }
+#tapeLooperPanel .tape-speed-ticks span { width: auto; color: var(--tape-line); font: 9px monospace; opacity: .65; }
+.tape-character-drawer { margin-top: 12px; }
+.tape-character-drawer summary { cursor: pointer; color: var(--text-color); font: 12px monospace; }
+.tape-character-drawer .tape-studio { border-top: 0; margin-top: 4px; padding-top: 10px; }
+#tapeLooperPanel .tape-studio output { color: var(--tape-line); }
+#tapeLooperPanel :is(button, input, select):focus-visible { outline-color: var(--tape-line); }
 .cassette-main-body { background-color: #4a4a5a; border-radius: 5px; padding: 10px; border: 1px solid #5a5a6a; box-shadow: inset 0 0 5px rgba(0,0,0,0.3); margin-bottom: 10px; }
 .cassette-top-label, .cassette-bottom-label { font-size: .7em; text-transform: uppercase; text-align: center; padding: 3px 0; color: #bbb; background-color: rgba(0,0,0,.1); border-radius: 3px; }
 .cassette-top-label { margin-bottom: 8px; }
@@ -2204,3 +2276,191 @@ margin-top: 6px;
 /* Ensure piano roll canvas stays compact */
 #pianoRollCanvas { width: 250px !important; height: 80px !important; display: block; }
 #pianoRollContainer { display: flex; align-items: center; }
+
+/* Grid Pattern Lab: compact, keyboard-accessible controls for the canvas sequencer. */
+.grid-pattern-lab {
+  --lab-accent: var(--text-color, #c8e4ff);
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--button-hover, #3c5068);
+  font-size: 12px;
+}
+.grid-lab-header, .grid-lab-slot-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.grid-lab-header h4 { margin: 0; font-size: 14px; letter-spacing: .04em; }
+.grid-lab-badge { padding: 3px 7px; border: 1px solid var(--button-hover, #3c5068); border-radius: 20px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.grid-lab-presets, .grid-lab-actions, .grid-lab-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin: 10px 0; }
+.grid-pattern-lab .grid-lab-button {
+  width: auto; min-width: 0; margin: 0; padding: 6px 4px; min-height: 28px;
+  border: 1px solid var(--button-hover, #3c5068); border-radius: 5px;
+  background: var(--button-bg, #1b293b); color: var(--text-color, #d9e8f7);
+  font: inherit; cursor: pointer;
+}
+.grid-pattern-lab .grid-lab-button:hover { background: var(--button-hover, #3c5068); }
+.grid-pattern-lab .grid-lab-button[aria-pressed="true"], .grid-pattern-lab .is-stored {
+  background: var(--button-active, #3b647b); border-color: var(--lab-accent);
+}
+.grid-pattern-lab button:focus-visible, .grid-pattern-lab input:focus-visible, .grid-pattern-lab select:focus-visible, .grid-pattern-lab summary:focus-visible { outline: 2px solid var(--lab-accent); outline-offset: 2px; }
+.grid-pattern-lab button:disabled { opacity: .35; cursor: default; }
+.grid-pattern-lab .grid-lab-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; font-size: 11px; }
+.grid-pattern-lab select, .grid-pattern-lab input[type="number"] { min-width: 0; width: auto; max-width: 65%; margin: 0; padding: 5px; color: var(--text-color, #d9e8f7); background: var(--button-bg, #1b293b); border: 1px solid var(--button-hover, #3c5068); border-radius: 4px; font: inherit; }
+.grid-lab-preview-scroll { overflow-x: auto; padding: 4px 2px; scrollbar-width: thin; }
+.grid-lab-preview { display: grid; gap: 3px; }
+.grid-pattern-lab .grid-lab-cell { min-width: 18px; height: 20px; padding: 0; margin: 0; border: 1px solid var(--button-hover, #3c5068); border-radius: 3px; background: rgba(128, 160, 190, .08); cursor: pointer; }
+.grid-pattern-lab .grid-lab-cell.is-beat { border-left-color: var(--lab-accent); }
+.grid-pattern-lab .grid-lab-cell[aria-pressed="true"] { background: var(--button-active, #3b647b); box-shadow: inset 0 0 0 1px var(--lab-accent); }
+.grid-pattern-lab .grid-lab-cell.is-muted { opacity: .3; }
+.grid-lab-rows { padding: 8px 0; border-block: 1px solid var(--button-hover, #3c5068); margin: 12px 0; }
+.grid-lab-row { display: grid; grid-template-columns: 26px 30px 30px minmax(65px, 1fr); align-items: center; gap: 5px; margin: 5px 0; }
+.grid-lab-row-heading { font-size: 9px; opacity: .65; }
+.grid-lab-row-number { font-size: 10px; font-variant-numeric: tabular-nums; opacity: .8; }
+.grid-pattern-lab .grid-lab-chance { display: flex; align-items: center; gap: 5px; margin: 0; min-width: 0; }
+.grid-pattern-lab .grid-lab-chance input { display: block; width: 100%; min-width: 20px; margin: 0; accent-color: var(--lab-accent); }
+.grid-lab-chance output { min-width: 31px; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
+.grid-lab-generator { padding: 0 0 12px; }
+.grid-lab-generator summary { cursor: pointer; font-size: 11px; padding: 4px 0; }
+.grid-lab-generator-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.grid-lab-generator-fields .grid-lab-field { flex-direction: column; align-items: stretch; gap: 4px; }
+.grid-lab-generator-fields input[type="number"], .grid-lab-generator-fields select { width: 100%; max-width: 100%; box-sizing: border-box; }
+.grid-lab-slot-heading { align-items: flex-start; flex-direction: column; gap: 4px; margin: 2px 0; }
+.grid-lab-slot-heading small { font-size: 9px; opacity: .6; }
+.grid-lab-slot { display: grid; gap: 4px; }
+.grid-lab-slot > button:first-child { font-size: 14px; min-height: 32px; }
+.grid-lab-slot > button:last-child { font-size: 9px; min-height: 23px; padding: 3px; }
+.grid-lab-status, .grid-lab-hint { font-size: 10px; line-height: 1.6; opacity: .7; margin: 10px 0 0; }
+/* Workspace navigation: thin outlines and quiet, contextual guidance. */
+.workspace-search-launcher {
+  flex: 0 0 auto; margin-left: auto; padding: 5px 12px;
+  border: 1px solid var(--border-color, #56616c); border-radius: 4px;
+  background: transparent; color: var(--text-color, #e8edf1); cursor: pointer;
+}
+.workspace-command-palette {
+  box-sizing: border-box; width: min(580px, calc(100vw - 28px)); max-height: calc(100dvh - 48px);
+  margin: 12vh auto auto; padding: 18px; overflow: hidden;
+  background: var(--panel-bg, #141a20); color: var(--text-color, #e8edf1);
+  border: 1px solid #8293a680; border-radius: 8px; box-shadow: 0 16px 70px #0008;
+  font: 14px/1.45 system-ui, sans-serif;
+}
+.workspace-command-palette::backdrop { background: #050a10a8; }
+.workspace-search-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.workspace-search-heading button { background: transparent; color: inherit; border: 1px solid #ffffff30; padding: 3px 8px; border-radius: 3px; cursor: pointer; }
+#workspaceCommandInput, .menu-search {
+  box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #ffffff30;
+  border-radius: 4px; background: #0003; color: inherit; font: inherit;
+}
+#workspaceCommandInput:focus, .menu-search:focus { outline: 1px solid #a8cce0; outline-offset: 2px; }
+#workspaceCommandResults { margin-top: 12px; max-height: min(48dvh, 390px); overflow-y: auto; overscroll-behavior: contain; }
+.workspace-command-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px; border: 1px solid transparent; border-radius: 3px; cursor: pointer; }
+.workspace-command-row[aria-selected="true"] { border-color: #aac9dd75; background: #9ec2d51a; }
+.workspace-command-row:hover { background: #9ec2d51a; }
+.workspace-command-row small { color: #a3b3c1; font-size: 11px; flex-shrink: 0; }
+.workspace-search-footer { font-size: 11px; color: #a3b3c1; margin: 14px 0 0; }
+.workspace-search-footer span { float: right; }
+.workspace-search-empty, .menu-search-empty { color: #a3b3c1; padding: 12px 4px; font-size: 12px; }
+.menu-search { margin-bottom: 10px; font-size: 12px; }
+#sideToolbarContent [hidden] { display: none !important; }
+@media (max-width: 700px) {
+    .workspace-search-launcher { padding: 4px 7px; }
+  .workspace-command-palette { margin-top: 5vh; }
+  .workspace-search-footer span { display: none; }
+}
+.pattern-orb-editor { padding: 10px; border: 1px solid #a6c5d64a; border-radius: 5px; }
+.pattern-orb-editor h4 { margin: 0 0 8px; }
+.pattern-orb-editor p { font-size: 11px; line-height: 1.5; opacity: .8; }
+.pattern-orb-editor label { display: block; font-size: 11px; margin: 9px 0; }
+.pattern-orb-editor input:not([type=checkbox]), .pattern-orb-editor select { box-sizing: border-box; width: 100%; margin-top: 4px; padding: 5px; background: var(--panel-bg); color: inherit; border: 1px solid #a6c5d64a; }
+.pattern-actions { display: flex; flex-wrap: wrap; gap: 5px; margin: 12px 0; }
+.pattern-orb-editor button { color: inherit; background: transparent; border: 1px solid #a6c5d650; border-radius: 3px; padding: 6px; cursor: pointer; }
+.pattern-steps { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 5px; }
+.pattern-steps button { white-space: pre-line; font-size: 11px; opacity: .5; }
+.pattern-steps button.on { opacity: 1; background: #a6c5d618; }
+.pattern-steps button.selected { border-color: #aebfff; }
+.pattern-steps button.current { box-shadow: inset 0 -3px #a8e5dc; }
+.pattern-step-detail { margin: 12px 0 0; border: 1px solid #a6c5d64a; min-width: 0; }
+.pattern-step-detail legend { font-size: 12px; }
+.symphiose-music-editor { padding: 12px; border: 1px solid #a6c5d64a; border-radius: 5px; margin-bottom: 12px; }
+.symphiose-music-editor h4 { font-size: 13px; margin: 0 0 8px; }
+.symphiose-music-editor p, .symphiose-menu-note { font-size: 11px; line-height: 1.6; opacity: .75; }
+.symphiose-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 12px 0; }
+.symphiose-presets button, .symphiose-voices button { border: 1px solid #a6c5d64a; border-radius: 3px; background: transparent; color: inherit; padding: 6px; cursor: pointer; }
+.symphiose-presets button:hover { background: #a6c5d61a; }
+.symphiose-music-editor label { display: block; font-size: 11px; margin-top: 10px; }
+.symphiose-music-editor select, .symphiose-music-editor input { box-sizing: border-box; width: 100%; margin-top: 5px; }
+.symphiose-music-editor select { padding: 6px; color: inherit; background: var(--panel-bg); border: 1px solid #a6c5d64a; }
+.symphiose-music-editor output { float: right; opacity: .75; }
+
+/* Musical editors share one flat, compact sidebar page. */
+#hamburgerMenuPanel:has(.pattern-orb-editor, .symphiose-music-editor) {
+  width: min(370px, calc(100vw - 120px));
+}
+.music-control-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 12px; }
+.music-control-grid > label { min-width: 0; margin: 0; font-size: 11px; }
+.music-control-grid input:not([type=checkbox]), .music-control-grid select {
+  width: 100%; min-width: 0; box-sizing: border-box; margin: 3px 0 0; padding: 4px;
+  background: var(--panel-bg); color: inherit; border: 1px solid #a6c5d64a; border-radius: 3px;
+}
+.music-control-grid input[type=range] { padding: 0; }
+.music-control-grid .music-toggle { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.music-control-grid .music-toggle input { width: auto; margin: 0; }
+.music-control-grid :disabled { opacity: .4; }
+.symphiose-music-editor h5 { margin: 12px 0 7px; font-size: 11px; font-weight: 600; border-bottom: 1px solid #a6c5d630; padding-bottom: 5px; }
+.symphiose-musical-controls { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.symphiose-musical-controls > label { grid-column: span 3; }
+.symphiose-musical-controls > .music-number { grid-column: span 2; }
+.symphiose-music-editor .symphiose-presets { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 8px 0; }
+.symphiose-presets button { font-size: 10px; min-width: 0; }
+.pattern-note-matrix table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 2px; margin: 7px 0; }
+.pattern-note-matrix th { font-size: 10px; font-weight: 400; padding: 0; }
+.pattern-note-matrix th:first-child { width: 48px; text-align: left; opacity: .8; }
+.pattern-note-matrix td { padding: 0; border-radius: 3px; }
+.pattern-note-matrix button { width: 100%; padding: 4px 0; font-size: 11px; opacity: .4; }
+.pattern-note-matrix button.on { opacity: 1; background: #a6c5d618; }
+.pattern-note-matrix button:not(.on) { text-decoration: line-through; }
+.pattern-orb-editor .pattern-note-matrix input {
+  width: 100%; min-width: 0; margin: 0; padding: 4px 0; text-align: center; font-size: 11px;
+  appearance: textfield; -moz-appearance: textfield;
+}
+.pattern-note-matrix input::-webkit-inner-spin-button,
+.pattern-note-matrix input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.pattern-note-matrix .current { box-shadow: inset 0 -2px #a8e5dc; }
+.instrument-control { position: relative; display: grid; justify-items: center; gap: 2px; min-width: 0; }
+.instrument-control output { border: 0; background: none; padding: 0; font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; color: inherit; pointer-events: none; }
+:is(.panel, #tapeLooperPanel) .instrument-control.instrument-dial input[type="range"] { appearance: none; display: block; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #9fb7ce80; background: radial-gradient(circle at 40% 32%,#405476,#18263e 75%); padding: 0; margin: 4px 0 0; cursor: ns-resize; touch-action: none; }
+:is(.panel, #tapeLooperPanel) .instrument-control.instrument-dial input[type="range"]::-webkit-slider-thumb { appearance: none; width: 0; height: 0; background: none; margin: 0; }
+:is(.panel, #tapeLooperPanel) .instrument-control.instrument-dial input[type="range"]::-moz-range-thumb { width: 0; height: 0; border: 0; background: none; }
+:is(.panel, #tapeLooperPanel) .instrument-control.instrument-dial input[type="range"]::-webkit-slider-runnable-track { height: 0; background: none; border: 0; }
+:is(.panel, #tapeLooperPanel) .instrument-control.instrument-dial input[type="range"]::-moz-range-track { height: 0; background: none; border: 0; }
+.instrument-needle { position: absolute; top: 4px; width: 40px; height: 40px; transform: rotate(var(--dial-angle)); pointer-events: none; }
+.instrument-needle::after { content: ''; position: absolute; left: 19px; top: 5px; width: 2px; height: 12px; border-radius: 2px; background: #c7e5e5; }
+.instrument-control.disabled { opacity: .4; }
+.instrument-control:focus-within { outline: 1px solid #aacddd88; outline-offset: 2px; border-radius: 5px; }
+.instrument-control.instrument-fader input[type="range"] { appearance: auto; width: 100%; min-width: 0; height: 13px; padding: 0; margin: 0; accent-color: #a8d8d2; border: 0; background: none; }
+.instrument-pitch { grid-template-columns: 1fr; gap: 0; }
+.instrument-control.instrument-pitch input[type="range"] { position: absolute; opacity: 0; width: 1px; height: 1px; padding: 0; margin: 0; }
+.instrument-pitch output { grid-row: 2; font-size: 11px; }
+.instrument-pitch button { grid-row: 1; min-height: 18px; width: 100%; margin: 0; padding: 0 !important; opacity: 1 !important; line-height: 16px; border: 0; background: #a6c5d610; text-decoration: none !important; }
+.instrument-pitch button:last-child { grid-row: 3; }
+.instrument-choices { display: flex; gap: 3px; flex-wrap: wrap; min-width: 0; margin-top: 4px; }
+.instrument-choices select[hidden] { display: none !important; }
+.instrument-choices button { flex: 1 1 auto; min-width: 0; padding: 5px 6px; font-size: 10px; line-height: 14px; white-space: normal; }
+.instrument-choices button[aria-pressed="true"] { color: #e2f4f1; background: #55787966; border-color: #a8d8d2; }
+.instrument-cycle { display: grid; grid-template-columns: 22px minmax(0,1fr) 22px; }
+.instrument-cycle button { padding: 4px 2px; }
+.pattern-orb-editor .music-control-grid { grid-template-columns: repeat(6,minmax(0,1fr)); align-items: start; }
+.pattern-orb-editor .music-control-grid > label { grid-column: span 2; }
+.pattern-orb-editor .music-control-grid label:has(.instrument-choices) { grid-column: span 3; }
+.pattern-orb-editor .music-control-grid label:has(.instrument-dial) { text-align: center; }
+.pattern-orb-editor .pattern-note-matrix input[type="checkbox"] { appearance: none; width: 18px; height: 18px; margin: 3px auto; padding: 0; display: block; border: 1px solid #8298b366; border-radius: 4px; cursor: pointer; background: #ffffff05; }
+.pattern-orb-editor .pattern-note-matrix input[type="checkbox"]:checked { background: #a8e5dc; box-shadow: inset 0 0 0 4px #1c2941; border-color: #a8e5dc; }
+.pattern-orb-editor .pattern-note-matrix input[type="checkbox"]:focus-visible { outline: 2px solid #c8d9ef; outline-offset: 2px; }
+.pattern-orb-editor :focus-visible, .symphiose-music-editor :focus-visible { outline: 2px solid #a8e5dc; outline-offset: 1px; }
+.symphiose-pattern { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; margin: 12px 0; }
+.symphiose-pattern i { height: 14px; border: 1px solid #a6c5d63a; border-radius: 2px; }
+.symphiose-pattern i.hit { background: #a6c5d650; }
+.symphiose-pattern i.current { border-color: #ecf8ff; box-shadow: 0 0 5px #c8eaff70; }
+.symphiose-voices { font-size: 10px; line-height: 1.6; }
+.symphiose-voices > div { display: flex; justify-content: space-between; align-items: center; gap: 6px; border-top: 1px solid #a6c5d622; padding: 4px 0; }
+.symphiose-voices button { padding: 0 5px; }
+.symphiose-advanced > summary { cursor: pointer; font-size: 11px; padding: 8px 0; opacity: .8; }
+
+#tapeLooperPanel .instrument-choices button { background: var(--button-bg, #1c2941); color: var(--text-color, #cde4ef); border: 1px solid var(--button-hover, #445675); border-radius: 3px; }
+#tapeLooperPanel .instrument-control { min-width: 44px; }

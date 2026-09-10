@@ -3,6 +3,7 @@ import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { fmSynthPresets } from './orbs/fm-synth-orb.js';
 import { SAMPLER_DEFINITIONS } from './samplers.js';
 import { pluckSynthPresets } from './orbs/pluck-synth-orb.js';
+import { addMenuSearch } from './workspaceAssistant.js';
 
 export function populateSideToolbar(contentType, title) {
   if (!sideToolbarContent || !sideToolbarTitle || !sideToolbar) return;
@@ -249,6 +250,7 @@ export function populateSideToolbar(contentType, title) {
   }
 
   sideToolbarContent.appendChild(groupDiv);
+  addMenuSearch(sideToolbarContent);
 
   if (
     window.helpWizard &&

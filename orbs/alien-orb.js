@@ -455,6 +455,7 @@ export function updateAlienNodesParams(
   immediate = false,
 ) {
   if (!nodes) return;
+  baseFreq = nodes.notePitch ?? baseFreq;
   if (
     (engine === 0 && !nodes.osc) ||
     (engine === 1 && !nodes.carrier) ||
