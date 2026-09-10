@@ -56,6 +56,24 @@ it('edits multiple notes and dynamics directly without a selected-step menu or l
   expect(node.audioParams.steps[7].degree).toBe(-5);
 });
 
+it.each(['note_loom', 'chord_garden', 'arp_orbit', 'acid_mycelium'])('gives %s a Random button that reshuffles the pattern and commits once', type => {
+  const node = { type, audioParams: patternDefaults(type) }, save = vi.fn();
+  const before = JSON.stringify(node.audioParams.steps);
+  const editor = buildPatternOrbEditor(node, { onChange: save, onStep: vi.fn(), subdivisionOptions: subdivisions });
+  document.body.append(editor);
+  const randomBtn = [...editor.querySelectorAll('.pattern-actions button')].find(b => b.textContent === 'Random');
+  expect(randomBtn).toBeTruthy();
+  randomBtn.click();
+  expect(JSON.stringify(node.audioParams.steps)).not.toBe(before);
+  expect(save).toHaveBeenCalledOnce();
+  expect(node.audioParams.steps.slice(0, node.audioParams.length).some(s => s.enabled)).toBe(true);
+});
+
+it('defaults freshly created melodic pattern orbs to following the project scale', () => {
+  expect(patternDefaults('note_loom').noteMode).toBe('absolute');
+  expect(patternDefaults('acid_mycelium').noteMode).toBe('absolute');
+});
+
 it('keeps generated rhythm and external clock controls directly editable', () => {
   const node = { type: 'orbit_rhythm', audioParams: patternDefaults('orbit_rhythm') };
   const editor = buildPatternOrbEditor(node, { onChange: vi.fn(), onStep: vi.fn(), subdivisionOptions: subdivisions });

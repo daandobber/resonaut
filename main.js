@@ -27,6 +27,7 @@ import { showPulseSynthMenu } from './orbs/pulse-synth-ui.js';
 import * as Tone from 'tone';
 import { createTapeVoice, TAPE_PRESETS, tapeSpeedLabel } from './utils/tapeAudio.js';
 import { mountTapeStudio } from './tapeStudioUI.js';
+import { mountOrbsManager } from './orbsManagerUI.js';
 import { isCenterSequencerType, isEmbeddedInstrument, centerOwnership, repairCenterConnections } from './utils/centerSequencerRouting.js';
 import { encodeLoopWav } from './utils/wav.js';
 import { createMasterEQChain, masterEQConfig, updateMasterEQChain } from './masterEQChain.js';
@@ -332,6 +333,10 @@ const {
   appMenuRecordBtn,
   appMenuToggleTapeLooperBtn,
   appMenuPerformanceBtn,
+  appMenuOrbsManagerBtn,
+  orbsManagerPanel,
+  closeOrbsManagerPanelBtn,
+  orbsManagerContent,
   tapeLooperPanel,
   closeTapeLooperPanelBtn,
   tapeWaveformCanvas,
@@ -813,7 +818,10 @@ let perfReverbSize = 1.0;
 let perfResoEnabled = false, perfReverbEnabled = false;
 let mrfaEnabled = false;
 let microcosmEnabled = false;
-let sidechainAmount = 0.0;
+// Per-orb sidechain links, opt-in only: { id, triggerId, targetId, amount, enabled }.
+// Nothing is sidechained by default; links are created from the Orbs Manager panel.
+let sidechainLinks = [];
+let sidechainLinkIdCounter = 0;
 let microcosmInput, microcosmDryGain, microcosmWetChainGain, microcosmMix;
 let microcosmFilter, microcosmWetGain, microcosmSpaceSend, microcosmLoopLevelNode;
 let microcosmDelays = [], microcosmFeedbacks = [], microcosmLFOs = [], microcosmLFOGains = [];
@@ -858,6 +866,7 @@ function createEmptyTapeTrack() { return {
 let tapeTracks = Array.from({ length: NUM_TAPE_TRACKS }, createEmptyTapeTrack);
 const tapeVoices = new Array(NUM_TAPE_TRACKS).fill(null);
 let tapeStudioUI = null;
+let orbsManagerUI = null;
 let tapeLoopSourceNodes = new Array(NUM_TAPE_TRACKS).fill(null);
 let tapeTrackGainNodes = new Array(NUM_TAPE_TRACKS).fill(null);
 let tapeTrackAnalyserNodes = new Array(NUM_TAPE_TRACKS).fill(null);
@@ -1461,6 +1470,18 @@ function createUserDefinedGroupFromNodeIds(selectedNodeIds) {
   return group;
 }
 
+function dissolveUserDefinedGroup(groupId) {
+  const group = userDefinedGroups.find((g) => g.id === groupId);
+  if (!group) return;
+  [group.gainNode, group.delaySendGainNode, group.reverbSendGainNode].forEach((n) => {
+    try { n?.disconnect(); } catch (e) {}
+  });
+  userDefinedGroups = userDefinedGroups.filter((g) => g.id !== groupId);
+  identifyAndRouteAllGroups();
+  updateMixerGUI();
+  saveState();
+}
+
 function makeUserDefinedGroup() {
   const selectedNodeIds = Array.from(selectedElements)
       .filter(el => el.type === 'node')
@@ -1471,6 +1492,59 @@ function makeUserDefinedGroup() {
 function refreshNodeAudio(node) {
   if (!node || !node.audioNodes) return;
   updateNodeAudioParams(node);
+}
+
+function getNodeOutputGainNode(node) {
+  if (!node || !node.audioNodes) return null;
+  return (
+    node.audioNodes.gainNode ||
+    node.audioNodes.mainGain ||
+    node.audioNodes.output ||
+    node.audioNodes.mix ||
+    null
+  );
+}
+
+// Per-orb sidechain, opt-in only (links created from the Orbs Manager panel).
+// Ducks the target orb's own output gain whenever the chosen trigger orb fires.
+function applySidechainDucking(triggerNode) {
+  if (!sidechainLinks.length || !audioContext || !triggerNode) return;
+  const now = audioContext.currentTime;
+  sidechainLinks.forEach((link) => {
+    if (!link.enabled || link.triggerId !== triggerNode.id || !(link.amount > 0)) return;
+    const targetNode = findNodeById(link.targetId);
+    const outputNode = getNodeOutputGainNode(targetNode);
+    if (!outputNode || typeof outputNode.gain?.setValueAtTime !== "function") return;
+    if (!outputNode._sidechainDucking) {
+      outputNode._sidechainRestLevel = outputNode.gain.value;
+    }
+    outputNode._sidechainDucking = true;
+    const restLevel = outputNode._sidechainRestLevel;
+    const duckTarget = restLevel * (1 - link.amount * 0.85);
+    outputNode.gain.cancelScheduledValues(now);
+    outputNode.gain.setValueAtTime(duckTarget, now);
+    outputNode.gain.setTargetAtTime(restLevel, now + 0.015, 0.06);
+    clearTimeout(outputNode._sidechainReleaseTimer);
+    outputNode._sidechainReleaseTimer = setTimeout(() => {
+      outputNode._sidechainDucking = false;
+    }, 300);
+  });
+}
+
+function getSidechainLinkForTarget(targetId) {
+  return sidechainLinks.find((l) => l.targetId === targetId) || null;
+}
+
+// One trigger per target orb. Pass triggerId: null (or omit) to remove the link.
+function setSidechainLink(targetId, { triggerId, amount = 0.6, enabled = true } = {}) {
+  sidechainLinks = sidechainLinks.filter((l) => l.targetId !== targetId);
+  let link = null;
+  if (triggerId != null && triggerId !== targetId) {
+    link = { id: `sc_${sidechainLinkIdCounter++}`, triggerId, targetId, amount, enabled };
+    sidechainLinks.push(link);
+  }
+  saveState();
+  return link;
 }
 
 function ensurePatchEffectSendsForNode(node) {
@@ -2399,6 +2473,78 @@ function isPulsarType(type) {
 
 function isDrumType(type) {
   return drumElementTypes.some((dt) => dt.type === type);
+}
+
+// Friendly labels for the Orbs Manager list. Anything not listed here falls
+// back to a prettified version of the raw node.type string.
+const ORB_TYPE_LABELS = {
+  sound: "Sound",
+  nebula: "Nebula",
+  mind: "Mind",
+  [QUEEN_MIND_TYPE]: "Queen Mind",
+  [PRORB_TYPE]: "ProOrb",
+  [MIDI_ORB_TYPE]: "MIDI Orb",
+  [ALIEN_ORB_TYPE]: "Alien Orb",
+  [ALIEN_DRONE_TYPE]: "Alien Drone",
+  [ARVO_DRONE_TYPE]: "Arvo Drone",
+  [FM_DRONE_TYPE]: "FM Drone",
+  [RESONAUTER_TYPE]: "Resonautor",
+  [RADIO_ORB_TYPE]: "Radio Orb",
+  [TIMELINE_GRID_TYPE]: "Timeline Grid",
+  [GRID_SEQUENCER_TYPE]: "Grid Sequencer",
+  [SPACERADAR_TYPE]: "Space Radar",
+  [CRANK_RADAR_TYPE]: "Crank Radar",
+  [CANVAS_SEND_ORB_TYPE]: "Canvas Send",
+  [CANVAS_RECEIVE_ORB_TYPE]: "Canvas Receive",
+};
+pulsarTypes.forEach((p) => { ORB_TYPE_LABELS[p.type] = p.label; });
+drumElementTypes.forEach((d) => { ORB_TYPE_LABELS[d.type] = d.label; });
+
+function prettifyOrbType(type) {
+  return String(type || "orb")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getOrbLabel(node) {
+  if (!node) return "?";
+  if (node.type === "sound" && node.audioParams?.waveform) {
+    const preset =
+      analogWaveformPresets.find((p) => p.type === node.audioParams.waveform) ||
+      fmSynthPresets.find((p) => p.type === node.audioParams.waveform) ||
+      (typeof pluckSynthPresets !== "undefined"
+        ? pluckSynthPresets.find((p) => p.type === node.audioParams.waveform)
+        : null) ||
+      samplerWaveformTypes.find((p) => p.type === node.audioParams.waveform);
+    if (preset) return preset.label;
+  }
+  return ORB_TYPE_LABELS[node.type] || prettifyOrbType(node.type);
+}
+
+// Only offers a "replace" dropdown for node types where an in-place swap is
+// already a proven safe path in this codebase (see applyReplacementToNode).
+function getOrbReplaceOptions(node) {
+  if (!node) return null;
+  if (node.type === "sound") {
+    const options = [
+      ...analogWaveformPresets.map((p) => ({ type: p.type, label: p.label })),
+      ...fmSynthPresets.map((p) => ({ type: p.type, label: p.label })),
+      ...(typeof pluckSynthPresets !== "undefined"
+        ? pluckSynthPresets.map((p) => ({ type: p.type, label: p.label }))
+        : []),
+      ...samplerWaveformTypes
+        .filter((p) => !p.loadFailed)
+        .map((p) => ({ type: p.type, label: p.label })),
+    ];
+    return { contentType: "instrument", options };
+  }
+  if (isDrumType(node.type)) {
+    return {
+      contentType: "drumElements",
+      options: drumElementTypes.map((d) => ({ type: d.type, label: d.label })),
+    };
+  }
+  return null;
 }
 
 const NEBULA_PRESET_OPTIONS = [...analogWaveformPresets, ...fmSynthPresets].filter(
@@ -5073,35 +5219,6 @@ function initializeGlobalEffectSliders() {
         });
     }
 
-    // Kick Sidechain block (created once)
-    if (!document.getElementById('kickSidechainBlock')) {
-        const perfContent = document.getElementById('performance-panel-content');
-        if (perfContent) {
-            const block = document.createElement('div');
-            block.className = 'performance-block';
-            block.id = 'kickSidechainBlock';
-            block.innerHTML = `
-                <h4>Kick Sidechain</h4>
-                <div class="perf-knob-grid cols-1" style="margin-top:6px;">
-                    <div class="perf-knob-cell">
-                        <input type="range" id="kickSidechainSlider" class="perf-knob-input" min="0" max="1" step="0.01" value="0">
-                        <span class="perf-knob-label">Duck</span>
-                        <span id="kickSidechainValue" class="perf-knob-value">0%</span>
-                    </div>
-                </div>`;
-            perfContent.appendChild(block);
-            const slider = document.getElementById('kickSidechainSlider');
-            const valueEl = document.getElementById('kickSidechainValue');
-            slider.value = sidechainAmount;
-            valueEl.textContent = Math.round(sidechainAmount * 100) + '%';
-            slider.addEventListener('input', (e) => {
-                sidechainAmount = parseFloat(e.target.value);
-                valueEl.textContent = Math.round(sidechainAmount * 100) + '%';
-            });
-            slider.addEventListener('change', saveState);
-        }
-    }
-
     // Helper: pas alle microcosm audio nodes aan op basis van de huidige sliders
     function applyMicrocosmParams() {
         if (!audioContext || !microcosmInput) return;
@@ -5179,7 +5296,101 @@ function updateMRFADirectGain() {
 }
 
 // ── Rotary pedal knob ────────────────────────────────────────────────────────
+// Every rotary knob in the app (DJ EQ + Performance panel effects) is built
+// through this one function, so re-skinning it here re-skins all of them at
+// once. It now renders the same NexusUI radial dial used by the FM/Analog/
+// Pluck/Pulse orb panels instead of the old hand-drawn canvas arc, so every
+// knob in the app looks and drags the same way. `color` keeps each section's
+// existing accent (DJ EQ yellow, Resonator teal, Reverb purple, Microcosm
+// pink) so the color-coding survives the re-skin.
+const pedalKnobDials = new Set();
+let pedalKnobThemeObserverInitialized = false;
+function pedalKnobFillColor() {
+    return getComputedStyle(document.body).getPropertyValue('--button-bg').trim() || '#2c2c40';
+}
+function initPedalKnobThemeObserver() {
+    if (pedalKnobThemeObserverInitialized || typeof MutationObserver === 'undefined') return;
+    const observer = new MutationObserver(() => {
+        const fill = pedalKnobFillColor();
+        pedalKnobDials.forEach((d) => { if (d.colorize) d.colorize('fill', fill); });
+    });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    pedalKnobThemeObserverInitialized = true;
+}
+
 function initPedalKnob(canvas, input, color = '#ffd03a') {
+    if (!canvas || !input) return;
+    if (canvas._pedalKnobDial) {
+        const v = parseFloat(input.value);
+        if (Number.isFinite(v)) canvas._pedalKnobDial.value = v;
+        return;
+    }
+    if (canvas._pedalKnobPending) return;
+    canvas._pedalKnobPending = true;
+    getNexusForCircle().then((Nexus) => {
+        if (!Nexus || !Nexus.Dial) { initPedalKnobCanvasFallback(canvas, input, color); return; }
+        initPedalKnobNexus(canvas, input, color, Nexus);
+    });
+}
+
+function initPedalKnobNexus(canvas, input, color, Nexus) {
+    const size = canvas.width || 36;
+    const container = document.createElement('div');
+    container.id = canvas.id;
+    container.className = canvas.className;
+    container.style.width = size + 'px';
+    container.style.height = size + 'px';
+    canvas.replaceWith(container);
+
+    const min = parseFloat(input.min);
+    const max = parseFloat(input.max);
+    const step = parseFloat(input.step) || (max - min) / 100;
+    const dial = new Nexus.Dial(container, {
+        size: [size, size],
+        interaction: 'radial',
+        mode: 'relative',
+        min, max, step,
+        value: parseFloat(input.value),
+    });
+    if (dial.colorize) {
+        dial.colorize('accent', color);
+        dial.colorize('fill', pedalKnobFillColor());
+    }
+    container._pedalKnobDial = dial;
+    pedalKnobDials.add(dial);
+    initPedalKnobThemeObserver();
+
+    // Pointer Events cover mouse/touch/pen in one family; only fall back to the
+    // separate mouse/touch events on the rare browser without pointer support,
+    // so a single release never fires two overlapping "release" signals.
+    const releaseEvents = typeof window !== 'undefined' && window.PointerEvent
+        ? ['pointerup']
+        : ['mouseup', 'touchend'];
+    let committing = false;
+    const commitChange = () => {
+        committing = false;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    dial.on('change', (v) => {
+        input.value = v;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        if (!committing) {
+            committing = true;
+            releaseEvents.forEach((evt) => document.addEventListener(evt, commitChange, { once: true }));
+        }
+    });
+
+    input.addEventListener('input', () => {
+        const v = parseFloat(input.value);
+        if (Number.isFinite(v) && dial.value !== v) dial.value = v;
+    });
+}
+
+// Used only if the NexusUI module fails to load (offline/CDN hiccup): the
+// original hand-drawn canvas knob, unchanged, so the control still works.
+function initPedalKnobCanvasFallback(canvas, input, color = '#ffd03a') {
+    if (canvas._pedalKnobFallbackInit) return;
+    canvas._pedalKnobFallbackInit = true;
     const SIZE = canvas.width;
     const kCtx = canvas.getContext('2d');
     const cx = SIZE / 2, cy = SIZE / 2;
@@ -7097,6 +7308,7 @@ export function triggerNodeEffect(
   const params = node.audioParams;
   let intensity = pulseData.intensity ?? 1.0;
   if (!Number.isFinite(intensity) || intensity <= 0) return;
+  if (!node.isChordVoice) applySidechainDucking(node);
   const chord = readPulseChord(pulseData);
   if (chord && node.type === 'sound' && Number.isFinite(params.scaleIndex)) {
     const { chord: ignoredChord, note, scaleDegreeOffset, ...voiceData } = pulseData;
@@ -8432,34 +8644,38 @@ export function triggerNodeEffect(
     try {
       if (node.type === "drum_kick") {
         // Main kick oscillator with more punch
+        const pitchEnvAmount = soundParams.pitchEnvAmount ?? 3.0;
+        const pitchEnvTime = soundParams.pitchEnvTime ?? 0.08;
+        const punch = soundParams.punch ?? 0.4;
+        const sub = soundParams.sub ?? 0.6;
         const osc = audioContext.createOscillator();
         const gain = audioContext.createGain();
-        const kickStartFreq = targetFreq * 3.0; // Higher start for more click
+        const kickStartFreq = targetFreq * pitchEnvAmount; // Higher start for more click
         osc.frequency.setValueAtTime(kickStartFreq, now);
-        osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.08);
-        
+        osc.frequency.exponentialRampToValueAtTime(targetFreq, now + pitchEnvTime);
+
         // Much punchier volume envelope - fast attack, punchy decay
         const boostedVol = finalVol * 50.0; // 50x volume boost - make it LOUD!
         gain.gain.setValueAtTime(boostedVol, now);
         gain.gain.exponentialRampToValueAtTime(boostedVol * 0.5, now + 0.01); // Quick punch
         gain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay);
-        
+
         // Add harmonic for more punch
         const harmonic = audioContext.createOscillator();
         const harmonicGain = audioContext.createGain();
         harmonic.frequency.setValueAtTime(kickStartFreq * 1.5, now);
-        harmonic.frequency.exponentialRampToValueAtTime(targetFreq * 1.3, now + 0.04);
-        harmonicGain.gain.setValueAtTime(boostedVol * 0.4, now);
+        harmonic.frequency.exponentialRampToValueAtTime(targetFreq * 1.3, now + pitchEnvTime * 0.5);
+        harmonicGain.gain.setValueAtTime(boostedVol * punch, now);
         harmonicGain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay * 0.6);
-        
+
         // Add sub-harmonic for massive low end
         const subHarmonic = audioContext.createOscillator();
         const subGain = audioContext.createGain();
         subHarmonic.frequency.setValueAtTime(targetFreq * 0.5, now); // Sub bass
         subHarmonic.type = 'sine';
-        subGain.gain.setValueAtTime(boostedVol * 0.6, now);
+        subGain.gain.setValueAtTime(boostedVol * sub, now);
         subGain.gain.exponentialRampToValueAtTime(0.001, now + soundParams.decay * 1.2);
-        
+
         // Connect everything
         osc.connect(gain);
         harmonic.connect(harmonicGain);
@@ -8474,15 +8690,11 @@ export function triggerNodeEffect(
         osc.stop(now + soundParams.decay + 0.05);
         harmonic.stop(now + soundParams.decay * 0.6 + 0.05);
         subHarmonic.stop(now + soundParams.decay * 1.2 + 0.05);
-        if (sidechainAmount > 0 && masterGain) {
-          const duckTarget = 1.0 - sidechainAmount * 0.85;
-          masterGain.gain.cancelScheduledValues(now);
-          masterGain.gain.setValueAtTime(duckTarget, now);
-          masterGain.gain.setTargetAtTime(masterGain._originalGainBeforeMute ?? 0.8, now + 0.015, 0.06);
-        }
       } else if (node.type === "drum_snare") {
         const noiseDur = soundParams.noiseDecay ?? 0.15;
         const bodyDecay = soundParams.decay ?? 0.2;
+        const tone = soundParams.tone ?? 1500;
+        const body = soundParams.body ?? 0.8;
         const noise = audioContext.createBufferSource();
         const noiseBuffer = audioContext.createBuffer(
           1,
@@ -8496,7 +8708,7 @@ export function triggerNodeEffect(
         noise.buffer = noiseBuffer;
         const noiseFilter = audioContext.createBiquadFilter();
         noiseFilter.type = "highpass";
-        noiseFilter.frequency.value = 1500;
+        noiseFilter.frequency.value = tone;
         const noiseGain = audioContext.createGain();
         const boostedSnareVol = finalVol * 8.0; // 8x volume boost to match other synths
         noiseGain.gain.setValueAtTime(boostedSnareVol, now);
@@ -8510,7 +8722,7 @@ export function triggerNodeEffect(
         const gain = audioContext.createGain();
         osc.type = "triangle";
         osc.frequency.setValueAtTime(soundParams.baseFreq, now);
-        gain.gain.setValueAtTime(boostedSnareVol * 0.8, now); // Boost body too
+        gain.gain.setValueAtTime(boostedSnareVol * body, now); // Boost body too
         gain.gain.exponentialRampToValueAtTime(0.01, now + bodyDecay);
         osc.connect(gain);
         gain.connect(mainGain);
@@ -8542,6 +8754,8 @@ export function triggerNodeEffect(
         noise.stop(now + decay + 0.01);
       } else if (node.type === "drum_clap") {
         const decay = soundParams.noiseDecay ?? 0.1;
+        const resonance = soundParams.resonance ?? 1.5;
+        const spread = soundParams.spread ?? 1.0;
         const noise = audioContext.createBufferSource();
         const noiseBuffer = audioContext.createBuffer(
           1,
@@ -8556,16 +8770,19 @@ export function triggerNodeEffect(
         const noiseFilter = audioContext.createBiquadFilter();
         noiseFilter.type = "bandpass";
         noiseFilter.frequency.value = soundParams.baseFreq ?? 1500;
-        noiseFilter.Q.value = 1.5;
+        noiseFilter.Q.value = resonance;
         const noiseGain = audioContext.createGain();
         noiseGain.gain.setValueAtTime(0, now);
         const boostedClapVol = finalVol * 10.0; // 10x volume boost for clap
-        noiseGain.gain.linearRampToValueAtTime(boostedClapVol, now + 0.002);
-        noiseGain.gain.setValueAtTime(boostedClapVol, now + 0.002);
-        noiseGain.gain.linearRampToValueAtTime(boostedClapVol * 0.7, now + 0.01);
-        noiseGain.gain.setValueAtTime(boostedClapVol * 0.7, now + 0.01);
-        noiseGain.gain.linearRampToValueAtTime(boostedClapVol * 0.9, now + 0.015);
-        noiseGain.gain.setValueAtTime(boostedClapVol * 0.9, now + 0.015);
+        const stutter1 = 0.002 * spread;
+        const stutter2 = 0.01 * spread;
+        const stutter3 = 0.015 * spread;
+        noiseGain.gain.linearRampToValueAtTime(boostedClapVol, now + stutter1);
+        noiseGain.gain.setValueAtTime(boostedClapVol, now + stutter1);
+        noiseGain.gain.linearRampToValueAtTime(boostedClapVol * 0.7, now + stutter2);
+        noiseGain.gain.setValueAtTime(boostedClapVol * 0.7, now + stutter2);
+        noiseGain.gain.linearRampToValueAtTime(boostedClapVol * 0.9, now + stutter3);
+        noiseGain.gain.setValueAtTime(boostedClapVol * 0.9, now + stutter3);
         noiseGain.gain.exponentialRampToValueAtTime(0.001, now + decay);
         noise.connect(noiseFilter);
         noiseFilter.connect(noiseGain);
@@ -8575,12 +8792,14 @@ export function triggerNodeEffect(
       } else if (node.type === "drum_tom1" || node.type === "drum_tom2") {
         const decay =
           soundParams.decay ?? (node.type === "drum_tom1" ? 0.4 : 0.5);
+        const pitchDrop = soundParams.pitchDrop ?? 1.8;
+        const pitchTime = soundParams.pitchTime ?? 0.08;
         const osc = audioContext.createOscillator();
         const gain = audioContext.createGain();
         osc.type = "sine";
-        const tomStartFreq = targetFreq * 1.8;
+        const tomStartFreq = targetFreq * pitchDrop;
         osc.frequency.setValueAtTime(tomStartFreq, now);
-        osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.08);
+        osc.frequency.exponentialRampToValueAtTime(targetFreq, now + pitchTime);
         gain.gain.setValueAtTime(finalVol * 8.0, now); // 8x volume boost for toms
         gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
         osc.connect(gain);
@@ -8589,13 +8808,14 @@ export function triggerNodeEffect(
         osc.stop(now + decay + 0.01);
       } else if (node.type === "drum_cowbell") {
         const decay = soundParams.decay ?? 0.3;
+        const overtone = soundParams.overtone ?? 1.5;
         const osc1_cb = audioContext.createOscillator();
         const osc2_cb = audioContext.createOscillator();
         const gain_cb = audioContext.createGain();
         osc1_cb.type = "square";
         osc2_cb.type = "square";
         osc1_cb.frequency.value = soundParams.baseFreq;
-        osc2_cb.frequency.value = soundParams.baseFreq * 1.5;
+        osc2_cb.frequency.value = soundParams.baseFreq * overtone;
         gain_cb.gain.setValueAtTime(finalVol * 8.0, now); // 8x volume boost for cowbell
         gain_cb.gain.exponentialRampToValueAtTime(0.001, now + decay);
         osc1_cb.connect(gain_cb);
@@ -11606,7 +11826,7 @@ export function saveState() {
           blocks: scaleKeySeqState.blocks || [],
           currentIdx: 0
       },
-      sidechainAmount: sidechainAmount,
+      sidechainLinks: sidechainLinks.map(link => ({ ...link })),
       djEqHiGain: djEqHiNode?.gain.value ?? 0,
       djEqMidGain: djEqMidNode?.gain.value ?? 0,
       djEqLowGain: djEqLowNode?.gain.value ?? 0,
@@ -11857,11 +12077,15 @@ async function loadState(stateToLoad) {
     if (perfReverbWetGain) perfReverbWetGain.gain.value = (stateToLoad.performanceReverbEnabled ?? false) ? (stateToLoad.performanceReverbLevel ?? PERF_REVERB_WET) : 0.0;
     if (perfReverbInput) perfReverbInput.gain.value = (stateToLoad.performanceReverbEnabled ?? false) ? 1.0 : 0.0;
     perfReverbEnabled = stateToLoad.performanceReverbEnabled ?? false;
-    sidechainAmount = stateToLoad.sidechainAmount ?? 0;
-    const scSlider = document.getElementById('kickSidechainSlider');
-    const scVal = document.getElementById('kickSidechainValue');
-    if (scSlider) { scSlider.value = sidechainAmount; }
-    if (scVal) { scVal.textContent = Math.round(sidechainAmount * 100) + '%'; }
+    sidechainLinks = Array.isArray(stateToLoad.sidechainLinks)
+      ? stateToLoad.sidechainLinks.map(link => ({
+          id: link.id ?? `sc_${sidechainLinkIdCounter++}`,
+          triggerId: link.triggerId,
+          targetId: link.targetId,
+          amount: Number.isFinite(link.amount) ? link.amount : 0.6,
+          enabled: link.enabled !== false,
+        }))
+      : [];
     microcosmEnabled = stateToLoad.microcosmEnabled ?? false;
     if (microcosmInput) microcosmInput.gain.value = microcosmEnabled ? 1.0 : 0.0;
     if (microcosmWetGain) microcosmWetGain.gain.value = microcosmEnabled ? 1.0 : 0.0;
@@ -12452,6 +12676,85 @@ function stopConnectionAudio(connection) {
   connection.audioNodes = null;
 }
 
+function removeNodeById(id) {
+  const node = findNodeById(id);
+  if (!node) return false;
+  stopNodeAudio(node);
+  const connectionsToRemove = connections.filter(
+    (conn) => conn.nodeAId === id || conn.nodeBId === id,
+  );
+  connectionsToRemove.forEach((conn) => removeConnection(conn, false));
+  nodes.forEach(mind => {
+    if (!mind.lifeSystem) return;
+    [...mind.lifeSystem.veins].filter(v => v.targetNode === node).forEach(v => mind.removeVein(v.id));
+  });
+  // Handle vein reconnection for living minds when connected orbs are removed
+  const removedNode = nodes.find(n => n.id === id);
+  if (removedNode) {
+    // Check all minds for veins that were connected to this removed node
+    nodes.forEach(mind => {
+      if (mind.type === "mind" && mind.lifeSystem && mind.audioParams.isAlive) {
+        // Find veins connected to the removed node
+        const affectedVeins = mind.lifeSystem.veins.filter(v =>
+          v.targetNode && v.targetNode.id === id && !v.isFloating
+        );
+
+        if (affectedVeins.length > 0) {
+          // Convert connected veins back to floating veins for reconnection
+          affectedVeins.forEach(vein => {
+            vein.targetNode = null;
+            vein.isFloating = true;
+            vein.searchX = mind.x + (Math.random() - 0.5) * 100;
+            vein.searchY = mind.y + (Math.random() - 0.5) * 100;
+            vein.searchDirection = Math.random() * Math.PI * 2;
+            vein.searchSpeed = 0.5 + Math.random() * 1.0;
+            vein.lastSearchTime = Date.now();
+
+            // Move from regular veins to floating veins
+            mind.lifeSystem.floatingVeins = mind.lifeSystem.floatingVeins || [];
+            mind.lifeSystem.floatingVeins.push(vein);
+          });
+
+          // Remove the affected veins from regular veins array
+          mind.lifeSystem.veins = mind.lifeSystem.veins.filter(v =>
+            !affectedVeins.some(av => av.id === v.id)
+          );
+
+          // Visual feedback for reconnection
+          createParticles(mind.x, mind.y, 20);
+
+          // Update patterns since connections changed
+          if (mind.lifeSystem.isGenerating) {
+            mind.updateSequencePatterns();
+          }
+        }
+      }
+    });
+  }
+
+  // Clean up Queen Mind resources before removing
+  if (node && (node.type === QUEEN_MIND_TYPE || node.type === "mind") && node.dispose) {
+    node.dispose();
+  }
+
+  nodes = nodes.filter((n) => n.id !== id);
+  if (typeof window !== 'undefined') {
+    window.nodes = nodes;
+  }
+  selectedElements = new Set(
+    [...selectedElements].filter(
+      (el) => !(el.type === "node" && el.id === id),
+    ),
+  );
+  currentConstellationGroup.delete(id);
+  fluctuatingGroupNodeIDs.delete(id);
+  removeNodeFromParamGroups(id);
+  if (sidechainLinks.some(l => l.triggerId === id || l.targetId === id)) {
+    sidechainLinks = sidechainLinks.filter(l => l.triggerId !== id && l.targetId !== id);
+  }
+  return true;
+}
+
 function removeNode(nodeToRemove) {
   if (!nodeToRemove) return;
   const nodeIdsToRemove = new Set([nodeToRemove.id]);
@@ -12468,79 +12771,19 @@ function removeNode(nodeToRemove) {
   });
   let stateChanged = false;
   nodeIdsToRemove.forEach((id) => {
-    const node = findNodeById(id);
-    if (!node) return;
-    stateChanged = true;
-    stopNodeAudio(node);
-    const connectionsToRemove = connections.filter(
-      (conn) => conn.nodeAId === id || conn.nodeBId === id,
-    );
-    connectionsToRemove.forEach((conn) => removeConnection(conn, false));
-    nodes.forEach(mind => {
-      if (!mind.lifeSystem) return;
-      [...mind.lifeSystem.veins].filter(v => v.targetNode === node).forEach(v => mind.removeVein(v.id));
-    });
-    // Handle vein reconnection for living minds when connected orbs are removed
-    const removedNode = nodes.find(n => n.id === id);
-    if (removedNode) {
-      // Check all minds for veins that were connected to this removed node
-      nodes.forEach(mind => {
-        if (mind.type === "mind" && mind.lifeSystem && mind.audioParams.isAlive) {
-          // Find veins connected to the removed node
-          const affectedVeins = mind.lifeSystem.veins.filter(v => 
-            v.targetNode && v.targetNode.id === id && !v.isFloating
-          );
-          
-          if (affectedVeins.length > 0) {
-            // Convert connected veins back to floating veins for reconnection
-            affectedVeins.forEach(vein => {
-              vein.targetNode = null;
-              vein.isFloating = true;
-              vein.searchX = mind.x + (Math.random() - 0.5) * 100;
-              vein.searchY = mind.y + (Math.random() - 0.5) * 100;
-              vein.searchDirection = Math.random() * Math.PI * 2;
-              vein.searchSpeed = 0.5 + Math.random() * 1.0;
-              vein.lastSearchTime = Date.now();
-              
-              // Move from regular veins to floating veins
-              mind.lifeSystem.floatingVeins = mind.lifeSystem.floatingVeins || [];
-              mind.lifeSystem.floatingVeins.push(vein);
-            });
-            
-            // Remove the affected veins from regular veins array
-            mind.lifeSystem.veins = mind.lifeSystem.veins.filter(v => 
-              !affectedVeins.some(av => av.id === v.id)
-            );
-            
-            // Visual feedback for reconnection
-            createParticles(mind.x, mind.y, 20);
-            
-            // Update patterns since connections changed
-            if (mind.lifeSystem.isGenerating) {
-              mind.updateSequencePatterns();
-            }
-          }
-        }
-      });
-    }
-    
-    // Clean up Queen Mind resources before removing
-    if (node && (node.type === QUEEN_MIND_TYPE || node.type === "mind") && node.dispose) {
-      node.dispose();
-    }
-    
-    nodes = nodes.filter((n) => n.id !== id);
-    if (typeof window !== 'undefined') {
-        window.nodes = nodes;
-    }
-    selectedElements = new Set(
-      [...selectedElements].filter(
-        (el) => !(el.type === "node" && el.id === id),
-      ),
-    );
-    currentConstellationGroup.delete(id);
-    fluctuatingGroupNodeIDs.delete(id);
-    removeNodeFromParamGroups(id);
+    if (removeNodeById(id)) stateChanged = true;
+  });
+  if (stateChanged) {
+    updateConstellationGroup();
+    populateEditPanel();
+    saveState();
+  }
+}
+
+function deleteNodesById(ids) {
+  let stateChanged = false;
+  ids.forEach((id) => {
+    if (removeNodeById(id)) stateChanged = true;
   });
   if (stateChanged) {
     updateConstellationGroup();
@@ -29421,6 +29664,48 @@ function populateEditPanel() {
                     soundLabel.textContent = defaults.label;
                     soundDiv.appendChild(soundLabel);
 
+                    // Preset switcher: swap this drum for any other drum kind
+                    // in-place (keeps position/connections, only the sound changes).
+                    const drumPresetOptions = getOrbReplaceOptions(node);
+                    if (drumPresetOptions) {
+                        const presetSelect = document.createElement("select");
+                        presetSelect.className = "edit-drum-preset-select";
+                        drumPresetOptions.options.forEach((opt) => {
+                            const o = document.createElement("option");
+                            o.value = opt.type;
+                            o.textContent = opt.label;
+                            if (opt.type === node.type) o.selected = true;
+                            presetSelect.appendChild(o);
+                        });
+                        presetSelect.addEventListener("change", () => {
+                            if (!presetSelect.value || presetSelect.value === node.type) return;
+                            selectedArray.forEach((elData) => {
+                                const n = findNodeById(elData.id);
+                                if (n && isDrumType(n.type)) applyReplacementToNode(n, presetSelect.value, "drumElements");
+                            });
+                            saveState();
+                            populateEditPanel();
+                        });
+                        soundDiv.appendChild(presetSelect);
+                    }
+
+                    // Generic helper for the extra drum params below: reads/writes
+                    // node.audioParams[key] directly, mirroring createSlider's pattern.
+                    const addDrumParamSlider = (key, label, min, max, step, decimals, fallback, unit = "") => {
+                        const current = params?.[key] ?? defaults?.[key] ?? fallback;
+                        const fmt = (v) => `${label} (${v.toFixed(decimals)}${unit}):`;
+                        const slider = createSlider(
+                            `edit-drum-${key}-${node.id}`, fmt(current), min, max, step, current,
+                            () => { saveState(); },
+                            (e_input) => {
+                                const v = parseFloat(e_input.target.value);
+                                selectedArray.forEach((elData) => { const n = findNodeById(elData.id); if (n?.audioParams) n.audioParams[key] = v; });
+                                e_input.target.previousElementSibling.textContent = fmt(v);
+                            }
+                        );
+                        soundDiv.appendChild(slider);
+                    };
+
                     const currentBaseFreq = params?.baseFreq ?? defaults?.baseFreq ?? 60;
                     const tuneVal = currentBaseFreq.toFixed(0);
                     const tuneSliderContainer = createSlider(
@@ -29478,6 +29763,33 @@ function populateEditPanel() {
                         }
                     );
                     soundDiv.appendChild(volSliderContainer);
+
+                    // Kick: pitch envelope + click/sub mix
+                    if (node.type === "drum_kick") {
+                        addDrumParamSlider("pitchEnvAmount", "Pitch Env", 1, 6, 0.1, 1, 3.0, "x");
+                        addDrumParamSlider("pitchEnvTime", "Pitch Time", 0.01, 0.3, 0.005, 2, 0.08, "s");
+                        addDrumParamSlider("punch", "Punch", 0, 1, 0.01, 2, 0.4);
+                        addDrumParamSlider("sub", "Sub", 0, 1, 0.01, 2, 0.6);
+                    }
+                    // Snare: noise tone + body mix
+                    if (node.type === "drum_snare") {
+                        addDrumParamSlider("tone", "Tone", 300, 6000, 10, 0, 1500, "Hz");
+                        addDrumParamSlider("body", "Body", 0, 1.5, 0.01, 2, 0.8);
+                    }
+                    // Clap: resonance + stutter spread
+                    if (node.type === "drum_clap") {
+                        addDrumParamSlider("resonance", "Resonance", 0.5, 8, 0.1, 1, 1.5);
+                        addDrumParamSlider("spread", "Spread", 0.2, 3, 0.05, 2, 1.0, "x");
+                    }
+                    // Toms: pitch sweep amount + time
+                    if (node.type === "drum_tom1" || node.type === "drum_tom2") {
+                        addDrumParamSlider("pitchDrop", "Pitch Drop", 1, 4, 0.05, 2, 1.8, "x");
+                        addDrumParamSlider("pitchTime", "Pitch Time", 0.01, 0.3, 0.005, 2, 0.08, "s");
+                    }
+                    // Cowbell: overtone ratio
+                    if (node.type === "drum_cowbell") {
+                        addDrumParamSlider("overtone", "Overtone", 1, 3, 0.01, 2, 1.5, "x");
+                    }
 
                     // FM Drum specific controls
                     if (typeof node.type === 'string' && (node.type === 'drum_tone_fm' || node.type.startsWith('drum_tone_fm_'))) {
@@ -30120,38 +30432,43 @@ function populateReplacePresetMenu(contentType, title) {
   sideToolbar.classList.remove('hidden');
 }
 
+function applyReplacementToNode(node, presetType, contentType) {
+  if (!node) return;
+  const oldPitch = node.audioParams?.pitch;
+  const oldScale = node.audioParams?.scaleIndex;
+  stopNodeAudio(node);
+
+  if (contentType === 'drumElements') {
+    node.type = presetType;
+    if (!node.audioParams) node.audioParams = {};
+    const def = DRUM_ELEMENT_DEFAULTS[presetType] || {};
+    Object.assign(node.audioParams, def);
+  } else {
+    node.type = 'sound';
+    if (!node.audioParams) node.audioParams = {};
+    node.audioParams.waveform = presetType;
+    const preset = analogWaveformPresets.find(a=>a.type===presetType) || fmSynthPresets.find(f=>f.type===presetType);
+    if (preset && preset.details && preset.details.visualStyle) {
+      node.audioParams.visualStyle = preset.details.visualStyle;
+    } else if (presetType.startsWith('sampler_')) {
+      node.audioParams.visualStyle = presetType;
+    }
+  }
+
+  if (oldPitch !== undefined) node.audioParams.pitch = oldPitch;
+  if (oldScale !== undefined) node.audioParams.scaleIndex = oldScale;
+
+  node.audioNodes = createAudioNodesForNode(node);
+  if (node.audioNodes) updateNodeAudioParams(node);
+}
+
 function applyReplacement(presetType, contentType) {
   isReplaceMode = false;
   selectedElements.forEach(elData => {
     if (elData.type !== 'node') return;
     const node = findNodeById(elData.id);
     if (!node) return;
-    const oldPitch = node.audioParams?.pitch;
-    const oldScale = node.audioParams?.scaleIndex;
-    stopNodeAudio(node);
-
-    if (contentType === 'drumElements') {
-      node.type = presetType;
-      if (!node.audioParams) node.audioParams = {};
-      const def = DRUM_ELEMENT_DEFAULTS[presetType] || {};
-      Object.assign(node.audioParams, def);
-    } else {
-      node.type = 'sound';
-      if (!node.audioParams) node.audioParams = {};
-      node.audioParams.waveform = presetType;
-      const preset = analogWaveformPresets.find(a=>a.type===presetType) || fmSynthPresets.find(f=>f.type===presetType);
-      if (preset && preset.details && preset.details.visualStyle) {
-        node.audioParams.visualStyle = preset.details.visualStyle;
-      } else if (presetType.startsWith('sampler_')) {
-        node.audioParams.visualStyle = presetType;
-      }
-    }
-
-    if (oldPitch !== undefined) node.audioParams.pitch = oldPitch;
-    if (oldScale !== undefined) node.audioParams.scaleIndex = oldScale;
-
-    node.audioNodes = createAudioNodesForNode(node);
-    if (node.audioNodes) updateNodeAudioParams(node);
+    applyReplacementToNode(node, presetType, contentType);
   });
 
   saveState();
@@ -33423,6 +33740,13 @@ function addNode(x, y, type, subtype = null, optionalDimensions = null) {
       filterType: initialFilterType,
       filterResonance: initialFilterResonance,
       ...audioDetails,
+      // Drum-specific sound params (pitch envelope, tone, chip/FM params, etc.)
+      // that aren't covered by the generic fields above.
+      ...(isDrumType(type)
+        ? Object.fromEntries(
+            Object.entries(drumDefaults || {}).filter(([key]) => key !== "icon" && key !== "label"),
+          )
+        : {}),
       triggerInterval: audioDetails.triggerInterval || DEFAULT_TRIGGER_INTERVAL,
       syncSubdivisionIndex: audioDetails.syncSubdivisionIndex || DEFAULT_SUBDIVISION_INDEX,
       probability: audioDetails.probability || DEFAULT_PROBABILITY,
@@ -34276,6 +34600,56 @@ if (performancePanelCloseBtn) {
   performancePanelCloseBtn.addEventListener("click", () => {
     if (performancePanel) performancePanel.classList.add("hidden");
     if (appMenuPerformanceBtn) appMenuPerformanceBtn.classList.remove("active");
+  });
+}
+
+if (orbsManagerPanel && orbsManagerContent) {
+  orbsManagerUI = mountOrbsManager(orbsManagerPanel, orbsManagerContent, {
+    getNodes: () => nodes,
+    getGroups: () =>
+      userDefinedGroups.map((g) => ({
+        id: g.id,
+        label: g.id.replace(/^userGroup_/, "Groep "),
+        nodeIds: g.nodeIds,
+      })),
+    getLabel: (node) => getOrbLabel(node),
+    getColor: (node) => `hsl(${node?.baseHue ?? 0}, 70%, 55%)`,
+    getReplaceOptions: (node) => getOrbReplaceOptions(node),
+    replaceNode: (nodeId, presetType, contentType) => {
+      const node = findNodeById(nodeId);
+      if (!node) return;
+      applyReplacementToNode(node, presetType, contentType);
+      saveState();
+      populateEditPanel();
+    },
+    deleteNodes: (nodeIds) => deleteNodesById(nodeIds),
+    groupNodes: (nodeIds) => createUserDefinedGroupFromNodeIds(nodeIds),
+    dissolveGroup: (groupId) => dissolveUserDefinedGroup(groupId),
+    getSidechainLink: (nodeId) => getSidechainLinkForTarget(nodeId),
+    setSidechainLink: (targetId, triggerId, amount) =>
+      setSidechainLink(targetId, { triggerId, amount, enabled: true }),
+  });
+}
+
+if (appMenuOrbsManagerBtn) {
+  appMenuOrbsManagerBtn.addEventListener("click", () => {
+    if (!orbsManagerPanel) return;
+    if (orbsManagerPanel.classList.contains("hidden")) {
+      hideOverlappingPanels();
+      orbsManagerPanel.classList.remove("hidden");
+      appMenuOrbsManagerBtn.classList.add("active");
+      orbsManagerUI?.refresh();
+    } else {
+      orbsManagerPanel.classList.add("hidden");
+      appMenuOrbsManagerBtn.classList.remove("active");
+    }
+  });
+}
+
+if (closeOrbsManagerPanelBtn) {
+  closeOrbsManagerPanelBtn.addEventListener("click", () => {
+    if (orbsManagerPanel) orbsManagerPanel.classList.add("hidden");
+    if (appMenuOrbsManagerBtn) appMenuOrbsManagerBtn.classList.remove("active");
   });
 }
 

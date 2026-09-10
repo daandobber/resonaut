@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { patternDefaults, rhythmHit, advancePattern, patternState, resetPattern, NOTE_LOOM_TYPE, ORBIT_RHYTHM_TYPE } from '../utils/patternOrbs.js';
+import { patternDefaults, rhythmHit, advancePattern, patternState, resetPattern, randomizePattern, NOTE_LOOM_TYPE, ORBIT_RHYTHM_TYPE, ACID_ORB_TYPE } from '../utils/patternOrbs.js';
 const orb = type => ({ type, audioParams: patternDefaults(type) });
 describe('Independent pattern orbs', () => {
   it('distributes exactly the requested hits, rotates them and keeps manual overrides', () => {
@@ -15,7 +15,7 @@ describe('Independent pattern orbs', () => {
     node.audioParams.steps[0] = { degree: -3, enabled: true, velocity: 0.5, probability: 1 };
     node.audioParams.transpose = 2;
     const note = advancePattern(node, { intensity: 0.8, color: 'blue' });
-    expect(note.note).toEqual({ degree: -1, mode: 'relative' });
+    expect(note.note).toEqual({ degree: -1, mode: 'absolute' });
     expect(note.intensity).toBeCloseTo(0.28);
     expect(note.color).toBe('blue');
     advancePattern(node); advancePattern(node);
@@ -47,5 +47,20 @@ describe('Independent pattern orbs', () => {
     expect(render(a)).toEqual(render(b));
     a.audioParams.steps[0].degree = 9;
     expect(b.audioParams.steps[0].degree).toBe(0);
+  });
+  it('randomizes a melodic pattern within its own length, always leaving something audible', () => {
+    const node = orb(ACID_ORB_TYPE);
+    node.audioParams.length = 8;
+    randomizePattern(node);
+    const active = node.audioParams.steps.slice(0, 8);
+    expect(active.every(s => s.degree >= 0 && s.degree <= 7)).toBe(true);
+    expect(active.some(s => s.enabled)).toBe(true);
+    expect(node.audioParams.steps.length).toBe(32);
+  });
+  it('does not randomize non-melodic orbit rhythm orbs', () => {
+    const node = orb(ORBIT_RHYTHM_TYPE);
+    const before = JSON.stringify(node.audioParams.steps);
+    randomizePattern(node);
+    expect(JSON.stringify(node.audioParams.steps)).toBe(before);
   });
 });

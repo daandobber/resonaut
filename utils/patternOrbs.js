@@ -27,7 +27,7 @@ export function patternDefaults(type) {
     pulseIntensity: 0.7, probability: 1, accentEvery: 4, seed: 1,
     syncSubdivisionIndex: type === CHORD_ORB_TYPE ? 6 : 2, triggerInterval: type === CHORD_ORB_TYPE ? 0.5 : 0.125, ignoreGlobalSync: false,
     chordShape: 'triad', inversion: 0, openVoicing: false, strumMs: 0, octaves: 2,
-    transpose: type === ACID_ORB_TYPE ? -7 : 0, noteMode: 'relative', rhythmOverrides: {},
+    transpose: type === ACID_ORB_TYPE ? -7 : 0, noteMode: 'absolute', rhythmOverrides: {},
     cutoff: 450, resonance: 7, envDepth: 3, acidDecay: .2, gate: .85, slideMs: 70, acidWave: 'sawtooth', acidSound: true,
     steps: Array.from({ length: 32 }, (_, i) => ({
       degree: type === ACID_ORB_TYPE ? [0,0,7,0,3,0,5,2][i%8] : type === CHORD_ORB_TYPE ? [0, 5, 3, 4][i % 4] : type === ARP_ORB_TYPE ? [0, 2, 4, 6][i % 4] : [0, 2, 4, 7, 4, 2, 1, 4][i % 8],
@@ -37,6 +37,33 @@ export function patternDefaults(type) {
     })),
   };
 }
+// Regenerates the step content (degree/enabled/velocity/accent/slide) of a
+// melodic pattern orb, keeping length/chord-shape/sound params untouched.
+// Degrees stay scale-relative like the hand-authored defaults, so the result
+// always follows the project's current scale.
+export function randomizePattern(node) {
+  const p = node.audioParams;
+  if (!p || node.type === ORBIT_RHYTHM_TYPE) return;
+  const length = clamp(Math.round(p.length ?? 16), 2, 32);
+  const degreePool = node.type === CHORD_ORB_TYPE ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5, 6, 7];
+  if (!Array.isArray(p.steps)) p.steps = [];
+  let anyEnabled = false;
+  for (let i = 0; i < length; i++) {
+    const cell = p.steps[i] || (p.steps[i] = {});
+    cell.degree = degreePool[Math.floor(Math.random() * degreePool.length)];
+    cell.enabled = Math.random() < 0.8;
+    if (cell.enabled) anyEnabled = true;
+    cell.velocity = Number((0.6 + Math.random() * 0.4).toFixed(2));
+    cell.probability = 1;
+    if (node.type === ACID_ORB_TYPE) {
+      cell.accent = Math.random() < 0.25;
+      cell.slide = Math.random() < 0.2;
+    }
+  }
+  if (!anyEnabled) p.steps[0].enabled = true;
+  p.seed = Math.floor(Math.random() * 1e6);
+}
+
 export function rhythmHit(params, step) {
   const length = clamp(Math.round(params.length ?? 16), 2, 32);
   if (typeof params.rhythmOverrides?.[step] === 'boolean') return params.rhythmOverrides[step];

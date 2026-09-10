@@ -1,5 +1,5 @@
 import { instrumentControls, syncInstrumentControls } from './utils/instrumentControls.js';
-import { PATTERN_ORBS, ORBIT_RHYTHM_TYPE, CHORD_ORB_TYPE, ARP_ORB_TYPE, ACID_ORB_TYPE, patternDefaults, patternState, rhythmHit, resetPattern } from './utils/patternOrbs.js';
+import { PATTERN_ORBS, ORBIT_RHYTHM_TYPE, CHORD_ORB_TYPE, ARP_ORB_TYPE, ACID_ORB_TYPE, patternDefaults, patternState, rhythmHit, resetPattern, randomizePattern } from './utils/patternOrbs.js';
 
 export function buildPatternOrbEditor(node, { onChange, onStep, subdivisionOptions, getSyncEnabled = () => true }) {
   const p = node.audioParams, melodic = node.type !== ORBIT_RHYTHM_TYPE;
@@ -81,9 +81,12 @@ export function buildPatternOrbEditor(node, { onChange, onStep, subdivisionOptio
   button('Step', onStep);
   button('Restart', () => resetPattern(node));
   if (!melodic) button('Clear overrides', () => { p.rhythmOverrides = {}; onChange(); refresh(); });
-  else button('Reverse notes', () => {
-    p.steps = [...p.steps.slice(0, p.length).reverse(), ...p.steps.slice(p.length)]; onChange(); refresh();
-  });
+  else {
+    button('Reverse notes', () => {
+      p.steps = [...p.steps.slice(0, p.length).reverse(), ...p.steps.slice(p.length)]; onChange(); refresh();
+    });
+    button('Random', () => { randomizePattern(node); onChange(); refresh(); });
+  }
   const grid = document.createElement('div'); grid.className = melodic ? 'pattern-note-matrix' : 'pattern-steps';
   grid.setAttribute('aria-label', 'Pattern steps');
   const status = document.createElement('p'); status.className = 'pattern-live-status';

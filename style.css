@@ -738,7 +738,7 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 #toolbar button { background-color: var(--button-bg); color: var(--text-color); border: 1px solid var(--button-hover); padding: 8px; cursor: pointer; text-align: center; border-radius: 3px; transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; font-size: 18px; width: 100%; min-height: 40px; box-sizing: border-box; line-height: 1; }
 #toolbar button:hover { background-color: var(--button-hover); }
 #toolbar button.active { background-color: var(--button-active); border-color: var(--text-color); color: white; box-shadow: inset 0 0 5px rgba(0,0,0,0.3); }
-#toolbar-pulsars, #toolbar-logic-nodes, #toolbar-environment-nodes, #toolbar-sound-generators, #toolbar-drones, #toolbar-motion, #toolbar-utility-tools, #toolbar-app-tools { display: flex; flex-direction: column; gap: 4px; }
+#toolbar-pulsars, #toolbar-logic-nodes, #toolbar-environment-nodes, #toolbar-sound-generators, #toolbar-drones, #toolbar-motion, #toolbar-drums, #toolbar-utility-tools, #toolbar-app-tools { display: flex; flex-direction: column; gap: 4px; }
 .toolbar-divider-compact, .toolbar-divider { border: none; height: 1px; background-color: var(--button-bg); margin: 3px 0; opacity: 0.4; }
 
 .panel { position: fixed; top: calc(var(--app-menu-bar-height) + var(--header-height) + 10px); background-color: var(--panel-bg); border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; padding: 15px; box-shadow: 2px 2px 10px rgba(0,0,0,0.3); color: var(--text-color); transition: transform 0.3s ease-out, opacity 0.3s ease-out, visibility 0s 0.3s; height: calc(100vh - var(--app-menu-bar-height) - var(--header-height) - 20px); overflow-y: auto; overflow-x: hidden; box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--button-active) var(--button-bg); opacity: 0; visibility: hidden; z-index: 8; }
@@ -799,6 +799,7 @@ body { margin: 0; overflow: hidden; color: var(--text-color); font-family: syste
 .themed-button:active { background-color: var(--button-active); color: #fff; }
 .panel .edit-drum-sound { margin-left: 15px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid var(--button-bg); }
 .panel .edit-drum-sound strong { display: block; margin-bottom: 5px; font-size: 1em; }
+.panel .edit-drum-sound select.edit-drum-preset-select { display: block; width: 100%; margin-bottom: 8px; background: var(--button-bg, #1c2941); color: var(--text-color, #ddeeff); border: 1px solid var(--button-hover, #445675); border-radius: 4px; padding: 4px 6px; font-size: 0.85em; }
 #groupControls.hidden { display: none; }
 #groupControls label[for="groupFluctuateAmount"], #groupControls #groupFluctuateAmount { margin-left: 20px; width: calc(100% - 20px); }
 
@@ -2464,3 +2465,33 @@ margin-top: 6px;
 
 #tapeLooperPanel .instrument-choices button { background: var(--button-bg, #1c2941); color: var(--text-color, #cde4ef); border: 1px solid var(--button-hover, #445675); border-radius: 3px; }
 #tapeLooperPanel .instrument-control { min-width: 44px; }
+
+/* Orbs Manager: a left-side drawer listing every orb (no connections) with
+   replace/delete/group/sidechain controls. Reuses .perf-drawer as its shell. */
+.orbs-mgr-drawer { left: 0; right: auto; border-left: none; border-right: 1px solid rgba(255,255,255,0.1); box-shadow: 8px 0 40px rgba(0,0,0,0.8); transform: translateX(-100%); }
+.orbs-mgr-drawer:not(.hidden) { transform: translateX(0); }
+.orbs-mgr-body { padding: 8px; gap: 8px; }
+.orbs-mgr-toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.orbs-mgr-search { flex: 1 1 120px; min-width: 0; background: var(--button-bg, #1c2941); color: var(--text-color, #ddeeff); border: 1px solid var(--button-hover, #445675); border-radius: 4px; padding: 5px 8px; font-size: 0.85em; }
+.orbs-mgr-btn { background: var(--button-bg, #1c2941); color: var(--text-color, #ddeeff); border: 1px solid var(--button-hover, #445675); border-radius: 4px; padding: 5px 9px; font-size: 0.8em; cursor: pointer; white-space: nowrap; }
+.orbs-mgr-btn:hover:not(:disabled) { background: var(--button-hover, #445675); }
+.orbs-mgr-btn:disabled { opacity: 0.4; cursor: default; }
+.orbs-mgr-btn-danger { border-color: #a85a5a; color: #ffd9d9; }
+.orbs-mgr-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.orbs-mgr-empty { opacity: 0.6; font-size: 0.85em; padding: 10px 4px; text-align: center; }
+.orbs-mgr-group-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; padding: 4px 6px; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 0.82em; font-weight: bold; }
+.orbs-mgr-group-header:first-child { margin-top: 0; }
+.orbs-mgr-group-header-plain { font-weight: normal; opacity: 0.7; background: none; }
+.orb-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 4px; background: rgba(255,255,255,0.03); font-size: 0.82em; }
+.orb-row:hover { background: rgba(255,255,255,0.07); }
+.orb-row-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 3px rgba(0,0,0,0.5); }
+.orb-row-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orb-row-type { opacity: 0.55; font-size: 0.9em; flex-shrink: 0; }
+.orb-row-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.orb-row-replace { max-width: 92px; background: var(--button-bg, #1c2941); color: var(--text-color, #ddeeff); border: 1px solid var(--button-hover, #445675); border-radius: 3px; font-size: 0.9em; }
+.orb-row-sc-btn, .orb-row-delete-btn { background: var(--button-bg, #1c2941); color: var(--text-color, #ddeeff); border: 1px solid var(--button-hover, #445675); border-radius: 3px; padding: 2px 6px; cursor: pointer; font-size: 0.95em; }
+.orb-row-sc-btn.active { border-color: #7ad0ff; color: #cdeeff; background: #2a4a63; }
+.orb-row-sc-panel { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 24px; font-size: 0.8em; background: rgba(255,255,255,0.04); border-radius: 4px; }
+.orb-row-sc-panel select { flex: 1 1 auto; min-width: 0; background: var(--button-bg, #1c2941); color: var(--text-color, #ddeeff); border: 1px solid var(--button-hover, #445675); border-radius: 3px; }
+.orb-row-sc-panel input[type="range"] { flex: 1 1 60px; }
+.orb-row-sc-panel span { min-width: 32px; text-align: right; opacity: 0.8; }

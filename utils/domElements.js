@@ -156,6 +156,11 @@ export const stringPanelCloseBtn = safeGetById("string-panel-close-btn");
 export const appMenuRecordBtn = safeGetById("app-menu-record-btn");
 export const appMenuToggleTapeLooperBtn = safeGetById("app-menu-toggle-tape-looper-btn");
 export const appMenuPerformanceBtn = safeGetById("app-menu-performance-btn");
+export const appMenuOrbsManagerBtn = safeGetById("app-menu-orbs-manager-btn");
+
+export const orbsManagerPanel = safeGetById("orbsManagerPanel");
+export const closeOrbsManagerPanelBtn = safeGetById("closeOrbsManagerPanelBtn");
+export const orbsManagerContent = safeGetById("orbsManagerContent");
 
 export const tapeLooperPanel = safeGetById("tapeLooperPanel");
 export const closeTapeLooperPanelBtn = safeGetById("closeTapeLooperPanelBtn");

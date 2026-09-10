@@ -105,7 +105,11 @@ export const DRUM_ELEMENT_DEFAULTS = {
     baseFreq: 60,
     decay: 0.3,
     volume: 1.0, // Keep at max since we boost in code
-    icon: "\uD83D\uDCA5",
+    pitchEnvAmount: 3.0,
+    pitchEnvTime: 0.08,
+    punch: 0.4,
+    sub: 0.6,
+    icon: "KI",
     label: "Kick",
   },
   drum_snare: {
@@ -113,6 +117,8 @@ export const DRUM_ELEMENT_DEFAULTS = {
     decay: 0.2,
     noiseDecay: 0.15,
     volume: 1.0, // Boosted from 0.8
+    tone: 1500,
+    body: 0.8,
     icon: "SN",
     label: "Snare",
   },
@@ -126,6 +132,8 @@ export const DRUM_ELEMENT_DEFAULTS = {
   drum_clap: {
     noiseDecay: 0.1,
     volume: 1.0, // Boosted from 0.9
+    resonance: 1.5,
+    spread: 1.0,
     icon: "CL",
     label: "Clap",
     baseFreq: 1500,
@@ -134,6 +142,8 @@ export const DRUM_ELEMENT_DEFAULTS = {
     baseFreq: 150,
     decay: 0.4,
     volume: 1.0, // Boosted from 0.9
+    pitchDrop: 1.8,
+    pitchTime: 0.08,
     icon: "T1",
     label: "Tom 1",
   },
@@ -141,6 +151,8 @@ export const DRUM_ELEMENT_DEFAULTS = {
     baseFreq: 100,
     decay: 0.5,
     volume: 1.0, // Boosted from 0.9
+    pitchDrop: 1.8,
+    pitchTime: 0.08,
     icon: "T2",
     label: "Tom 2",
   },
@@ -148,6 +160,7 @@ export const DRUM_ELEMENT_DEFAULTS = {
     baseFreq: 520,
     decay: 0.3,
     volume: 1.0, // Boosted from 0.7
+    overtone: 1.5,
     icon: "CB",
     label: "Cowbell",
   },

@@ -1,5 +1,62 @@
 // Upgrade the editors' native value controls while retaining their existing
 // model bindings, keyboard support, disabled states and undo/commit events.
+
+// Dial knobs render through NexusUI (same widget as the FM/Analog/Pluck/Pulse
+// orb panels and the Performance-panel pedal knobs) so every rotary control in
+// the app looks and drags the same; the CSS ball+needle below stays wired up
+// as the fallback if that module fails to load.
+let nexusPromise = null;
+function getNexus() {
+  if (typeof window === 'undefined') return Promise.resolve(null);
+  if (!nexusPromise) nexusPromise = import('nexusui').then((m) => m.default).catch(() => null);
+  return nexusPromise;
+}
+function upgradeDialToNexus(wrapper, input, needle, set) {
+  getNexus().then((Nexus) => {
+    if (!Nexus || !Nexus.Dial || !wrapper.isConnected) return;
+    const container = document.createElement('div');
+    container.className = 'instrument-dial-nexus';
+    container.style.width = '40px';
+    container.style.height = '40px';
+    wrapper.insertBefore(container, needle);
+    needle.remove();
+    input.style.position = 'absolute';
+    input.style.opacity = '0';
+    input.style.pointerEvents = 'none';
+
+    const min = Number(input.min || 0), max = Number(input.max || 100), step = Number(input.step) || 1;
+    const dial = new Nexus.Dial(container, {
+      size: [40, 40],
+      interaction: 'radial',
+      mode: 'relative',
+      min, max, step,
+      value: Number(input.value),
+    });
+    const styles = getComputedStyle(document.body);
+    if (dial.colorize) {
+      dial.colorize('accent', styles.getPropertyValue('--button-active').trim() || '#8860b0');
+      dial.colorize('fill', styles.getPropertyValue('--button-bg').trim() || '#503070');
+    }
+
+    const releaseEvent = typeof window !== 'undefined' && window.PointerEvent ? 'pointerup' : 'mouseup';
+    let committing = false;
+    dial.on('change', (v) => {
+      set(v, false);
+      if (!committing) {
+        committing = true;
+        document.addEventListener(releaseEvent, () => {
+          committing = false;
+          set(Number(input.value), true);
+        }, { once: true });
+      }
+    });
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      if (Number.isFinite(v) && dial.value !== v) dial.value = v;
+    });
+  });
+}
+
 function observeProperty(input, key, sync) {
   const descriptor=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input),key);
   if(!descriptor?.set)return;
@@ -59,6 +116,7 @@ function numeric(input) {
     });
     const end=event=>{if(!drag || event.pointerId!==drag.id)return;drag=null;emit(input,'change');};
     input.addEventListener('pointerup',end);input.addEventListener('pointercancel',end);input.addEventListener('lostpointercapture',end);
+    upgradeDialToNexus(wrapper,input,needle,set);
   }
   input.addEventListener('input',sync);input.addEventListener('change',sync);
   observeProperty(input,'value',sync);observeProperty(input,'disabled',sync);sync();

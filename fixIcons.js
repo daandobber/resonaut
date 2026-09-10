@@ -17,6 +17,7 @@ const LABELS = {
   'mistMenuBtn':                    '',
   'dronesMenuBtn':                  '',
   'motionMenuBtn':                  '',
+  'addDrumElementBtn':              '',
   'brushBtn':                       '',
   'editBtn':                        '',
   'wandBtn':                        '',
@@ -125,6 +126,13 @@ const ICONS = {
     + '<polyline points="19 9 22 12 19 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
     + '<line x1="2" x2="22" y1="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
     + '<line x1="12" x2="12" y1="2" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+
+  // Lucide-style: Drum (barrel + crossed drumsticks)
+  'addDrumElementBtn':
+    '<ellipse cx="12" cy="7" rx="8" ry="4" fill="none" stroke="currentColor" stroke-width="2"/>'
+    + '<path d="M4 7v6c0 2.2 3.6 4 8 4s8-1.8 8-4V7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<path d="M7 10.5 12 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    + '<path d="M17 10.5 12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 
   // — Editing tools — (Lucide icons)
 
