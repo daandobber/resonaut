@@ -6,6 +6,10 @@ import { pluckSynthPresets } from './pluck-synth-orb.js';
 import { showTonePluckSynthMenu } from './tone-pluck-synth-ui.js';
 import { showEtherAuraMenu } from './ether-aura-ui.js';
 
+function isOneWayConnection(connection) {
+  return connection?.type === 'one_way' || (connection?.type == null && connection?.directional === true);
+}
+
 export const CIRCLE_FIFTHS_TYPE = 'circle_fifths';
 
 export const ZODIAC_SIGNS = [
@@ -14,7 +18,7 @@ export const ZODIAC_SIGNS = [
 
 export const ZODIAC_PRESETS = {
   Aries:        { sequenceMode:'step',   direction:'clockwise',       stepPattern:'2,1,1' },
-  Taurus:       { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1', holdRoot:true },
+  Taurus:       { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1,3,5,2' },
   Gemini:       { sequenceMode:'step',   direction:'clockwise',       stepPattern:'1,1,2' },
   Cancer:       { sequenceMode:'step',   direction:'counterclockwise',stepPattern:'2,1,2' },
   Leo:          { sequenceMode:'step',   direction:'clockwise',       stepPattern:'2,2,1' },
@@ -27,15 +31,94 @@ export const ZODIAC_PRESETS = {
   Pisces:       { sequenceMode:'degree', direction:'clockwise',       degreePattern:'1,2,3,2,1' },
 };
 
+function samplerIdFromType(type) {
+  return String(type || '').replace(/^sampler_/, '');
+}
+
+function isPitchedSamplerType(type, samplerDefinitions) {
+  const id = samplerIdFromType(type);
+  const def = Array.isArray(samplerDefinitions) ? samplerDefinitions.find((s) => s.id === id) : null;
+  return !!(def && Number.isFinite(def.baseFreq) && def.baseFreq > 0 && !def.loadFailed);
+}
+
+function choosePitchedSamplerType(samplerDefinitions) {
+  const pitched = Array.isArray(samplerDefinitions)
+    ? samplerDefinitions.filter((s) => Number.isFinite(s.baseFreq) && s.baseFreq > 0 && !s.loadFailed)
+    : [];
+  if (!pitched.length) return 'sampler_marimba';
+  return 'sampler_' + pitched[Math.floor(Math.random() * pitched.length)].id;
+}
+
+function parseDegreePattern(pattern) {
+  const parsed = (typeof pattern === 'string' ? pattern : '')
+    .split(/[^\d]+/)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return parsed.length > 1 ? parsed : [1, 3, 5, 2];
+}
+
+function ensurePitchedCenterSampler(node, samplerDefinitions) {
+  if (!node || node.type !== 'sound' || !node.audioParams) return;
+  const wf = node.audioParams.waveform;
+  if (!String(wf || '').startsWith('sampler_')) return;
+  if (isPitchedSamplerType(wf, samplerDefinitions)) return;
+  node.audioParams.waveform = 'sampler_marimba';
+  delete node.audioParams.engine;
+}
+
+function ensurePlayableCenterInstrument(currentNode, deps) {
+  if (!currentNode) return null;
+  const {
+    findNodeById,
+    addNode,
+    createAudioNodesForNode,
+    updateNodeAudioParams,
+    SAMPLER_DEFINITIONS,
+  } = deps || {};
+  const ap = (currentNode.audioParams = currentNode.audioParams || {});
+  let target = ap.centerAttachedNodeId && typeof findNodeById === 'function'
+    ? findNodeById(ap.centerAttachedNodeId)
+    : null;
+
+  if (!target && typeof addNode === 'function') {
+    const subtype = choosePitchedSamplerType(SAMPLER_DEFINITIONS);
+    target = addNode(currentNode.x, currentNode.y, 'sound', subtype, null);
+    if (target) {
+      ap.centerAttachedNodeId = target.id;
+      target.isEmbeddedInCircleId = currentNode.id;
+    }
+  }
+
+  if (!target) return null;
+  target.audioParams = target.audioParams || {};
+  if (target.type === 'sound') {
+    ensurePitchedCenterSampler(target, SAMPLER_DEFINITIONS);
+  }
+  if (Number.isFinite(currentNode.x)) target.x = currentNode.x;
+  if (Number.isFinite(currentNode.y)) target.y = currentNode.y;
+  const missingPlayableAudio = !target.audioNodes || (target.type === 'sound' && !target.audioNodes.gainNode);
+  if (missingPlayableAudio && typeof createAudioNodesForNode === 'function') {
+    const created = createAudioNodesForNode(target);
+    if (created) target.audioNodes = created;
+  }
+  if (target.audioNodes && typeof updateNodeAudioParams === 'function') {
+    updateNodeAudioParams(target);
+  }
+  return target;
+}
+
 export function applyZodiacPresetToCircle(node, sign) {
   if (!node || node.type !== CIRCLE_FIFTHS_TYPE) return;
   const ap = (node.audioParams = node.audioParams || {});
-  const cfg = ZODIAC_PRESETS[sign] || ZODIAC_PRESETS['Aries'];
+  const resolvedSign = ZODIAC_PRESETS[sign] ? sign : 'Aries';
+  const cfg = ZODIAC_PRESETS[resolvedSign];
   ap.sequenceMode = cfg.sequenceMode;
   ap.direction = cfg.direction;
-  if (cfg.stepPattern) ap.stepPattern = cfg.stepPattern;
-  if (cfg.degreePattern !== undefined) ap.degreePattern = cfg.degreePattern;
-  ap.holdRoot = !!cfg.holdRoot;
+  ap.stepPattern = cfg.stepPattern || '';
+  ap.degreePattern = cfg.degreePattern || '';
+  ap.holdRoot = false;
+  ap.patternSource = 'zodiac';
+  ap.zodiacSign = resolvedSign;
   node.patternIndex = 0;
 }
 
@@ -57,9 +140,9 @@ export function initCircleNode(newNode, deps) {
   ap.syncSubdivisionIndex = deps.DEFAULT_SUBDIVISION_INDEX;
   ap.triggerInterval = deps.DEFAULT_TRIGGER_INTERVAL;
   ap.chordSize = ap.chordSize || 3;
-  ap.randomChordProbability = ap.randomChordProbability === undefined ? 0.6 : ap.randomChordProbability;
+  ap.randomChordProbability = ap.randomChordProbability === undefined ? 0 : ap.randomChordProbability;
   // New: performance nuances
-  ap.velocityJitter = ap.velocityJitter === undefined ? 0.2 : ap.velocityJitter; // 0..1 amount of random velocity
+  ap.velocityJitter = ap.velocityJitter === undefined ? 0 : ap.velocityJitter; // 0..1 amount of random velocity
   ap.chordType = ap.chordType || 'auto'; // 'auto'|'triad'|'seventh'|'sus2'|'sus4'|'power'|'random'
   ap.chordSpreadProb = ap.chordSpreadProb === undefined ? 0.0 : ap.chordSpreadProb; // 0..1 chance to lift chord tones +7 deg
   ap.direction = ap.direction || 'clockwise';
@@ -68,18 +151,17 @@ export function initCircleNode(newNode, deps) {
   ap.degreePattern = ap.degreePattern || '';
   ap.patternSource = ap.patternSource || 'zodiac';
   ap.zodiacSign = ap.zodiacSign || 'Aries';
+  if (ap.patternSource !== 'zodiac') ap.holdRoot = !!ap.holdRoot;
   if (ap.patternSource === 'zodiac') applyZodiacPresetToCircle(newNode, ap.zodiacSign);
 
   // Embed a sampler instrument
   let subtype = null;
   try {
-    if (samplerWaveformTypes && samplerWaveformTypes.length) {
+    subtype = choosePitchedSamplerType(SAMPLER_DEFINITIONS);
+    if (!subtype && samplerWaveformTypes && samplerWaveformTypes.length) {
       const arr = samplerWaveformTypes.filter((s) => String(s.type || '').startsWith('sampler_'));
-      if (arr.length) subtype = arr[Math.floor(Math.random() * arr.length)].type;
-    }
-    if (!subtype && SAMPLER_DEFINITIONS && SAMPLER_DEFINITIONS.length) {
-      const def = SAMPLER_DEFINITIONS[Math.floor(Math.random() * SAMPLER_DEFINITIONS.length)];
-      subtype = 'sampler_' + def.id;
+      const pitched = arr.filter((s) => isPitchedSamplerType(s.type, SAMPLER_DEFINITIONS));
+      if (pitched.length) subtype = pitched[Math.floor(Math.random() * pitched.length)].type;
     }
   } catch {}
   subtype = subtype || 'sampler_marimba';
@@ -105,29 +187,41 @@ export function handleCirclePulse(currentNode, incomingConnection, deps) {
     propagateTrigger,
     createVisualPulse,
     connections,
+    SAMPLER_DEFINITIONS,
   } = deps;
 
-  // Require left input (-1)
   if (!incomingConnection) return true;
-  const isTargetSideA = incomingConnection.nodeAId === currentNode.id;
-  const handleAtSequencer = isTargetSideA ? incomingConnection.nodeAHandle : incomingConnection.nodeBHandle;
-  if (handleAtSequencer !== -1) return true;
 
   currentNode.animationState = 1;
   const segments = currentNode.segments || 12;
-  const k = ((currentNode.segmentIndex || 0) % segments + segments) % segments;
   const ap = currentNode.audioParams || {};
+
+  // An incoming pulse is the sequencer clock: move first, then play the new step.
+  const pIndex = Number.isFinite(currentNode.patternIndex) ? currentNode.patternIndex : 0;
+  if ((ap.sequenceMode || 'step') === 'degree') {
+    const patt = parseDegreePattern(ap.degreePattern);
+    currentNode.patternIndex = (pIndex + 1) % patt.length;
+  } else {
+    const dir = ap.direction === 'counterclockwise' ? -1 : 1;
+    const parts = (typeof ap.stepPattern === 'string' ? ap.stepPattern : '1')
+      .match(/-?\d+/g)
+      ?.map((s) => parseInt(s, 10))
+      .filter((n) => Number.isFinite(n) && n !== 0);
+    const patt = parts && parts.length > 0 ? parts : [1];
+    const rawStep = patt[pIndex % patt.length];
+    const stepAbs = Math.abs(rawStep);
+    const delta = rawStep < 0 ? -stepAbs : dir * stepAbs;
+    const cur = Number.isFinite(currentNode.segmentIndex) ? currentNode.segmentIndex : 0;
+    currentNode.segmentIndex = ((cur + delta) % segments + segments) % segments;
+    currentNode.patternIndex = (pIndex + 1) % patt.length;
+  }
+
+  const k = ((currentNode.segmentIndex || 0) % segments + segments) % segments;
 
   // Determine degree
   let stepDegree = 0;
-  if ((ap.patternSource || 'zodiac') === 'zodiac' && ap.holdRoot) {
-    stepDegree = 0;
-  } else if ((ap.sequenceMode || 'step') === 'degree' && typeof ap.degreePattern === 'string' && ap.degreePattern.trim().length > 0) {
-    const arr = ap.degreePattern
-      .split(/[^\d]+/)
-      .map((s) => parseInt(s, 10))
-      .filter((n) => Number.isFinite(n) && n > 0);
-    const patt = arr && arr.length > 0 ? arr : [1];
+  if ((ap.sequenceMode || 'step') === 'degree') {
+    const patt = parseDegreePattern(ap.degreePattern);
     const idx = Number.isFinite(currentNode.patternIndex) ? currentNode.patternIndex : 0;
     const deg1 = patt[idx % patt.length];
     stepDegree = Math.max(0, deg1 - 1);
@@ -137,7 +231,7 @@ export function handleCirclePulse(currentNode, incomingConnection, deps) {
   }
 
   // Note vs chord: rely solely on probability dial (UI). Mode selector removed.
-  const chordProb = ap.randomChordProbability === undefined ? 0.6 : ap.randomChordProbability;
+  const chordProb = ap.randomChordProbability === undefined ? 0 : ap.randomChordProbability;
   const isChord = Math.random() < chordProb;
   const chordSize = Math.max(2, Math.min(4, ap.chordSize || 3));
 
@@ -198,10 +292,9 @@ export function handleCirclePulse(currentNode, incomingConnection, deps) {
   };
 
   // Fire to embedded instrument (preferred)
-  const targetId = ap.centerAttachedNodeId || null;
-  if (targetId) {
-    const neighbor = findNodeById(targetId);
-    if (neighbor) fire(neighbor);
+  const neighbor = ensurePlayableCenterInstrument(currentNode, deps);
+  if (neighbor) {
+    fire(neighbor);
   }
   
   // Forward pulse to other connected nodes (pass-through)
@@ -222,7 +315,7 @@ export function handleCirclePulse(currentNode, incomingConnection, deps) {
         const conn = connections.find(
           (c) =>
             (c.nodeAId === currentNode.id && c.nodeBId === neighborId) ||
-            (!c.directional && c.nodeAId === neighborId && c.nodeBId === currentNode.id),
+            (!isOneWayConnection(c) && c.nodeAId === neighborId && c.nodeBId === currentNode.id),
         );
         if (!conn) return;
         const neighbor = findNodeById(neighborId);
@@ -252,29 +345,6 @@ export function handleCirclePulse(currentNode, incomingConnection, deps) {
     currentNode.lastGlowAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   } catch {}
 
-  // Advance index
-  const pIndex = Number.isFinite(currentNode.patternIndex) ? currentNode.patternIndex : 0;
-  if ((ap.sequenceMode || 'step') === 'degree') {
-    const arr = (typeof ap.degreePattern === 'string' ? ap.degreePattern : '')
-      .split(/[^\d]+/)
-      .map((s) => parseInt(s, 10))
-      .filter((n) => Number.isFinite(n) && n > 0);
-    const patt = arr && arr.length > 0 ? arr : [1];
-    currentNode.patternIndex = (pIndex + 1) % patt.length;
-  } else {
-    const dir = ap.direction === 'counterclockwise' ? -1 : 1;
-    const parts = (typeof ap.stepPattern === 'string' ? ap.stepPattern : '1')
-      .match(/-?\d+/g)
-      ?.map((s) => parseInt(s, 10))
-      .filter((n) => Number.isFinite(n) && n !== 0);
-    const patt = parts && parts.length > 0 ? parts : [1];
-    const rawStep = patt[pIndex % patt.length];
-    const stepAbs = Math.abs(rawStep);
-    const delta = rawStep < 0 ? -stepAbs : dir * stepAbs;
-    const cur = Number.isFinite(currentNode.segmentIndex) ? currentNode.segmentIndex : 0;
-    currentNode.segmentIndex = ((cur + delta) % segments + segments) % segments;
-    currentNode.patternIndex = (pIndex + 1) % patt.length;
-  }
   return true;
 }
 
@@ -361,9 +431,15 @@ export function buildCenterInstrumentPanel(node, deps) {
     presetSelect.innerHTML = '';
     let list = [];
     if (engine === 'sampler') {
-      if (samplerWaveformTypes && samplerWaveformTypes.length)
-        list = samplerWaveformTypes.map((s) => s.type).filter((t) => String(t || '').startsWith('sampler_'));
-      else if (SAMPLER_DEFINITIONS) list = SAMPLER_DEFINITIONS.map((d) => 'sampler_' + d.id);
+      if (SAMPLER_DEFINITIONS) {
+        list = SAMPLER_DEFINITIONS
+          .filter((d) => Number.isFinite(d.baseFreq) && d.baseFreq > 0 && !d.loadFailed)
+          .map((d) => 'sampler_' + d.id);
+      } else if (samplerWaveformTypes && samplerWaveformTypes.length) {
+        list = samplerWaveformTypes
+          .map((s) => s.type)
+          .filter((t) => String(t || '').startsWith('sampler_'));
+      }
     } else if (engine === 'fm') {
       list = (fmSynthPresets || []).map((p) => p.type);
     } else if (engine === 'analog') {

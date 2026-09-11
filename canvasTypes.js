@@ -1,4 +1,5 @@
 // Canvas type definitions and logic
+
 export const CANVAS_TYPES = {
   FREEFORM: 'freeform'
 };
@@ -8,7 +9,7 @@ export class CanvasType {
     this.type = type;
     this.config = config;
   }
-  
+
   // Override these methods in subclasses
   canPlaceNode(nodeType, x, y) { return true; }
   adjustNodePlacement(nodeType, x, y) { return { x, y }; }
@@ -20,6 +21,13 @@ export class CanvasType {
 export class FreeformCanvasType extends CanvasType {
   constructor(config = {}) {
     super(CANVAS_TYPES.FREEFORM, config);
+  }
+
+  /**
+   * Freeform placement is controlled by the main canvas snap toggle.
+   */
+  adjustNodePlacement(nodeType, x, y) {
+    return { x, y };
   }
 }
 

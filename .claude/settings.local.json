@@ -17,7 +17,9 @@
       "Bash(Select-Object -First 20)",
       "Bash(findstr /N \"mixer-control-item\\\\|mixer-tab\\\\|mixer-row\\\\|panel-section\" style.css)",
       "Bash(findstr /R \"performance.drawer\\\\|performance-drawer\" *.html *.js)",
-      "Bash(dir *.js)"
+      "Bash(dir *.js)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\eloo\\\\Documents\\\\codes\\\\resonaut\" -Force)",
+      "Bash(Select-Object Name, FullName)"
     ],
     "deny": [],
     "ask": []

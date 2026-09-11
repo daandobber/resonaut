@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 
+const triggerNodeEffect = vi.fn()
+
+vi.mock('../main.js', () => ({
+  triggerNodeEffect,
+}))
+
 function makeNode(id, x, y) {
   return { id, x, y, size: 1, type: 'sound', audioParams: {} }
 }
@@ -10,9 +16,9 @@ describe('updateAndDrawMeteorShowers', () => {
     globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' })
     const { updateAndDrawMeteorShowers, activeMeteorShowers } = await import('../utils/meteor.js')
 
-    globalThis.triggerNodeEffect = vi.fn()
+    triggerNodeEffect.mockClear()
     globalThis.propagateTrigger = (node) => {
-      globalThis.triggerNodeEffect(node)
+      triggerNodeEffect(node)
     }
     globalThis.isAudioReady = true
     globalThis.isPulsarType = () => false
@@ -42,6 +48,6 @@ describe('updateAndDrawMeteorShowers', () => {
 
     updateAndDrawMeteorShowers(0.1, 0)
 
-    expect(globalThis.triggerNodeEffect).toHaveBeenCalled()
+    expect(triggerNodeEffect).toHaveBeenCalled()
   })
 })

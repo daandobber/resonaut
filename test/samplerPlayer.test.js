@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { playWithToneSampler } from '../samplerPlayer.js';
 
 describe('playWithToneSampler', () => {
-  it('schedules buffer playback with correct rate', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); delete globalThis.audioContext; });
+  it('schedules buffer playback with correct rate', async () => {
     const buffer = { duration: 1 };
     const source = {
       buffer: null,
@@ -17,6 +19,7 @@ describe('playWithToneSampler', () => {
       gain: {
         setValueAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
         setTargetAtTime: vi.fn(),
       },
       connect: vi.fn(),
@@ -33,7 +36,7 @@ describe('playWithToneSampler', () => {
     };
     const dest = {};
 
-    playWithToneSampler(buffer, 100, 200, 0, 0.1, 0.2, 0.5, dest);
+    await playWithToneSampler(buffer, 100, 200, 0, 0.1, 0.2, 0.5, 0.3, 0.8, dest);
 
     expect(createBufferSource).toHaveBeenCalled();
     expect(source.buffer).toBe(buffer);
@@ -42,7 +45,7 @@ describe('playWithToneSampler', () => {
     expect(gainNode.connect).toHaveBeenCalledWith(dest);
   });
 
-  it('connects to audioContext destination by default', () => {
+  it('connects to audioContext destination by default', async () => {
     const buffer = { duration: 1 };
     const source = {
       buffer: null,
@@ -56,6 +59,7 @@ describe('playWithToneSampler', () => {
       gain: {
         setValueAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
         setTargetAtTime: vi.fn(),
       },
       connect: vi.fn(),
@@ -73,12 +77,12 @@ describe('playWithToneSampler', () => {
       destination: destinationNode,
     };
 
-    playWithToneSampler(buffer, 100, 200, 0, 0.1, 0.2, 0.5);
+    await playWithToneSampler(buffer, 100, 200, 0, 0.1, 0.2, 0.5, 0.3, 0.8);
 
     expect(gainNode.connect).toHaveBeenCalledWith(destinationNode);
   });
 
-  it('clamps start time to currentTime when scheduled in the past', () => {
+  it('clamps start time to currentTime when scheduled in the past', async () => {
     const buffer = { duration: 1 };
     const source = {
       buffer: null,
@@ -92,6 +96,7 @@ describe('playWithToneSampler', () => {
       gain: {
         setValueAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
         setTargetAtTime: vi.fn(),
       },
       connect: vi.fn(),
@@ -107,24 +112,25 @@ describe('playWithToneSampler', () => {
       resume: vi.fn(),
     };
 
-    playWithToneSampler(buffer, 100, 100, 0.5, 0.1, 0.2, 0.5, {});
+    await playWithToneSampler(buffer, 100, 100, 0.5, 0.1, 0.2, 0.5, 0.3, 0.8, {});
 
     expect(source.start).toHaveBeenCalledWith(1, 0, buffer.duration);
     expect(gainNode.gain.setValueAtTime).toHaveBeenCalledWith(0, 1);
   });
 
-  it('returns when AudioContext is missing', () => {
+  it('returns when AudioContext is missing', async () => {
     delete globalThis.audioContext;
-    expect(() =>
-      playWithToneSampler({}, 100, 100, 0, 0.1, 0.2, 0.5),
-    ).not.toThrow();
+    await expect(
+      playWithToneSampler({}, 100, 100, 0, 0.1, 0.2, 0.5, 0.3, 0.8),
+    ).resolves.toBeUndefined();
   });
 
-  it('returns when buffer is missing', () => {
+  it('returns when buffer is missing', async () => {
     const gainNode = {
       gain: {
         setValueAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
         setTargetAtTime: vi.fn(),
       },
       connect: vi.fn(),
@@ -140,11 +146,11 @@ describe('playWithToneSampler', () => {
       resume: vi.fn(),
       destination: {},
     };
-    playWithToneSampler(null, 100, 100, 0, 0.1, 0.2, 0.5);
+    await playWithToneSampler(null, 100, 100, 0, 0.1, 0.2, 0.5, 0.3, 0.8);
     expect(createBufferSource).not.toHaveBeenCalled();
   });
 
-  it('defaults playbackRate to 1 when baseFreq is invalid', () => {
+  it('defaults playbackRate to 1 when baseFreq is invalid', async () => {
     const buffer = { duration: 1 };
     const source = {
       buffer: null,
@@ -158,6 +164,7 @@ describe('playWithToneSampler', () => {
       gain: {
         setValueAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
         setTargetAtTime: vi.fn(),
       },
       connect: vi.fn(),
@@ -174,7 +181,7 @@ describe('playWithToneSampler', () => {
       destination: {},
     };
 
-    playWithToneSampler(buffer, 0, 200, 0, 0.1, 0.2, 0.5);
+    await playWithToneSampler(buffer, 0, 200, 0, 0.1, 0.2, 0.5, 0.3, 0.8);
 
     expect(source.playbackRate.value).toBe(1);
   });
@@ -193,6 +200,7 @@ describe('playWithToneSampler', () => {
       gain: {
         setValueAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
         setTargetAtTime: vi.fn(),
       },
       connect: vi.fn(),
@@ -210,7 +218,7 @@ describe('playWithToneSampler', () => {
       destination: {},
     };
 
-    playWithToneSampler(buffer, 100, 100, 0, 0.1, 0.2, 0.5);
+    await playWithToneSampler(buffer, 100, 100, 0, 0.1, 0.2, 0.5, 0.3, 0.8);
 
     expect(resume).toHaveBeenCalled();
     await Promise.resolve();

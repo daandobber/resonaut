@@ -1,12 +1,21 @@
+import { symphioseContext, symphioseNote, advanceSymphioseClock } from '../utils/symphioseMusic.js';
 import * as Tone from 'tone'
 
 export const DEFAULT_MIND_PARAMS = {
+  musicalRole: 'auto',
+  chordColor: 'triad',
+  arpDirection: 'up',
+  rhythmStyle: 'euclidean',
+  progression: 'journey',
+  barsPerChord: 1,
+  variation: 0.2,
+  moveWithHive: false,
   // Celestial Mind Sequencer parameters
   dreamDepth: 4,        // Stellar Pulses - How many star beats pulse in each cosmic cycle
   consciousnessSpan: 16, // Cosmic Orbit - How many steps the cosmic wheel takes to complete one journey
   thoughtSpeed: 1,      // Fairy Velocity - How swiftly the fairies dance through time
   memoryEcho: 0,        // Temporal Shift - How the ancient memories twist the flow of time
-  wisdomCycles: 1,      // How many different patterns to cycle through
+  wisdomCycles: 4,      // How many different patterns to cycle through
   imaginationSeed: 1,   // Dream Seed - The seed of infinite possibilities, shaping unique cosmic dreams
   focusIntensity: 1.0,  // Life Essence - The potency of life force flowing through the veins
   
@@ -22,7 +31,7 @@ export const DEFAULT_MIND_PARAMS = {
   // Queen Mind System
   isQueen: false,          // When true, this is a Queen Mind that controls other Minds
   hiveRadius: 500,         // How far Queen can control other Minds (pixels)
-  commandIntensity: 1.5,   // Multiplier for commands sent to hive Minds
+  commandIntensity: 1.0,   // Multiplier for commands sent to hive Minds
   hiveFormation: 'circle', // Formation pattern: 'circle', 'line', 'swarm'
   queenSize: 1.0,          // Size multiplier (Queens are bigger)
   
@@ -36,7 +45,7 @@ export const DEFAULT_MIND_PARAMS = {
   // Sync system integration (like other Resonaut nodes)
   ignoreGlobalSync: false,
   syncSubdivisionIndex: 2, // Default to 1/4 notes (index 2 in subdivisionOptions)
-  triggerInterval: 0.5,    // Manual timing when sync is off (seconds)
+  triggerInterval: 0.125,    // Manual timing when sync is off (seconds)
   
   // Technical params
   visualStyle: 'mind_core',
@@ -49,13 +58,13 @@ export const DEFAULT_QUEEN_MIND_PARAMS = {
   ...DEFAULT_MIND_PARAMS,
   // Queen-specific overrides
   dreamDepth: 6,
-  consciousnessSpan: 24,
-  focusIntensity: 2.0,
+  consciousnessSpan: 16,
+  focusIntensity: 1.0,
   maxFloatingVeins: 5,
   searchRadius: 400,
   isQueen: true,
   hiveRadius: 500,
-  commandIntensity: 1.5,
+  commandIntensity: 1.0,
   queenSize: 1.8,
   visualStyle: 'queen_mind_core',
   isAlive: true, // Queens are always alive and active
@@ -67,7 +76,7 @@ export const DEFAULT_QUEEN_MIND_PARAMS = {
 };
 
 export function createMindOrb(node) {
-  const p = node.audioParams;
+  const p = node.audioParams = { ...DEFAULT_MIND_PARAMS, ...node.audioParams };
   
   // Mind orbs don't produce sound directly, they generate Life units
   // We create a minimal audio chain for compatibility
@@ -119,178 +128,84 @@ export function createMindOrb(node) {
     lastPluckTime: 0,
   };
 
-  // Generate euclidean rhythm pattern
-  node.generateEuclideanPattern = function(steps, length) {
-    if (steps >= length) return new Array(length).fill(true);
-    if (steps === 0) return new Array(length).fill(false);
-    
-    const pattern = new Array(length).fill(false);
-    const interval = length / steps;
-    
-    for (let i = 0; i < steps; i++) {
-      const pos = Math.floor(i * interval);
-      pattern[pos] = true;
-    }
-    
-    return pattern;
-  };
-
-  // Generate fractal variations of the base pattern
-  node.generateFractalVariation = function(basePattern, complexity, seed) {
-    const variation = [...basePattern];
-    const random = (seed * 9301 + 49297) % 233280;
-    const rnd = random / 233280;
-    
-    if (complexity > 1 && rnd > 0.7) {
-      // Add fractal complexity by subdividing some beats
-      for (let i = 0; i < variation.length; i++) {
-        if (variation[i] && Math.random() > 0.6) {
-          variation[i] = [true, false, true]; // Create triplet subdivision
-        }
-      }
-    }
-    
-    return variation;
-  };
-
-  // Update patterns when parameters change
+  // Preview the same deterministic patterns that the musical clock plays.
   node.updateSequencePatterns = function() {
-    const dreamDepth = p.dreamDepth || 4;
-    const consciousnessSpan = p.consciousnessSpan || 16;
-    const spellComplexity = p.spellComplexity || 1;
-    const imaginationSeed = p.imaginationSeed || 1;
-    
-    node.lifeSystem.euclideanPatterns = [];
-    node.lifeSystem.polyrhythmicCounters = [];
-    
-    node.lifeSystem.veins.forEach((vein, index) => {
-      // Each vein gets its own euclidean pattern
-      const veinDreamDepth = Math.max(1, dreamDepth + (index % 3) - 1); // Slight variation per vein
-      const basePattern = node.generateEuclideanPattern(veinDreamDepth, consciousnessSpan);
-      
-      // Apply fractal variations
-      const fractalPattern = node.generateFractalVariation(basePattern, spellComplexity, imaginationSeed + index);
-      
-      node.lifeSystem.euclideanPatterns[index] = fractalPattern;
-      
-      // Initialize polyrhythmic counter
-      const enchantmentPhase = (p.enchantmentPhases && p.enchantmentPhases[index]) || 1;
-      node.lifeSystem.polyrhythmicCounters[index] = {
-        counter: 0,
-        phase: enchantmentPhase
-      };
-    });
+    const length = Math.max(4, Math.min(64, Math.round(p.consciousnessSpan ?? 16)));
+    node.lifeSystem.euclideanPatterns = node.lifeSystem.veins.map((vein, index) =>
+      Array.from({ length }, (_, step) => !!symphioseNote(p,
+        symphioseContext(p, step), index, node.lifeSystem.veins.length)));
   };
 
-  // Start advanced sequencing with proper sync integration
   node.startLifeGeneration = function(isGlobalSyncEnabled, globalBPM, subdivisionOptions) {
-    if (node.lifeSystem.isGenerating) return;
-    
     node.lifeSystem.isGenerating = true;
+    const subdiv = subdivisionOptions?.[p.syncSubdivisionIndex ?? 2]?.value ?? 0.25;
+    node.lifeSystem.stepInterval = Math.max(0.02,
+      isGlobalSyncEnabled && !p.ignoreGlobalSync
+        ? 60 / Math.max(30, globalBPM) * subdiv / Math.max(0.25, p.thoughtSpeed ?? 1)
+        : (p.triggerInterval ?? 0.125) / Math.max(0.25, p.thoughtSpeed ?? 1));
     node.updateSequencePatterns();
-    
-    // Calculate timing based on Resonaut's sync system (like other nodes)
-    let baseInterval;
-    
-    if (isGlobalSyncEnabled && !p.ignoreGlobalSync && globalBPM > 0) {
-      // Use global sync with subdivision
-      const secondsPerBeat = 60.0 / globalBPM;
-      const subdivIndex = p.syncSubdivisionIndex || 2; // Default to 1/4 notes
-      const subdiv = subdivisionOptions[subdivIndex];
-      if (subdiv && typeof subdiv.value === "number") {
-        baseInterval = Math.max(20, secondsPerBeat * subdiv.value * 1000); // Convert to milliseconds
-      } else {
-        baseInterval = Math.max(20, (p.triggerInterval || 0.5) * 1000);
-      }
-    } else {
-      // Use manual timing when sync is off (like other nodes)
-      const thoughtSpeed = p.thoughtSpeed || 1;
-      baseInterval = Math.max(20, (p.triggerInterval || 0.5) * 1000 / thoughtSpeed);
-    }
-    
-    node.lifeSystem.lifeTimer = setInterval(() => {
-      node.processSequenceStep();
-    }, baseInterval);
   };
 
   node.stopLifeGeneration = function() {
-    if (node.lifeSystem.lifeTimer) {
-      clearInterval(node.lifeSystem.lifeTimer);
-      node.lifeSystem.lifeTimer = null;
-    }
+    if (node.lifeSystem.lifeTimer) clearInterval(node.lifeSystem.lifeTimer);
+    node.lifeSystem.lifeTimer = null;
     node.lifeSystem.isGenerating = false;
+    node.lifeSystem.clockTick = null;
   };
 
-  // Process one step of the sequence
-  node.processSequenceStep = function() {
-    if (node.lifeSystem.veins.length === 0) return;
-    
-    const memoryEcho = p.memoryEcho || 0;
-    const consciousnessSpan = p.consciousnessSpan || 16;
-    
-    // Calculate current step with memory echo (rotation)
-    const currentStep = (node.lifeSystem.sequenceStep + memoryEcho) % consciousnessSpan;
-    
-    // Check each vein's pattern
-    node.lifeSystem.veins.forEach((vein, veinIndex) => {
-      if (veinIndex >= node.lifeSystem.euclideanPatterns.length) return;
-      
-      const pattern = node.lifeSystem.euclideanPatterns[veinIndex];
-      const polyCounter = node.lifeSystem.polyrhythmicCounters[veinIndex];
-      
-      // Check polyrhythmic timing
-      if (polyCounter.counter % polyCounter.phase === 0) {
-        // Check if this step should trigger in the euclidean pattern
-        if (pattern[currentStep]) {
-          node.sendLifeUnit(vein, veinIndex);
-        }
-      }
-      
-      polyCounter.counter++;
+  node.advanceLifeClock = function(now, origin = 0) {
+    if (!node.lifeSystem.isGenerating || node.lifeSystem.queenController) return;
+    const tick = advanceSymphioseClock(node.lifeSystem, now, node.lifeSystem.stepInterval, origin);
+    if (tick !== null) node.processSequenceStep(symphioseContext(p, tick));
+  };
+
+  node.processSequenceStep = function(context = symphioseContext(p, node.lifeSystem.absoluteStep || 0), assignedRole, gainScale = 1) {
+    if (node.isEnabled === false) return;
+    node.lifeSystem.absoluteStep = context.tick + 1;
+    node.lifeSystem.sequenceStep = context.step;
+    node.lifeSystem.patternCycle = context.cycle;
+    node.lifeSystem.musicalContext = context;
+    node.lifeSystem.activeRole = p.musicalRole !== 'auto' ? p.musicalRole : assignedRole || 'auto';
+    if (p.isQueen) {
+      node.discoverHiveMinds();
+      node.lifeSystem.hiveMinds.forEach((mind, index) => {
+        mind.processSequenceStep(context, ['bass', 'chords', 'melody', 'rhythm'][index % 4],
+          Math.min(1.5, Math.max(0, p.commandIntensity ?? 1)) * Math.max(0, p.focusIntensity ?? 1) /
+          Math.sqrt(Math.max(1, node.lifeSystem.hiveMinds.length)) * 0.75);
+      });
+    }
+    const voices = node.lifeSystem.veins.filter(v => v.targetNode && v.isActive !== false && !v.isFloating && v.targetNode.type !== 'mind');
+    voices.forEach((vein, index) => {
+      const phase = Math.max(1, Math.round(p.enchantmentPhases?.[index] ?? 1));
+      if (context.tick % phase !== 0) return;
+      const event = symphioseNote(p, context, index, voices.length, assignedRole);
+      if (event) node.sendLifeUnit(vein, index, { ...event, intensity: Math.min(1.4, event.intensity * gainScale) });
     });
-    
-    node.lifeSystem.sequenceStep = (node.lifeSystem.sequenceStep + 1) % consciousnessSpan;
-    
-    // Handle wisdom cycles (pattern evolution)
-    if (node.lifeSystem.sequenceStep === 0) {
-      node.lifeSystem.patternCycle++;
-      if ((p.wisdomCycles || 1) > 1) {
-        node.updateSequencePatterns(); // Regenerate patterns for variation
-      }
-    }
   };
 
-  node.sendLifeUnit = function(vein, pulseIndex) {
-    console.log('sendLifeUnit called:', vein.id, 'isQueen:', p.isQueen, 'clawsEnabled:', p.clawsEnabled, 'hasStringGain:', node.lifeSystem.stringGains.has(vein.id));
-    
-    // If Queen has claws enabled, pluck the vein string instead of normal trigger
+  node.sendLifeUnit = function(vein, pulseIndex, event = { intensity: p.focusIntensity ?? 1 }) {
     if (p.isQueen && p.clawsEnabled && node.lifeSystem.stringGains.has(vein.id)) {
-      const intensity = Math.min(2.0, Math.max(0.1, p.focusIntensity || 1.0)); // Clamp intensity
-      console.log('Plucking string with intensity:', intensity);
-      node.pluckVeinString(vein.id, intensity);
-    } else {
-      // Normal behavior: trigger the target orb with focus intensity
-      if (vein.targetNode && vein.targetNode.triggerFromLife) {
-        const safeIntensity = Math.min(10.0, Math.max(0.1, p.focusIntensity || 1.0)); // Clamp intensity
-        vein.targetNode.triggerFromLife(safeIntensity);
-      }
+      node.pluckVeinString(vein.id, event.intensity);
+    } else if (vein.targetNode?.triggerFromLife) {
+      vein.targetNode.triggerFromLife(event.intensity, event);
     }
-    
-    // Create visual life pulse effect in the vein
-    if (vein.targetNode) {
-      vein.lastPulseTime = Date.now();
-    }
+    vein.lastPulseTime = Date.now();
+    vein.lastMusicalEvent = event;
   };
 
   node.addVein = function(targetNode) {
+    if (!targetNode || targetNode === node) return null;
+    const existing = node.lifeSystem.veins.find(v => v.targetNode?.id === targetNode.id);
+    if (existing) return existing;
     const vein = {
-      id: `vein_${Date.now()}`,
+      id: `vein_${node.id}_${targetNode.id}`,
       targetNode: targetNode,
       travelTime: 500, // ms for Life pulse to travel
       isActive: true
     };
     
     node.lifeSystem.veins.push(vein);
+    p.veinTargets = node.lifeSystem.veins.map(v => v.targetNode?.id).filter(id => id != null);
     
     // Create guitar string oscillator if Queen has claws enabled
     if (p.isQueen && p.clawsEnabled) {
@@ -331,6 +246,9 @@ export function createMindOrb(node) {
     
     node.lifeSystem.veins = node.lifeSystem.veins.filter(v => v.id !== veinId);
     node.lifeSystem.floatingVeins = node.lifeSystem.floatingVeins.filter(v => v.id !== veinId);
+    p.veinTargets = node.lifeSystem.veins.map(v => v.targetNode?.id).filter(id => id != null);
+    node.discoverHiveMinds();
+    node.updateSequencePatterns();
   };
 
   // === QUEEN MIND CLAW SYSTEM ===
@@ -555,49 +473,17 @@ export function createMindOrb(node) {
   // === QUEEN MIND HIVE SYSTEM ===
   
   // Find and recruit Mind orbs that have direct vein connections from the Queen
-  node.discoverHiveMinds = function(allNodes) {
+  node.discoverHiveMinds = function() {
     if (!p.isQueen) return;
-    
-    const currentHive = new Set(node.lifeSystem.hiveMinds.map(m => m.id));
-    
-    // Only recruit Minds that have a direct vein connection from this Queen
-    if (node.lifeSystem.veins && node.lifeSystem.veins.length > 0) {
-      node.lifeSystem.veins.forEach(vein => {
-        if (!vein.targetNode || !vein.isActive || vein.isFloating) return;
-        
-        const targetNode = vein.targetNode;
-        
-        // Check if the vein target is a Mind node that can be enslaved
-        if (targetNode.type === "mind" && 
-            !targetNode.audioParams?.isQueen && 
-            !currentHive.has(targetNode.id)) {
-          
-          // Recruit this Mind into the hive
-          node.lifeSystem.hiveMinds.push(targetNode);
-          // Mark the recruited Mind as being controlled by a Queen
-          if (!targetNode.lifeSystem) targetNode.lifeSystem = {};
-          targetNode.lifeSystem.queenController = node;
-        }
-      });
-    }
-    
-    // Also clean up hive - remove Minds that no longer have vein connections
-    node.lifeSystem.hiveMinds = node.lifeSystem.hiveMinds.filter(hiveMind => {
-      // Keep if there's still a vein connection to this Mind
-      const hasVeinConnection = node.lifeSystem.veins.some(vein => 
-        vein.targetNode && vein.targetNode.id === hiveMind.id && 
-        vein.isActive && !vein.isFloating
-      );
-      
-      if (!hasVeinConnection) {
-        // Remove Queen control from Mind that's no longer connected
-        if (hiveMind.lifeSystem) {
-          delete hiveMind.lifeSystem.queenController;
-        }
-      }
-      
-      return hasVeinConnection;
+    const previous = node.lifeSystem.hiveMinds;
+    const members = node.lifeSystem.veins.filter(v => v.isActive !== false && !v.isFloating)
+      .map(v => v.targetNode).filter(m => m?.type === 'mind' && m.lifeSystem &&
+        (!m.lifeSystem.queenController || m.lifeSystem.queenController === node));
+    previous.filter(m => !members.includes(m)).forEach(m => {
+      if (m.lifeSystem?.queenController === node) delete m.lifeSystem.queenController;
     });
+    members.forEach(m => { m.lifeSystem.queenController = node; });
+    node.lifeSystem.hiveMinds = members;
   };
 
   // Send movement commands to hive minds
@@ -713,26 +599,8 @@ export function createMindOrb(node) {
 
   // Send pattern commands to hive minds (synchronize their sequences)
   node.commandHivePatterns = function() {
-    if (!p.isQueen || node.lifeSystem.hiveMinds.length === 0) return;
-    
-    const commandIntensity = p.commandIntensity || 1.5;
-    
-    node.lifeSystem.hiveMinds.forEach((hiveMind, index) => {
-      if (!hiveMind || !hiveMind.lifeSystem) return;
-      
-      // Synchronize pattern timing with slight phase offsets
-      const phaseOffset = index * 2; // Offset each hive mind by 2 steps
-      if (hiveMind.lifeSystem.sequenceStep !== undefined) {
-        hiveMind.lifeSystem.sequenceStep = (node.lifeSystem.sequenceStep + phaseOffset) % (hiveMind.audioParams.consciousnessSpan || 16);
-      }
-      
-      // Override focus intensity for coordinated power (with safety limits)
-      if (hiveMind.audioParams) {
-        const baseIntensity = Math.min(2.0, Math.max(0.1, hiveMind.audioParams.focusIntensity || 1.0));
-        const safeCommandIntensity = Math.min(3.0, Math.max(0.5, commandIntensity));
-        hiveMind.audioParams.focusIntensity = Math.min(5.0, baseIntensity * safeCommandIntensity);
-      }
-    });
+    // The shared clock sends phrase context; never overwrite a member's settings.
+    node.discoverHiveMinds();
   };
 
   // Start Queen's hive control behavior
@@ -748,7 +616,7 @@ export function createMindOrb(node) {
     
     node.lifeSystem.hiveCommandTimer = setInterval(() => {
       node.discoverHiveMinds(allNodes);
-      node.commandHiveFormation();
+      if (p.moveWithHive) node.commandHiveFormation();
       node.commandHivePatterns();
       
       // Update claw positions and animations
@@ -778,6 +646,7 @@ export function createMindOrb(node) {
   node.dispose = function() {
     console.log('Disposing Queen Mind:', node.id);
     
+    node.stopAliveBehavior?.();
     // Stop Queen behavior
     if (node.stopQueenBehavior) {
       node.stopQueenBehavior();
@@ -875,7 +744,7 @@ export function createMindOrb(node) {
     
     // Slow, scary drift behavior when no connections exist
     const hasConnections = node.lifeSystem.veins && node.lifeSystem.veins.some(v => v.targetNode && !v.isFloating);
-    if (!hasConnections && node.lifeSystem.floatingVeins.length === 0) {
+    if (p.moveWithHive && !hasConnections && node.lifeSystem.floatingVeins.length === 0) {
       // Mind drifts slowly across canvas when completely alone - scary alien behavior
       const slowTime = Date.now() * 0.0003; // Very slow movement
       const driftRadius = 50; // Maximum drift distance from original position
@@ -887,8 +756,8 @@ export function createMindOrb(node) {
       }
       
       // Slow, ominous drift pattern
-      const driftX = Math.sin(slowTime * 0.7 + node.id.hashCode() * 0.1) * driftRadius;
-      const driftY = Math.cos(slowTime * 0.5 + node.id.hashCode() * 0.15) * driftRadius * 0.6;
+      const driftX = Math.sin(slowTime * 0.7 + (Number(node.id) || 0) * 0.1) * driftRadius;
+      const driftY = Math.cos(slowTime * 0.5 + (Number(node.id) || 0) * 0.15) * driftRadius * 0.6;
       
       // Apply drift with bounds checking to keep it on canvas
       const canvas = typeof window !== 'undefined' && window.canvas;
@@ -912,7 +781,8 @@ export function createMindOrb(node) {
     if (typeof window !== 'undefined' && window.nodes) {
       window.nodes.forEach(n => {
         if (n === node) return; // Skip self
-        if (compatibleTypes.includes(n.type) || (n.type && n.type.startsWith('drum_'))) {
+        if (n.isEmbeddedInCircleId != null || n.isEmbeddedInTonnetzId != null) return;
+        if (compatibleTypes.includes(n.type) || (n.type && n.type.startsWith('drum_')) || (p.isQueen && n.type === 'mind')) {
           // Check if this orb is already connected to this mind
           const alreadyConnected = node.lifeSystem.veins.some(v => 
             v.targetNode && v.targetNode.id === n.id && !v.isFloating
@@ -953,13 +823,14 @@ export function createMindOrb(node) {
           Math.pow(orb.y - vein.searchY, 2)
         );
         
-        if (distToOrb < 50) { // Close enough to connect
+        if (distToOrb < 50 && vein.isFloating && !node.lifeSystem.veins.some(v => v.targetNode === orb)) { // Close enough to connect
           // Connect the vein
           vein.targetNode = orb;
           vein.isFloating = false;
           
           // Move from floating to regular veins
           node.lifeSystem.veins.push(vein);
+          p.veinTargets = node.lifeSystem.veins.map(v => v.targetNode?.id).filter(id => id != null);
           node.lifeSystem.floatingVeins = node.lifeSystem.floatingVeins.filter(v => v.id !== vein.id);
           
           // Visual feedback

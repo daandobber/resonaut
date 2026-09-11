@@ -3,6 +3,7 @@ import { analogWaveformPresets } from './orbs/analog-waveform-presets.js';
 import { fmSynthPresets } from './orbs/fm-synth-orb.js';
 import { SAMPLER_DEFINITIONS } from './samplers.js';
 import { pluckSynthPresets } from './orbs/pluck-synth-orb.js';
+import { addMenuSearch } from './workspaceAssistant.js';
 
 export function populateSideToolbar(contentType, title) {
   if (!sideToolbarContent || !sideToolbarTitle || !sideToolbar) return;
@@ -129,13 +130,39 @@ export function populateSideToolbar(contentType, title) {
         currentSelectionKey = window.nodeTypeToAdd;
       }
       break;
-    case "drumElements":
-      targetPresetArray = window.drumElementTypes;
+    case "drumElements": {
       if (!window.drumElementTypes.some((d) => d.type === window.nodeTypeToAdd)) {
         window.nodeTypeToAdd = window.drumElementTypes.length > 0 ? window.drumElementTypes[0].type : null;
         currentSelectionKey = window.nodeTypeToAdd;
       }
+      const familyOf = (type) =>
+        type.startsWith("drum_tone_fm") ? "FM Tone"
+        : type.startsWith("drum_chip_") ? "Chip / 8-bit"
+        : "Classic";
+      const familyOrder = ["Classic", "FM Tone", "Chip / 8-bit"];
+      const families = {};
+      (window.drumElementTypes || []).forEach((d) => {
+        const fam = familyOf(d.type);
+        if (!families[fam]) families[fam] = [];
+        families[fam].push(d);
+      });
+      familyOrder.filter((fam) => families[fam]).forEach((fam) => {
+        const titleEl = document.createElement("div");
+        titleEl.className = "sampler-category-title";
+        titleEl.textContent = fam;
+        groupDiv.appendChild(titleEl);
+        families[fam].forEach((item) => {
+          const button = document.createElement("button");
+          button.classList.add("drum-element-button");
+          button.dataset.type = item.type;
+          button.innerHTML = `<span class="type-icon">${item.icon}</span> <span>${item.label}</span>`;
+          if (item.type === currentSelectionKey) button.classList.add("selected");
+          button.addEventListener("click", () => window.handleElementTypeSelect(button, item.type));
+          groupDiv.appendChild(button);
+        });
+      });
       break;
+    }
     case "waveforms":
       const nebulaWaveforms = window.NEBULA_PRESET_OPTIONS;
       targetPresetArray = nebulaWaveforms;
@@ -249,6 +276,7 @@ export function populateSideToolbar(contentType, title) {
   }
 
   sideToolbarContent.appendChild(groupDiv);
+  addMenuSearch(sideToolbarContent);
 
   if (
     window.helpWizard &&

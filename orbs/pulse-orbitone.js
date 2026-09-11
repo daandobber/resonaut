@@ -1,11 +1,40 @@
 import * as Tone from 'tone';
 import { getFrequency } from '../audioUtils.js';
+import { getPlaybackTuning } from '../utils/playbackTuning.js';
 import { scaleState } from '../utils/scaleConstants.js';
 import { dbgOrbitone } from '../utils/debug.js';
 
+function createOrbitonePlaybackOrder(node, count) {
+  const mode = node?.audioParams?.orbitoneOrder || 'normal';
+  const normal = Array.from({ length: Math.max(0, count || 0) }, (_, index) => index);
+  if (mode === 'reverse') return normal.slice().reverse();
+  if (mode === 'random') {
+    const shuffled = normal.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+  if (mode === 'pingpong') {
+    const reverse = !!node._orbitonePingPongReverse;
+    node._orbitonePingPongReverse = !reverse;
+    return reverse ? normal.slice().reverse() : normal;
+  }
+  return normal;
+}
+
+function getOrbitoneOrderedTimingOffset(params, voiceIndex, playbackOrder) {
+  const offsets = params?.orbitoneTimingOffsets || [];
+  const orderSlot = playbackOrder.indexOf(voiceIndex);
+  const timingIndex = orderSlot >= 0 ? orderSlot : voiceIndex;
+  if (timingIndex <= 0) return 0;
+  return offsets[timingIndex - 1] !== undefined ? offsets[timingIndex - 1] : 0;
+}
+
 // Schedule Orbitone voices for the Pulse synth and apply mix/envelopes.
 // Keeps logic close to the main engine's Orbitone handling.
-export function triggerPulseOrbitones(node, now, intensity = 1) {
+export function triggerPulseOrbitones(node, now, intensity = 1, externalPlaybackOrder = null) {
   if (!node || !node.audioParams || !node.audioNodes) return;
   const ap = node.audioParams;
   const an = node.audioNodes;
@@ -20,7 +49,7 @@ export function triggerPulseOrbitones(node, now, intensity = 1) {
   const rel = Math.max(0.001, ap.ampEnvRelease ?? 0.08);
 
   // Determine how much of the sound should be main vs. orbitones
-  const orbitMix = ap.orbitoneMix !== undefined ? ap.orbitoneMix : 0.5;
+  const orbitMix = ap.orbitoneMix !== undefined ? ap.orbitoneMix : 0.65;
   const peak = Math.max(0.001, Math.min(1.5, intensity));
 
   // Main voice envelope already scales by (1 - orbitMix) inside triggerStart.
@@ -30,7 +59,8 @@ export function triggerPulseOrbitones(node, now, intensity = 1) {
     try { return an.oscillator1?.frequency?.value ?? ap.pitch; } catch { return ap.pitch; }
   })();
 
-  const scaleDef = scaleState.currentScale || { notes: [0], baseFreq: baseFreq };
+  const tuning = getPlaybackTuning(an);
+  const scaleDef = tuning?.scale || scaleState.currentScale || { notes: [0], baseFreq: baseFreq };
   const baseIdx = ap.scaleIndex ?? 0;
   const intervals = ap.orbitoneIntervals || [];
 
@@ -41,8 +71,8 @@ export function triggerPulseOrbitones(node, now, intensity = 1) {
       scaleDef,
       baseIdx + step,
       0,
-      scaleState.currentRootNote || 0,
-      scaleState.globalTransposeOffset || 0,
+      tuning?.root ?? scaleState.currentRootNote ?? 0,
+      tuning?.transpose ?? scaleState.globalTransposeOffset ?? 0,
     );
     if (!Number.isFinite(f) || f <= 0) {
       f = baseFreq * Math.pow(2, ((i + 1) * 3) / 12);
@@ -50,12 +80,18 @@ export function triggerPulseOrbitones(node, now, intensity = 1) {
     orbitFreqs.push(f);
   }
 
-  const perOrbitPeak = (peak * orbitMix) / Math.max(1, an.orbitoneOscillators.length);
+  const activeCount = Math.min(
+    ap.orbitoneCount || an.orbitoneOscillators.length,
+    an.orbitoneOscillators.length,
+  );
+  const perOrbitPeak =
+    (peak * orbitMix) / Math.sqrt(Math.max(1, activeCount));
+  const playbackOrder = externalPlaybackOrder || createOrbitonePlaybackOrder(node, activeCount + 1);
 
   // Schedule each Orbitone oscillator and its gain envelope
   dbgOrbitone('schedule:start', {
     nodeId: node.id,
-    count: an.orbitoneOscillators.length,
+    count: activeCount,
     orbitMix,
     peak,
     perOrbitPeak,
@@ -66,9 +102,12 @@ export function triggerPulseOrbitones(node, now, intensity = 1) {
   });
 
   for (let i = 0; i < an.orbitoneOscillators.length; i++) {
-    const offMs = (ap.orbitoneTimingOffsets && ap.orbitoneTimingOffsets[i] !== undefined)
-      ? ap.orbitoneTimingOffsets[i]
-      : 0;
+    if (i >= activeCount) {
+      const g = an.orbitoneIndividualGains[i];
+      try { g?.gain?.setTargetAtTime(0, now, 0.01); } catch {}
+      continue;
+    }
+    const offMs = getOrbitoneOrderedTimingOffset(ap, i + 1, playbackOrder);
     const startT = now + offMs / 1000.0;
     const osc = an.orbitoneOscillators[i];
     const g = an.orbitoneIndividualGains[i];

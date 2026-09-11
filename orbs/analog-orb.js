@@ -102,10 +102,11 @@ export function createAnalogOrb(node) {
   audioNodes.orbitoneNoises = [];
   audioNodes.orbitoneNoiseGains = [];
   audioNodes.orbitoneIndividualGains = [];
-  if (p.orbitonesEnabled && p.orbitoneCount > 0) {
+  const orbitoneAllocationCount = p.orbitonesEnabled ? 5 : 0;
+  if (orbitoneAllocationCount > 0) {
     const waveform1 = sanitizeWaveformType(p.osc1Waveform || 'sine');
     const waveform2 = sanitizeWaveformType(p.osc2Waveform || 'sine');
-    for (let i = 0; i < p.orbitoneCount; i++) {
+    for (let i = 0; i < orbitoneAllocationCount; i++) {
       const o1 = new Tone.Oscillator({ type: waveform1 });
       const o2 = new Tone.Oscillator({ type: waveform2, detune: p.osc2Detune });
       const noise = new Tone.Noise('white');
